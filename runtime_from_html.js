@@ -242,7 +242,6 @@ function createHeadlessGameRuntime() {
 
       // extra server targeting layer for multiplayer: enemies chase nearest remote player.
       if (Array.isArray(__serverPlayers) && __serverPlayers.length){
-        const edgeMargin = 120;
         for (const e of enemies){
           if (!e || !e.alive) continue;
           let best = null, bd2 = 1e30;
@@ -260,12 +259,6 @@ function createHeadlessGameRuntime() {
           const sp = Math.hypot(e.vx||0, e.vy||0) || (90 + (Game.difficulty||1)*12);
           e.vx = lerp(e.vx||0, nx*sp, steer);
           e.vy = lerp(e.vy||0, ny*sp, steer);
-
-          // keep enemies around visible combat space to avoid drifting far out of view.
-          if (e.x < -edgeMargin) e.vx = Math.abs(e.vx || sp * 0.4);
-          if (e.x > W + edgeMargin) e.vx = -Math.abs(e.vx || sp * 0.4);
-          if (e.y < -edgeMargin) e.vy = Math.abs(e.vy || sp * 0.4);
-          if (e.y > H + edgeMargin) e.vy = -Math.abs(e.vy || sp * 0.4);
         }
       }
     `);
@@ -283,7 +276,7 @@ function createHeadlessGameRuntime() {
         k: e.spawnId || e.id || (e.type||'E')+':'+i,
         x:e.x,y:e.y,vx:e.vx,vy:e.vy,hp:e.hp,maxHp:e.maxHp,r:e.r,
         col:e.baseCol||e.tint||'#FF2F57',
-        bodySeed:e.bodySeed || hash32((((e.x||0)*1000)|0) ^ (((e.y||0)*1000)|0) ^ (((e.r||18)*13)|0)),
+        bodySeed:e.bodySeed||0,
         type:e.type||'ENEMY'
       })),
       bulletsE: bulletsE.slice(0,140).map((b)=>({

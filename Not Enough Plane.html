@@ -11181,9 +11181,6 @@ BG_Effect.init();
     applyWorldState(world, relayTs=0){
       if (!world || !world.mode || world.mode !== Game.mode || Game.state !== 'playing') return;
       const leadS = clamp(((Date.now() - (relayTs || 0)) / 1000) + 0.02, 0, 0.22);
-      const netMargin = 96;
-      const clampX = (v)=> clamp(v, -netMargin, W + netMargin);
-      const clampY = (v)=> clamp(v, -netMargin, H + netMargin);
       if (world.wave != null) Game.wave = world.wave;
       if (world.score != null) Game.score = Math.max(Game.score, world.score);
       if (world.spawnerCd != null) Spawner.cd = world.spawnerCd;
@@ -11195,8 +11192,7 @@ BG_Effect.init();
         if (!e){
           e = baseEnemy(src.type || 'ENEMY', src.r || 18, src.maxHp || 50, 200);
           e.spawnId = key || `NET-${Math.random().toString(36).slice(2,8)}`;
-          const hasBodySeed = Number.isFinite(src.bodySeed) && src.bodySeed > 0;
-          const seedFromKey = hasBodySeed ? (src.bodySeed>>>0) : (key
+          const seedFromKey = (src.bodySeed != null) ? (src.bodySeed>>>0) : (key
             ? key.split('').reduce((acc, ch)=>hash32(acc ^ ch.charCodeAt(0)), 0x9e3779b9)
             : hash32(((src.x||0)*1000|0) ^ ((src.y||0)*1000|0) ^ ((src.r||18)*13|0)));
           e.bodySeed = seedFromKey;
@@ -11205,13 +11201,12 @@ BG_Effect.init();
           enemies.push(e);
         }
         if (!e.body){
-          const hasBodySeed = Number.isFinite(src.bodySeed) && src.bodySeed > 0;
-          const fallbackSeed = hasBodySeed ? (src.bodySeed>>>0) : (e.bodySeed || hash32(((src.x||0)*1000|0) ^ ((src.y||0)*1000|0) ^ ((src.r||18)*13|0)));
+          const fallbackSeed = (src.bodySeed != null) ? (src.bodySeed>>>0) : (e.bodySeed || hash32(((src.x||0)*1000|0) ^ ((src.y||0)*1000|0) ^ ((src.r||18)*13|0)));
           e.bodySeed = fallbackSeed;
           e.body = genEnemyBody(fallbackSeed);
         }
-        const tx = clampX((src.x ?? e.x) + (src.vx ?? e.vx ?? 0) * leadS);
-        const ty = clampY((src.y ?? e.y) + (src.vy ?? e.vy ?? 0) * leadS);
+        const tx = (src.x ?? e.x) + (src.vx ?? e.vx ?? 0) * leadS;
+        const ty = (src.y ?? e.y) + (src.vy ?? e.vy ?? 0) * leadS;
         if (e._netSnapSeen){
           e.x = lerp(e.x, tx, 0.55);
           e.y = lerp(e.y, ty, 0.55);
@@ -11241,8 +11236,8 @@ BG_Effect.init();
           bulletsE.push({
             ...b,
             team: 'E',
-            x:clampX((b?.x ?? 0) + vx * leadS),
-            y:clampY((b?.y ?? 0) + vy * leadS),
+            x:(b?.x ?? 0) + vx * leadS,
+            y:(b?.y ?? 0) + vy * leadS,
             vx,
             vy,
             t: Number.isFinite(b?.t) ? b.t : 0,
