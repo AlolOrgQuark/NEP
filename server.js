@@ -1,15 +1,27 @@
 const { WebSocketServer } = require('ws');
+const { createHeadlessGameRuntime } = require('./runtime_from_html');
 
 const PORT = Number(process.env.PORT || 8787);
 const TICK_MS = 50;
+const DT = TICK_MS / 1000;
 const PLAYER_TIMEOUT_MS = 12_000;
+const WORLD_PUSH_EVERY_TICKS = 2;
 
 const wss = new WebSocketServer({ port: PORT });
 
-const clients = new Map(); // ws -> client
-const rooms = new Map(); // roomName -> roomState
+const clients = new Map();
+const rooms = new Map();
 
 const uid = () => `P-${Math.random().toString(36).slice(2, 10)}`;
+
+function nowMs() {
+  return Date.now();
+}
+
+function clipNum(v, d = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : d;
+}
 
 function safeSend(ws, payload) {
   if (!ws || ws.readyState !== ws.OPEN) return;
@@ -37,40 +49,20 @@ function ensureRoom(roomName) {
       tickSeq: 0,
       leaderId: '',
       pendingStartCfg: null,
-      enemyColorByKey: new Map(),
+      runtime: null,
       match: {
         active: false,
         mode: '',
-        score: 0,
         wave: 1,
-        spawnerCd: 1.2,
-        enemies: [],
       },
     });
   }
   return rooms.get(roomName);
 }
 
-function nowMs() {
-  return Date.now();
-}
-
-function makeEnemy(room) {
-  const key = `S-${room.tickSeq}-${Math.random().toString(36).slice(2, 7)}`;
-  const col = '#FF2F57';
-  room.enemyColorByKey.set(key, col);
-  return {
-    k: key,
-    x: 80 + Math.random() * 520,
-    y: -30,
-    vx: (Math.random() - 0.5) * 40,
-    vy: 70 + Math.random() * 70,
-    hp: 24,
-    maxHp: 24,
-    r: 16,
-    col,
-    type: 'SRV_ENEMY',
-  };
+function assignLeader(room) {
+  if (room.leaderId && room.players.has(room.leaderId)) return;
+  room.leaderId = room.players.keys().next().value || '';
 }
 
 function buildPeerList(room, selfId = '') {
@@ -80,12 +72,6 @@ function buildPeerList(room, selfId = '') {
     peers.push({ id: p.id, nick: p.nick || 'PILOT' });
   }
   return peers;
-}
-
-function assignLeader(room) {
-  if (room.leaderId && room.players.has(room.leaderId)) return;
-  const next = room.players.keys().next().value;
-  room.leaderId = next || '';
 }
 
 function broadcastRoomEvent(room, event, payload = {}) {
@@ -116,9 +102,7 @@ function leaveRoom(ws, reason = 'left') {
     rooms.delete(room.name);
   } else {
     broadcastRoomEvent(room, 'prepared_updated', {
-      prepared: [...room.players.values()]
-        .filter((p) => p.prepared)
-        .map((p) => p.id),
+      prepared: [...room.players.values()].filter((p) => p.prepared).map((p) => p.id),
       leaderId: room.leaderId,
     });
   }
@@ -141,8 +125,8 @@ function joinRoom(ws, roomName) {
     buildA: null,
     input: null,
     state: {
-      x: 0,
-      y: 0,
+      x: 360,
+      y: 980,
       hp: 100,
       hpMax: 100,
       alive: true,
@@ -152,7 +136,7 @@ function joinRoom(ws, roomName) {
       wave: 1,
       bullets: [],
     },
-    lastInputAt: Date.now(),
+    lastInputAt: nowMs(),
   });
   c.room = roomName;
   assignLeader(room);
@@ -177,66 +161,6 @@ function joinRoom(ws, roomName) {
     prepared: [...room.players.values()].filter((p) => p.prepared).map((p) => p.id),
     leaderId: room.leaderId,
   });
-}
-
-function clipNum(v, d = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-}
-
-function normalizeWorld(world, room) {
-  if (!world || typeof world !== 'object') return room.world;
-  const normalized = {
-    t: clipNum(world.t, performanceNow()),
-    mode: String(world.mode || ''),
-    wave: clipNum(world.wave, 1),
-    score: clipNum(world.score, 0),
-    spawnerCd: clipNum(world.spawnerCd, 0),
-    enemies: [],
-    bulletsE: null,
-  };
-
-  const srcEnemies = Array.isArray(world.enemies) ? world.enemies.slice(0, 96) : [];
-  for (let i = 0; i < srcEnemies.length; i++) {
-    const e = srcEnemies[i] || {};
-    const key = String(e.k || `${e.type || 'E'}:${i}`).slice(0, 48);
-    const oldCol = room.enemyColorByKey.get(key);
-    const col = String(oldCol || e.col || '#FF2F57');
-    room.enemyColorByKey.set(key, col);
-    normalized.enemies.push({
-      k: key,
-      x: clipNum(e.x),
-      y: clipNum(e.y),
-      vx: clipNum(e.vx),
-      vy: clipNum(e.vy),
-      hp: clipNum(e.hp, 1),
-      maxHp: clipNum(e.maxHp, 1),
-      r: clipNum(e.r, 16),
-      col,
-      type: String(e.type || 'ENEMY').slice(0, 32),
-    });
-  }
-
-  if (Array.isArray(world.bulletsE)) {
-    normalized.bulletsE = world.bulletsE.slice(0, 140).map((b) => ({
-      x: clipNum(b?.x),
-      y: clipNum(b?.y),
-      vx: clipNum(b?.vx),
-      vy: clipNum(b?.vy),
-      r: clipNum(b?.r, 3),
-      col: String(b?.col || '#FF2F57'),
-      dmg: clipNum(b?.dmg, 1),
-      t: clipNum(b?.t, 0),
-      spr: String(b?.spr || 'glowE'),
-      style: clipNum(b?.style, 1),
-    }));
-  }
-
-  return normalized;
-}
-
-function performanceNow() {
-  return nowMs();
 }
 
 function onPrepare(room, c, msg) {
@@ -273,17 +197,19 @@ function maybeStart(room, starterId, cfg) {
   if (!mode || players.some((p) => p.prepareCfg?.mode !== mode)) return false;
 
   room.pendingStartCfg = cfg || players[0].prepareCfg;
-  for (const p of players) p.prepared = false;
-  room.world = null;
-  room.enemyColorByKey.clear();
+  const wave = Math.max(1, clipNum(room.pendingStartCfg?.wave, 1) | 0);
+
+  room.runtime = createHeadlessGameRuntime();
+  room.runtime.start(mode, wave);
+
   room.match = {
     active: true,
-    mode: String(room.pendingStartCfg?.mode || ''),
-    score: 0,
-    wave: 1,
-    spawnerCd: 0.8,
-    enemies: [],
+    mode: String(mode),
+    wave,
   };
+
+  room.world = null;
+  for (const p of players) p.prepared = false;
 
   broadcastRoomEvent(room, 'start_match', {
     starterId,
@@ -303,7 +229,6 @@ function handleMessage(ws, msg) {
 
   if (msg.type === 'hello' && typeof msg.nick === 'string') {
     c.nick = msg.nick.trim().slice(0, 16) || c.nick;
-    c.lastSeenAt = nowMs();
     const room = rooms.get(c.room);
     const rp = room?.players.get(c.id);
     if (rp) rp.nick = c.nick;
@@ -343,8 +268,8 @@ function handleMessage(ws, msg) {
     if (msg.state && typeof msg.state === 'object') {
       const s = msg.state;
       p.state = {
-        x: clipNum(s.x),
-        y: clipNum(s.y),
+        x: clipNum(s.x, 360),
+        y: clipNum(s.y, 980),
         hp: clipNum(s.hp, 100),
         hpMax: clipNum(s.hpMax, 100),
         alive: Boolean(s.alive !== false),
@@ -357,15 +282,6 @@ function handleMessage(ws, msg) {
     }
     p.lastInputAt = nowMs();
     c.lastSeenAt = nowMs();
-    return;
-  }
-
-  if (msg.type === 'world_state') {
-    // Deprecated client relay path: keep backwards compatibility but do not trust by default.
-    if (!room.match.active) {
-      room.world = normalizeWorld(msg.world, room);
-      room.worldVersion += 1;
-    }
     return;
   }
 
@@ -385,7 +301,6 @@ function handleMessage(ws, msg) {
   }
 
   if (msg.type === 'peer_hit') {
-    // authoritative forwarding for workshop hit events
     for (const peerWs of room.members) {
       if (peerWs === ws) continue;
       safeSend(peerWs, {
@@ -405,7 +320,6 @@ function roomTick() {
     room.tickSeq += 1;
     assignLeader(room);
 
-    // Cull players that fully stopped talking to server for too long.
     for (const [pid, p] of room.players.entries()) {
       const playerSocket = [...room.members].find((ws) => clients.get(ws)?.id === pid);
       const playerClient = playerSocket ? clients.get(playerSocket) : null;
@@ -414,60 +328,33 @@ function roomTick() {
         room.players.delete(pid);
         for (const ws of room.members) {
           const c = clients.get(ws);
-          if (c?.id === pid) {
-            try {
-              ws.close();
-            } catch {
-              // ignore
-            }
+          if (c?.id !== pid) continue;
+          try {
+            ws.close();
+          } catch {
+            // ignore
           }
         }
       }
     }
 
-    if (room.match.active && room.match.mode && room.match.mode !== 'workshop') {
-      const dt = TICK_MS / 1000;
-      room.match.spawnerCd -= dt;
-      if (room.match.spawnerCd <= 0) {
-        room.match.spawnerCd = Math.max(0.28, 1.05 - room.match.wave * 0.05);
-        room.match.enemies.push(makeEnemy(room));
+    if (room.match.active && room.runtime && room.match.mode !== 'workshop') {
+      const playerStates = [...room.players.values()].map((p) => p.state);
+      try {
+        room.runtime.tick(DT, playerStates);
+      } catch (err) {
+        room.match.active = false;
+        safeSend([...room.members][0], { type: 'error', message: `runtime tick failed: ${err.message}` });
       }
 
-      for (let i = room.match.enemies.length - 1; i >= 0; i -= 1) {
-        const e = room.match.enemies[i];
-        e.x += e.vx * dt;
-        e.y += e.vy * dt;
-        if (e.y > 900 || e.x < -80 || e.x > 820) {
-          room.match.enemies.splice(i, 1);
-          continue;
-        }
-        for (const p of room.players.values()) {
-          if (p.state?.alive === false) continue;
-          const dx = clipNum(p.state?.x) - e.x;
-          const dy = clipNum(p.state?.y) - e.y;
-          const rr = e.r + 16;
-          if (dx * dx + dy * dy <= rr * rr) {
-            e.hp -= 8;
-          }
-        }
-        if (e.hp <= 0) {
-          room.match.enemies.splice(i, 1);
-          room.match.score += 5;
+      if ((room.tickSeq % WORLD_PUSH_EVERY_TICKS) === 0) {
+        try {
+          room.world = room.runtime.snapshot();
+          room.worldVersion += 1;
+        } catch (err) {
+          room.match.active = false;
         }
       }
-
-      const nextWave = 1 + Math.floor(room.match.score / 120);
-      room.match.wave = Math.max(room.match.wave, nextWave);
-      room.world = {
-        t: performanceNow(),
-        mode: room.match.mode,
-        wave: room.match.wave,
-        score: room.match.score,
-        spawnerCd: room.match.spawnerCd,
-        enemies: room.match.enemies.slice(0, 96),
-        bulletsE: [],
-      };
-      room.worldVersion += 1;
     }
 
     const players = [...room.players.values()].map((p) => ({
@@ -485,7 +372,7 @@ function roomTick() {
       leaderId: room.leaderId,
       worldVersion: room.worldVersion,
       players,
-      world: room.world,
+      world: (room.tickSeq % WORLD_PUSH_EVERY_TICKS) === 0 ? room.world : null,
     };
 
     for (const ws of room.members) {
@@ -518,4 +405,4 @@ wss.on('connection', (ws) => {
 
 setInterval(roomTick, TICK_MS);
 
-console.log(`[NEP] Authoritative room server running on ws://0.0.0.0:${PORT}`);
+console.log(`[NEP] HTML-driven authoritative server running on ws://0.0.0.0:${PORT}`);

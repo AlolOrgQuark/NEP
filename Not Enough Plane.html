@@ -6495,7 +6495,8 @@ function chevronPath(x,y,r,rot=0, t=0.18){
 
   function drawEnemyGeneric(e){
     const col = e.tint || e.baseCol;
-    const b = e.body;
+    const b = e.body || genEnemyBody(e.bodySeed || hash32(((e.x*997)|0) ^ ((e.y*313)|0) ^ ((e.r*31)|0) ^ 0x51a23));
+    if (!e.body) e.body = b;
     ctx.save();
     if (PERF.additive) ctx.globalCompositeOperation='lighter';
 
@@ -11178,8 +11179,18 @@ BG_Effect.init();
         if (!e){
           e = baseEnemy(src.type || 'ENEMY', src.r || 18, src.maxHp || 50, 200);
           e.spawnId = key || `NET-${Math.random().toString(36).slice(2,8)}`;
+          const seedFromKey = (src.bodySeed != null) ? (src.bodySeed>>>0) : (key
+            ? key.split('').reduce((acc, ch)=>hash32(acc ^ ch.charCodeAt(0)), 0x9e3779b9)
+            : hash32(((src.x||0)*1000|0) ^ ((src.y||0)*1000|0) ^ ((src.r||18)*13|0)));
+          e.bodySeed = seedFromKey;
+          e.body = genEnemyBody(seedFromKey);
           e.emitters = [];
           enemies.push(e);
+        }
+        if (!e.body){
+          const fallbackSeed = (src.bodySeed != null) ? (src.bodySeed>>>0) : (e.bodySeed || hash32(((src.x||0)*1000|0) ^ ((src.y||0)*1000|0) ^ ((src.r||18)*13|0)));
+          e.bodySeed = fallbackSeed;
+          e.body = genEnemyBody(fallbackSeed);
         }
         e.x = (src.x ?? e.x) + (src.vx ?? e.vx ?? 0) * leadS;
         e.y = (src.y ?? e.y) + (src.vy ?? e.vy ?? 0) * leadS;
@@ -11578,8 +11589,9 @@ BG_Effect.init();
 
     firePlayer(dt);
     updatePlayerEmitters(dt);
-    if (Game.mode === 'survival') Spawner.update(dt);
-    if (Game.mode === 'challenge') Spawner.update(dt);
+    const isNetAuthoritative = !!(Game.lastStart && Game.lastStart.net);
+    if (!isNetAuthoritative && Game.mode === 'survival') Spawner.update(dt);
+    if (!isNetAuthoritative && Game.mode === 'challenge') Spawner.update(dt);
 
     updateBullets(dt, bulletsP);
     updateBullets(dt, bulletsE);
