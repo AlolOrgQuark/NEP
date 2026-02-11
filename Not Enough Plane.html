@@ -1244,7 +1244,7 @@ input[type="checkbox"] {
     <div class="menu-actions" style="margin-top:8px;gap:8px;flex-wrap:wrap;justify-content:flex-start;">
       <button id="btnMpJoin" class="mini-btn" style="border-color:var(--c-cyan);">JOIN</button>
       <button id="btnMpLeave" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">LEAVE</button>
-      <button id="btnMpStart" class="mini-btn" style="border-color:var(--c-yellow);color:var(--c-yellow)">NET START</button>
+      <button id="btnMpStart" class="mini-btn" style="border-color:var(--c-yellow);color:var(--c-yellow)">PREPARE</button>
     </div>
     <div id="mpStatus" class="muted" style="margin-top:6px; font-size:10px; word-break:break-word;">联机未连接</div>
   </div>
@@ -10990,6 +10990,9 @@ BG_Effect.init();
     heartbeatCd: 0,
     stateCd: 0,
     joinedAt: 0,
+    localPrepared: false,
+    pendingCfg: null,
+    waitingStart: false,
 
     setStatus(msg){
       if (ui.mpStatus) ui.mpStatus.textContent = msg;
@@ -11029,7 +11032,11 @@ BG_Effect.init();
       this.peers.clear();
       this.heartbeatCd = 0;
       this.stateCd = 0;
+      this.localPrepared = false;
+      this.pendingCfg = null;
+      this.waitingStart = false;
       this.setStatus('联机未连接');
+      if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
     },
 
     broadcast(payload){
@@ -11057,20 +11064,114 @@ BG_Effect.init();
       } else if (msg.type === 'state' && msg.state){
         Object.assign(peer, msg.state);
         this.peers.set(msg.from, peer);
+      } else if (msg.type === 'prepare' && msg.cfg){
+        peer.prepared = true;
+        peer.prepareCfg = msg.cfg;
+        peer.buildA = msg.buildA || null;
+        this.peers.set(msg.from, peer);
+        this.tryAutoStart();
+      } else if (msg.type === 'unprepare'){
+        peer.prepared = false;
+        peer.prepareCfg = null;
+        this.peers.set(msg.from, peer);
       } else if (msg.type === 'bye'){
+        const wasPrepared = !!peer.prepared;
         this.peers.delete(msg.from);
+        if (wasPrepared && (this.localPrepared || (Game.lastStart && Game.lastStart.net))) this.onPeerDisconnected(peer.nick);
       } else if (msg.type === 'start' && msg.cfg){
-        startRun(msg.cfg);
-        textPop(W*0.5, 120, `NET START · ${peer.nick}`, C.P2);
+        this.startPreparedMatch(msg.cfg, msg.from);
       }
       this.refreshStatus();
+    },
+
+    validateRoomForMode(mode){
+      const players = this.peers.size + 1;
+      if (mode === 'workshop' && players !== 2){
+        this.setStatus('WORKSHOP 房间必须 2 人（你 + 1 对手）');
+        return false;
+      }
+      if (players < 2){
+        this.setStatus('至少需要 2 人才可开始联机');
+        return false;
+      }
+      return true;
+    },
+
+    getWorkshopOpponentBuild(){
+      const firstPeer = this.peers.values().next().value;
+      return firstPeer?.buildA ? deepClone(firstPeer.buildA) : null;
+    },
+
+    prepare(cfg){
+      if (!this.channel) return;
+      if (!this.validateRoomForMode(cfg.mode)) return;
+      this.localPrepared = true;
+      this.pendingCfg = deepClone(cfg);
+      this.waitingStart = true;
+      this.broadcast({
+        type:'prepare',
+        nick:this.nick,
+        cfg: this.pendingCfg,
+        buildA: cfg.mode==='workshop' ? deepClone(Builds.A) : null,
+      });
+      if (ui.btnMpStart) ui.btnMpStart.textContent = 'CANCEL PREPARE';
+      this.tryAutoStart();
+      this.refreshStatus();
+    },
+
+    cancelPrepare(announce=true){
+      this.localPrepared = false;
+      this.pendingCfg = null;
+      this.waitingStart = false;
+      if (announce && this.channel) this.broadcast({type:'unprepare', nick:this.nick});
+      if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
+      this.refreshStatus();
+    },
+
+    leaderId(){
+      return [this.localId, ...this.peers.keys()].sort()[0];
+    },
+
+    tryAutoStart(){
+      if (!this.channel || !this.localPrepared || !this.pendingCfg) return;
+      const peers = [...this.peers.values()];
+      if (!this.validateRoomForMode(this.pendingCfg.mode)) return;
+      if (!peers.length || peers.some(p => !p.prepared || !p.prepareCfg)) return;
+      if (this.leaderId() !== this.localId) return;
+      this.broadcast({type:'start', cfg:this.pendingCfg, nick:this.nick});
+      this.startPreparedMatch(this.pendingCfg, this.localId);
+    },
+
+    startPreparedMatch(cfg, starterId){
+      if (!cfg) return;
+      const starter = (starterId === this.localId) ? this.nick : (this.peers.get(starterId)?.nick || 'PILOT');
+      const netCfg = deepClone(cfg);
+      if (netCfg.mode === 'workshop'){
+        netCfg.opponentBuild = this.getWorkshopOpponentBuild();
+      }
+      startRun({...netCfg, net:true});
+      this.localPrepared = false;
+      this.pendingCfg = null;
+      this.waitingStart = false;
+      if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
+      textPop(W*0.5, 120, `PREPARE OK · ${starter}`, C.P2);
+    },
+
+    onPeerDisconnected(nick='PILOT'){
+      this.setStatus(`${nick} 掉线，已自动踢出房间`);
+      this.leave(false);
+      toMenu();
+      textPop(W*0.5, 120, `对手掉线 · 已退房`, C.R);
     },
 
     refreshStatus(){
       if (!this.channel){ this.setStatus('联机未连接'); return; }
       const list = [...this.peers.values()];
       const names = list.slice(0,4).map(p=>p.nick).join(', ');
-      this.setStatus(`房间 ${this.room} · 在线 ${list.length+1} 人${names?` · ${names}`:''}`);
+      const preparedPeers = list.filter(p=>p.prepared).length;
+      const preparedTotal = (this.localPrepared ? 1 : 0) + preparedPeers;
+      const prepText = (preparedTotal > 0) ? ` · PREPARE ${preparedTotal}/${list.length+1}` : '';
+      this.setStatus(`房间 ${this.room} · 在线 ${list.length+1} 人${names?` · ${names}`:''}${prepText}`);
     },
 
     update(dt){
@@ -11099,14 +11200,15 @@ BG_Effect.init();
 
       const now = performance.now();
       for (const [id,p] of this.peers.entries()){
-        if ((now - p.lastSeen) > 4500) this.peers.delete(id);
+        if ((now - p.lastSeen) > 4500){
+          this.peers.delete(id);
+          if ((p.prepared || this.localPrepared || (Game.lastStart && Game.lastStart.net))){
+            this.onPeerDisconnected(p.nick);
+            return;
+          }
+        }
       }
       this.refreshStatus();
-    },
-
-    syncStart(cfg){
-      if (!this.channel) return;
-      this.broadcast({type:'start', cfg, nick:this.nick});
     },
 
     drawPeers(){
@@ -11115,8 +11217,10 @@ BG_Effect.init();
       ctx.globalCompositeOperation = PERF.additive ? 'lighter' : 'source-over';
       for (const peer of this.peers.values()){
         if (peer.alive === false) continue;
+        const rx = (Game.mode==='workshop') ? (W - peer.x) : peer.x;
+        const ry = (Game.mode==='workshop') ? (H - peer.y) : peer.y;
         ctx.save();
-        ctx.translate(peer.x, peer.y);
+        ctx.translate(rx, ry);
         ctx.strokeStyle = C.P2;
         ctx.fillStyle = 'rgba(179,108,255,0.16)';
         ctx.lineWidth = 2;
@@ -11129,7 +11233,7 @@ BG_Effect.init();
         ctx.fillStyle = '#E7D8FF';
         ctx.font = '700 10px "Consolas", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`${peer.nick}  HP:${Math.max(0, Math.ceil(peer.hp||0))}`, peer.x, peer.y - 24);
+        ctx.fillText(`${peer.nick}  HP:${Math.max(0, Math.ceil(peer.hp||0))}`, rx, ry - 24);
       }
       ctx.restore();
     }
@@ -13062,13 +13166,14 @@ applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
   return e;
 }
 
-  function startRun({mode='survival', wave=1, forge=null} = {}){
+  function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild=null} = {}){
   // 1. Reset
   resetGame();
   Game.lastStart = { 
     mode, 
     wave, 
-    forge: forge ? JSON.parse(JSON.stringify(forge)) : null 
+    forge: forge ? JSON.parse(JSON.stringify(forge)) : null,
+    net,
   };
   if (mode === 'survival') {
     const diffVal = document.getElementById('inpDiffMode')?.value || 1;
@@ -13082,7 +13187,7 @@ applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
   Camera.zoom = 1.0;
   Camera.targetZoom = 1.0;
   Game.mode = mode;
-  Game.lastStart = {mode, wave};
+  Game.lastStart = {mode, wave, forge: forge ? JSON.parse(JSON.stringify(forge)) : null, net};
   
   const b = clampBuild(deepClone(Builds.A));
 Player.maxHp = b.maxHp; Player.hp = b.maxHp;
@@ -13160,7 +13265,8 @@ setupPlayerEmittersFromBuild(b);
     Game.score = 0;
     enemies.length = 0;
 
-    const rival = makeRivalFromBuild(Builds.A);
+    const rivalBuild = clampBuild(deepClone(opponentBuild || Builds.A));
+    const rival = makeRivalFromBuild(rivalBuild);
     enemies.push(rival);
 
     textPop(W*0.5, 92, 'WORKSHOP 1V1 (A vs A)', C.P2);
@@ -13234,6 +13340,7 @@ canvas.style.pointerEvents = 'auto';
 }
 
   function toMenu(){
+  Multiplayer.cancelPrepare(false);
   showOverlay('gameover', false);
   showOverlay('pausePanel', false);
   canvas.style.pointerEvents = 'auto';
@@ -15599,12 +15706,19 @@ ui.btnMpLeave?.addEventListener('click', ()=>{
 });
 
 ui.btnMpStart?.addEventListener('click', ()=>{
+  if (!Multiplayer.isActive()){
+    Multiplayer.setStatus('请先 JOIN 房间');
+    return;
+  }
+  if (Multiplayer.localPrepared){
+    Multiplayer.cancelPrepare(true);
+    return;
+  }
   const mode = ui.inpMpMode?.value || 'survival';
   const wave = parseInt(document.getElementById('inpStartWave')?.value || '1') || 1;
   const forge = (mode === 'lab' && typeof readForgeSpecFromUI === 'function') ? readForgeSpecFromUI() : null;
   const cfg = {mode, wave: (mode==='survival' || mode==='challenge') ? wave : 1, forge};
-  startRun(cfg);
-  Multiplayer.syncStart(cfg);
+  Multiplayer.prepare(cfg);
 });
 
 window.addEventListener('beforeunload', ()=> Multiplayer.leave(), {passive:true});
@@ -15633,6 +15747,16 @@ ui.btnRestart?.addEventListener('click', () => {
   const last = Game.lastStart || {};
   let currentForge = last.forge;
 
+  if (last.net){
+    const cfg = {
+      mode: last.mode || 'survival',
+      wave: (last.mode === 'survival' || last.mode === 'challenge') ? (parseInt(ui.inpWave.value) || 1) : 1,
+      forge: currentForge || null,
+    };
+    Multiplayer.prepare(cfg);
+    return;
+  }
+
   // Lab 模式的特殊处理 (保持不变)
   if (last.mode === 'lab') {
     if (ForgeState._isRandom && typeof randomizeForgeState === 'function') {
@@ -15654,7 +15778,10 @@ ui.btnRestart?.addEventListener('click', () => {
     forge: currentForge
   });
 });
-ui.btnBack?.addEventListener('click', toMenu);
+ui.btnBack?.addEventListener('click', ()=>{
+  if (Game.lastStart?.net) Multiplayer.leave();
+  toMenu();
+});
 ui.btnPause?.addEventListener('click', ()=>{ if (Game.state==='playing'||Game.state==='paused') togglePause(); });
 ui.btnMute?.addEventListener('click', ()=>Game.mute());
 ui.btnRevive?.addEventListener('click', revive);
@@ -15706,6 +15833,7 @@ document.getElementById('btnResumePause')?.addEventListener('click', ()=>{
   // Exit to Menu 按钮
   document.getElementById('btnOptMenu')?.addEventListener('click', () => {
     showOverlay('optionPanel', false);
+    if (Game.lastStart?.net) Multiplayer.leave();
     toMenu();
   });
 })();
@@ -15726,6 +15854,16 @@ document.getElementById('btnPauseRetry')?.addEventListener('click', () => {
   // 或者直接手动触发逻辑：
   const last = Game.lastStart || {};
   let currentForge = last.forge;
+
+  if (last.net){
+    const cfg = {
+      mode: last.mode || 'survival',
+      wave: (last.mode === 'survival' || last.mode === 'challenge') ? (parseInt(ui.inpWave.value) || 1) : 1,
+      forge: currentForge || null,
+    };
+    Multiplayer.prepare(cfg);
+    return;
+  }
 
   if (last.mode === 'lab') {
     if (typeof readForgeSpecFromUI === 'function') {
