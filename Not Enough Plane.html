@@ -1228,6 +1228,19 @@ input[type="checkbox"] {
     <option value="0">OFF — FIXED VIEW</option>
   </select>
 </div>
+<div class="field" style="margin-top:12px; border-top:1px dashed rgba(82,230,255,0.35); padding-top:10px;">
+  <label>MULTIPLAYER 联机 (BETA)</label>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+    <input id="inpMpRoom" type="text" maxlength="20" placeholder="房间号（同浏览器标签页）">
+    <input id="inpMpNick" type="text" maxlength="16" placeholder="昵称（默认 PILOT）">
+  </div>
+  <div class="menu-actions" style="margin-top:8px;gap:8px;flex-wrap:wrap;justify-content:flex-start;">
+    <button id="btnMpJoin" class="mini-btn" style="border-color:var(--c-cyan);">JOIN ROOM</button>
+    <button id="btnMpLeave" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">LEAVE</button>
+    <button id="btnMpStart" class="mini-btn" style="border-color:var(--c-yellow);color:var(--c-yellow)">SYNC START</button>
+  </div>
+  <div id="mpStatus" class="muted" style="margin-top:6px; font-size:10px;">联机未连接</div>
+</div>
             <div class="menu-actions">
               <button id="btnStartSurvival">START SURVIVAL (BUILD A)</button>
               <button id="btnStartChallenge" style="border-color:var(--c-danger);color:var(--c-danger)">CHAOS CHALLENGE (1v1)</button>
@@ -1759,6 +1772,13 @@ input[type="checkbox"] {
     btnMute: $('btnMute'),
     btnRevive: $('btnRevive'),
     btnOption: $('btnOption'),
+
+    inpMpRoom: $('inpMpRoom'),
+    inpMpNick: $('inpMpNick'),
+    btnMpJoin: $('btnMpJoin'),
+    btnMpLeave: $('btnMpLeave'),
+    btnMpStart: $('btnMpStart'),
+    mpStatus: $('mpStatus'),
   };
 
   // ================= Audio =================
@@ -10951,9 +10971,165 @@ const BG_Effect = {
 // 初始化背景
 BG_Effect.init();
 
+  // ================= Multiplayer (BroadcastChannel) =================
+  const Multiplayer = {
+    channel: null,
+    room: '',
+    nick: 'PILOT',
+    localId: `P-${Math.random().toString(36).slice(2,8)}`,
+    peers: new Map(),
+    heartbeatCd: 0,
+    stateCd: 0,
+    joinedAt: 0,
+
+    setStatus(msg){
+      if (ui.mpStatus) ui.mpStatus.textContent = msg;
+    },
+
+    isActive(){ return !!this.channel; },
+
+    normalizeRoom(v){
+      return (v || '').trim().replace(/\s+/g,'-').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,20).toUpperCase();
+    },
+
+    join(roomInput, nickInput){
+      if (typeof BroadcastChannel === 'undefined'){
+        this.setStatus('当前浏览器不支持 BroadcastChannel');
+        return;
+      }
+      const room = this.normalizeRoom(roomInput) || 'NEP-ROOM';
+      this.leave(false);
+
+      this.room = room;
+      this.nick = (nickInput || '').trim().slice(0,16) || 'PILOT';
+      this.channel = new BroadcastChannel(`NEP:${room}`);
+      this.channel.onmessage = (ev)=> this.onMessage(ev.data);
+      this.joinedAt = performance.now();
+      this.broadcast({type:'hello', nick:this.nick});
+      this.setStatus(`已加入房间 ${room} · ID ${this.localId}`);
+    },
+
+    leave(announce=true){
+      if (announce && this.channel){
+        this.broadcast({type:'bye'});
+      }
+      if (this.channel){
+        this.channel.close();
+      }
+      this.channel = null;
+      this.peers.clear();
+      this.heartbeatCd = 0;
+      this.stateCd = 0;
+      this.setStatus('联机未连接');
+    },
+
+    broadcast(payload){
+      if (!this.channel) return;
+      this.channel.postMessage({
+        ...payload,
+        from: this.localId,
+        room: this.room,
+        t: performance.now(),
+      });
+    },
+
+    onMessage(msg){
+      if (!msg || !this.channel || msg.room !== this.room || msg.from === this.localId) return;
+      const now = performance.now();
+      const peer = this.peers.get(msg.from) || {id: msg.from, nick: msg.nick || 'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, lastSeen: now};
+      peer.lastSeen = now;
+      if (msg.nick) peer.nick = msg.nick;
+
+      if (msg.type === 'hello'){
+        this.peers.set(msg.from, peer);
+        this.broadcast({type:'hello_ack', nick:this.nick});
+      } else if (msg.type === 'hello_ack'){
+        this.peers.set(msg.from, peer);
+      } else if (msg.type === 'state' && msg.state){
+        Object.assign(peer, msg.state);
+        this.peers.set(msg.from, peer);
+      } else if (msg.type === 'bye'){
+        this.peers.delete(msg.from);
+      } else if (msg.type === 'start' && msg.cfg){
+        startRun(msg.cfg);
+        textPop(W*0.5, 120, `NET START · ${peer.nick}`, C.P2);
+      }
+      this.refreshStatus();
+    },
+
+    refreshStatus(){
+      if (!this.channel){ this.setStatus('联机未连接'); return; }
+      const list = [...this.peers.values()];
+      const names = list.slice(0,4).map(p=>p.nick).join(', ');
+      this.setStatus(`房间 ${this.room} · 在线 ${list.length+1} 人${names?` · ${names}`:''}`);
+    },
+
+    update(dt){
+      if (!this.channel) return;
+      this.heartbeatCd -= dt;
+      this.stateCd -= dt;
+
+      if (this.heartbeatCd <= 0){
+        this.heartbeatCd = 1.0;
+        this.broadcast({type:'hello', nick:this.nick});
+      }
+      if (Game.state === 'playing' && this.stateCd <= 0){
+        this.stateCd = 1/15;
+        this.broadcast({
+          type:'state',
+          nick:this.nick,
+          state:{
+            x: Player.x, y: Player.y,
+            hp: Player.hp, hpMax: Player.maxHp,
+            alive: Player.alive,
+            score: Game.score,
+            wave: Game.wave,
+          }
+        });
+      }
+
+      const now = performance.now();
+      for (const [id,p] of this.peers.entries()){
+        if ((now - p.lastSeen) > 4500) this.peers.delete(id);
+      }
+      this.refreshStatus();
+    },
+
+    syncStart(cfg){
+      if (!this.channel) return;
+      this.broadcast({type:'start', cfg, nick:this.nick});
+    },
+
+    drawPeers(){
+      if (!this.channel || !this.peers.size) return;
+      ctx.save();
+      ctx.globalCompositeOperation = PERF.additive ? 'lighter' : 'source-over';
+      for (const peer of this.peers.values()){
+        if (peer.alive === false) continue;
+        ctx.save();
+        ctx.translate(peer.x, peer.y);
+        ctx.strokeStyle = C.P2;
+        ctx.fillStyle = 'rgba(179,108,255,0.16)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0,-18); ctx.lineTo(-8,10); ctx.lineTo(0,15); ctx.lineTo(8,10); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        drawGlow(Spr.glowP2, 0, 15, 0.85, 0.7);
+        ctx.restore();
+
+        ctx.fillStyle = '#E7D8FF';
+        ctx.font = '700 10px "Consolas", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${peer.nick}  HP:${Math.max(0, Math.ceil(peer.hp||0))}`, peer.x, peer.y - 24);
+      }
+      ctx.restore();
+    }
+  };
+
   // ================= Main update =================
   function update(dt){
     BG_Effect.update(dt);
+    Multiplayer.update(dt);
     Game.time += dt;
     if (AutoPilot.active) {
       AutoPilot.update(dt);
@@ -12552,6 +12728,9 @@ function render(dt) {
     ctx.arc(Input.tx, Input.ty, 5, 0, Math.PI*2);
     ctx.stroke();
     ctx.restore();
+  }
+  if (Game.state !== 'menu') {
+    Multiplayer.drawPeers();
   }
   if (Game.state !== 'menu' && (Player.alive || Player.deathT > 0)) {
     drawPlayer();
@@ -15388,21 +15567,44 @@ function randomizeForgeState() {
 
 
 // ================= UI events (robust) =================
+ui.btnMpJoin?.addEventListener('click', ()=>{
+  Multiplayer.join(ui.inpMpRoom?.value, ui.inpMpNick?.value);
+});
+
+ui.btnMpLeave?.addEventListener('click', ()=>{
+  Multiplayer.leave();
+});
+
+ui.btnMpStart?.addEventListener('click', ()=>{
+  const wave = parseInt(document.getElementById('inpStartWave')?.value || '1') || 1;
+  const cfg = {mode:'survival', wave};
+  startRun(cfg);
+  Multiplayer.syncStart(cfg);
+});
+
+window.addEventListener('beforeunload', ()=> Multiplayer.leave(), {passive:true});
+
 const btnSurvival = document.getElementById('btnStartSurvival') || ui.btnStart;
 const waveInput  = document.getElementById('inpStartWave') || ui.inpWave;
 
 btnSurvival?.addEventListener('click', ()=>{
   const wave = parseInt(waveInput?.value) || 1;
-  startRun({mode:'survival', wave});
+  const cfg = {mode:'survival', wave};
+  startRun(cfg);
+  Multiplayer.syncStart(cfg);
 });
 
 document.getElementById('btnStartDuel')?.addEventListener('click', ()=>{
-  startRun({mode:'duel', wave:1});
+  const cfg = {mode:'duel', wave:1};
+  startRun(cfg);
+  Multiplayer.syncStart(cfg);
 });
 
 document.getElementById('btnStartLab')?.addEventListener('click', ()=>{
   const forge = (typeof readForgeSpecFromUI === 'function') ? readForgeSpecFromUI() : null;
-  startRun({mode:'lab', wave:1, forge});
+  const cfg = {mode:'lab', wave:1, forge};
+  startRun(cfg);
+  Multiplayer.syncStart(cfg);
 });
 
 ui.btnRestart?.addEventListener('click', () => {
@@ -15489,7 +15691,9 @@ document.getElementById('btnResumePause')?.addEventListener('click', ()=>{
 document.getElementById('btnStartChallenge')?.addEventListener('click', () => {
   // 读取输入框，默认为 1
   const w = parseInt(document.getElementById('inpStartWave')?.value) || 1;
-  startRun({mode: 'challenge', wave: w});
+  const cfg = {mode:'challenge', wave:w};
+  startRun(cfg);
+  Multiplayer.syncStart(cfg);
 });
 
 // 为暂停界面的重试按钮绑定逻辑
