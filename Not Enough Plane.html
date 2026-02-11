@@ -11077,6 +11077,16 @@ BG_Effect.init();
         peer.prepared = false;
         peer.prepareCfg = null;
         this.peers.set(msg.from, peer);
+      } else if (msg.type === 'prepare' && msg.cfg){
+        peer.prepared = true;
+        peer.prepareCfg = msg.cfg;
+        peer.buildA = msg.buildA || null;
+        this.peers.set(msg.from, peer);
+        this.tryAutoStart();
+      } else if (msg.type === 'unprepare'){
+        peer.prepared = false;
+        peer.prepareCfg = null;
+        this.peers.set(msg.from, peer);
       } else if (msg.type === 'bye'){
         const wasPrepared = !!peer.prepared;
         this.peers.delete(msg.from);
