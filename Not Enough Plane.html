@@ -11102,7 +11102,13 @@ BG_Effect.init();
 
     sendServer(payload){
       if (!this.socket || this.socket.readyState !== 1) return;
-      this.socket.send(JSON.stringify({ ...payload, from: this.localId, room: this.room, t: performance.now() }));
+      const msg = {
+        from: this.localId,
+        t: performance.now(),
+        ...payload,
+      };
+      msg.room = (payload && payload.room != null) ? payload.room : this.room;
+      this.socket.send(JSON.stringify(msg));
     },
 
     broadcast(payload){
