@@ -10993,6 +10993,7 @@ BG_Effect.init();
     localPrepared: false,
     pendingCfg: null,
     waitingStart: false,
+    hitCache: new Map(),
 
     setStatus(msg){
       if (ui.mpStatus) ui.mpStatus.textContent = msg;
@@ -11035,6 +11036,7 @@ BG_Effect.init();
       this.localPrepared = false;
       this.pendingCfg = null;
       this.waitingStart = false;
+      this.hitCache.clear();
       this.setStatus('联机未连接');
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
     },
@@ -11063,6 +11065,17 @@ BG_Effect.init();
         this.peers.set(msg.from, peer);
       } else if (msg.type === 'state' && msg.state){
         Object.assign(peer, msg.state);
+        peer.netBullets = Array.isArray(msg.state.bullets) ? msg.state.bullets.slice(0, 120) : [];
+        this.peers.set(msg.from, peer);
+      } else if (msg.type === 'prepare' && msg.cfg){
+        peer.prepared = true;
+        peer.prepareCfg = msg.cfg;
+        peer.buildA = msg.buildA || null;
+        this.peers.set(msg.from, peer);
+        this.tryAutoStart();
+      } else if (msg.type === 'unprepare'){
+        peer.prepared = false;
+        peer.prepareCfg = null;
         this.peers.set(msg.from, peer);
       } else if (msg.type === 'prepare' && msg.cfg){
         peer.prepared = true;
@@ -11080,8 +11093,48 @@ BG_Effect.init();
         if (wasPrepared && (this.localPrepared || (Game.lastStart && Game.lastStart.net))) this.onPeerDisconnected(peer.nick);
       } else if (msg.type === 'start' && msg.cfg){
         this.startPreparedMatch(msg.cfg, msg.from);
+      } else if (msg.type === 'peer_hit'){
+        if (Game.mode === 'workshop' && Game.state === 'playing' && Player.alive){
+          onPlayerHit(Math.max(1, msg.dmg || 1), 0);
+          textPop(Player.x, Player.y - 28, `HIT BY ${peer.nick}`, C.R);
+        }
       }
       this.refreshStatus();
+    },
+
+    cfgCompatible(cfgA, cfgB){
+      if (!cfgA || !cfgB) return false;
+      return cfgA.mode === cfgB.mode;
+    },
+
+    projectedPeer(peer){
+      if (!peer) return null;
+      const workshopMirror = (Game.mode === 'workshop');
+      return {
+        ...peer,
+        x: workshopMirror ? (W - (peer.x ?? W*0.5)) : (peer.x ?? W*0.5),
+        y: workshopMirror ? (H - (peer.y ?? H*0.75)) : (peer.y ?? H*0.75),
+        bullets: (peer.netBullets || []).map((b, i)=>({
+          id: `${peer.id}:${i}:${(b.t||0).toFixed(2)}`,
+          x: workshopMirror ? (W - (b.x ?? 0)) : (b.x ?? 0),
+          y: workshopMirror ? (H - (b.y ?? 0)) : (b.y ?? 0),
+          vx: workshopMirror ? -(b.vx ?? 0) : (b.vx ?? 0),
+          vy: workshopMirror ? -(b.vy ?? 0) : (b.vy ?? 0),
+          r: b.r ?? 3,
+          col: b.col || C.P2,
+          dmg: b.dmg ?? 8,
+        })),
+      };
+    },
+
+    collectLocalBulletState(){
+      const out = [];
+      for (const b of bulletsP){
+        if (!b.alive) continue;
+        out.push({x:b.x, y:b.y, vx:b.vx, vy:b.vy, r:b.r, col:b.col, dmg:b.dmg, t:b.t});
+        if (out.length >= 80) break;
+      }
+      return out;
     },
 
     validateRoomForMode(mode){
@@ -11137,6 +11190,10 @@ BG_Effect.init();
       const peers = [...this.peers.values()];
       if (!this.validateRoomForMode(this.pendingCfg.mode)) return;
       if (!peers.length || peers.some(p => !p.prepared || !p.prepareCfg)) return;
+      if (peers.some(p => !this.cfgCompatible(this.pendingCfg, p.prepareCfg))){
+        this.setStatus('PREPARE 失败：双方选择的 NET MODE 不一致');
+        return;
+      }
       if (this.leaderId() !== this.localId) return;
       this.broadcast({type:'start', cfg:this.pendingCfg, nick:this.nick});
       this.startPreparedMatch(this.pendingCfg, this.localId);
@@ -11192,10 +11249,18 @@ BG_Effect.init();
             x: Player.x, y: Player.y,
             hp: Player.hp, hpMax: Player.maxHp,
             alive: Player.alive,
+            shield: Player.shield,
+            invuln: Player.invuln,
             score: Game.score,
             wave: Game.wave,
+            bullets: this.collectLocalBulletState(),
           }
         });
+      }
+
+      const nowS = performance.now()/1000;
+      for (const [k,exp] of this.hitCache.entries()){
+        if (exp <= nowS) this.hitCache.delete(k);
       }
 
       const now = performance.now();
@@ -11217,10 +11282,12 @@ BG_Effect.init();
       ctx.globalCompositeOperation = PERF.additive ? 'lighter' : 'source-over';
       for (const peer of this.peers.values()){
         if (peer.alive === false) continue;
-        const rx = (Game.mode==='workshop') ? (W - peer.x) : peer.x;
-        const ry = (Game.mode==='workshop') ? (H - peer.y) : peer.y;
+        const pp = this.projectedPeer(peer);
+        const rx = pp.x;
+        const ry = pp.y;
         ctx.save();
         ctx.translate(rx, ry);
+        if (Game.mode==='workshop') ctx.rotate(Math.PI);
         ctx.strokeStyle = C.P2;
         ctx.fillStyle = 'rgba(179,108,255,0.16)';
         ctx.lineWidth = 2;
@@ -11233,9 +11300,52 @@ BG_Effect.init();
         ctx.fillStyle = '#E7D8FF';
         ctx.font = '700 10px "Consolas", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`${peer.nick}  HP:${Math.max(0, Math.ceil(peer.hp||0))}`, rx, ry - 24);
+        ctx.fillText(`${peer.nick}  HP:${Math.max(0, Math.ceil(peer.hp||0))} SHD:${(peer.shield||0).toFixed(1)}`, rx, ry - 24);
+
+        if ((peer.shield||0) > 0){
+          ctx.strokeStyle = 'rgba(179,108,255,0.8)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(rx, ry, 18 + Math.sin(Game.time*8)*1.5, 0, Math.PI*2);
+          ctx.stroke();
+        }
       }
       ctx.restore();
+    },
+
+    drawPeerBullets(){
+      if (!this.channel || !this.peers.size) return;
+      ctx.save();
+      for (const peer of this.peers.values()){
+        const pp = this.projectedPeer(peer);
+        for (const b of pp.bullets){
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = b.col || C.P2;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, Math.max(1.8, b.r||2.6), 0, Math.PI*2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    },
+
+    tryHitWorkshopPeerByBullet(b){
+      if (!this.channel || Game.mode !== 'workshop' || !b || !b.alive) return false;
+      for (const peer of this.peers.values()){
+        if (peer.alive === false) continue;
+        const pp = this.projectedPeer(peer);
+        if (!hitCircle(b.x,b.y,b.r, pp.x,pp.y, Player.r)) continue;
+        sparks(b.x,b.y,'glowP2', 8, 220);
+        if (b.pierce>0){
+          b.pierce--;
+          b.noHitT = 0.03;
+        } else {
+          killBullet(b, 'hit', {childMods: propagateMods(b.mods)});
+        }
+        this.broadcast({type:'peer_hit', dmg:b.dmg, nick:this.nick});
+        return true;
+      }
+      return false;
     }
   };
 
@@ -11355,6 +11465,8 @@ BG_Effect.init();
         // P bullets vs enemies
     for(const b of bulletsP){
       if (!b.alive || b.noHitT>0 || b._phaseGhost) continue;
+
+      if (Multiplayer.tryHitWorkshopPeerByBullet(b)) continue;
       
       // 清空上一轮的潜在目标
       _potentialTargets.length = 0;
@@ -12823,6 +12935,7 @@ function render(dt) {
   drawBeams();
   drawBullets(bulletsP);
   drawBullets(bulletsE);
+  if (Game.state !== 'menu') Multiplayer.drawPeerBullets();
 
   for (const e of enemies) if (e.alive) e.draw();
   drawSupplies();
@@ -13259,15 +13372,11 @@ setupPlayerEmittersFromBuild(b);
   }
 
   if (mode === 'workshop'){
-    // online workshop duel: both sides use Build A
+    // online workshop duel: no AI rival; remote player acts as opponent
     Game.wave = 1;
     Game.time = 0;
     Game.score = 0;
     enemies.length = 0;
-
-    const rivalBuild = clampBuild(deepClone(opponentBuild || Builds.A));
-    const rival = makeRivalFromBuild(rivalBuild);
-    enemies.push(rival);
 
     textPop(W*0.5, 92, 'WORKSHOP 1V1 (A vs A)', C.P2);
     spawnShockwave(W*0.5, 92, C.P2, 260, 0.58);
