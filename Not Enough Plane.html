@@ -1228,19 +1228,27 @@ input[type="checkbox"] {
     <option value="0">OFF — FIXED VIEW</option>
   </select>
 </div>
-<div class="field" style="margin-top:12px; border-top:1px dashed rgba(82,230,255,0.35); padding-top:10px;">
-  <label>MULTIPLAYER 联机 (BETA)</label>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-    <input id="inpMpRoom" type="text" maxlength="20" placeholder="房间号（同浏览器标签页）">
-    <input id="inpMpNick" type="text" maxlength="16" placeholder="昵称（默认 PILOT）">
+<details class="acc" style="margin-top:10px;">
+  <summary>联机 MULTIPLAYER <span class="muted">SURVIVAL / CHALLENGE / LAB / WORKSHOP</span></summary>
+  <div class="acc-body" style="padding-top:8px;">
+    <div class="field"><label>ROOM</label><input id="inpMpRoom" type="text" maxlength="20" placeholder="房间号（同浏览器标签页）"></div>
+    <div class="field"><label>NICK</label><input id="inpMpNick" type="text" maxlength="16" placeholder="昵称（默认 PILOT）"></div>
+    <div class="field"><label>NET MODE</label>
+      <select id="inpMpMode">
+        <option value="survival" selected>SURVIVAL</option>
+        <option value="challenge">CHALLENGE</option>
+        <option value="lab">LAB</option>
+        <option value="workshop">WORKSHOP 1V1 (A vs A)</option>
+      </select>
+    </div>
+    <div class="menu-actions" style="margin-top:8px;gap:8px;flex-wrap:wrap;justify-content:flex-start;">
+      <button id="btnMpJoin" class="mini-btn" style="border-color:var(--c-cyan);">JOIN</button>
+      <button id="btnMpLeave" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">LEAVE</button>
+      <button id="btnMpStart" class="mini-btn" style="border-color:var(--c-yellow);color:var(--c-yellow)">NET START</button>
+    </div>
+    <div id="mpStatus" class="muted" style="margin-top:6px; font-size:10px; word-break:break-word;">联机未连接</div>
   </div>
-  <div class="menu-actions" style="margin-top:8px;gap:8px;flex-wrap:wrap;justify-content:flex-start;">
-    <button id="btnMpJoin" class="mini-btn" style="border-color:var(--c-cyan);">JOIN ROOM</button>
-    <button id="btnMpLeave" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">LEAVE</button>
-    <button id="btnMpStart" class="mini-btn" style="border-color:var(--c-yellow);color:var(--c-yellow)">SYNC START</button>
-  </div>
-  <div id="mpStatus" class="muted" style="margin-top:6px; font-size:10px;">联机未连接</div>
-</div>
+</details>
             <div class="menu-actions">
               <button id="btnStartSurvival">START SURVIVAL (BUILD A)</button>
               <button id="btnStartChallenge" style="border-color:var(--c-danger);color:var(--c-danger)">CHAOS CHALLENGE (1v1)</button>
@@ -1778,6 +1786,7 @@ input[type="checkbox"] {
     btnMpJoin: $('btnMpJoin'),
     btnMpLeave: $('btnMpLeave'),
     btnMpStart: $('btnMpStart'),
+    inpMpMode: $('inpMpMode'),
     mpStatus: $('mpStatus'),
   };
 
@@ -8946,7 +8955,7 @@ for (const em of e.emitters){
         spawnShockwave(W*0.5, 92, C.P1, 240, 0.55);
         SFX.wave();
       }
-      ui.wave.textContent = (Game.mode==='duel') ? 'DUEL' : (Game.mode==='lab' ? 'LAB' : Game.wave);
+      ui.wave.textContent = (Game.mode==='duel') ? 'DUEL' : (Game.mode==='lab' ? 'LAB' : (Game.mode==='workshop' ? 'WORKSHOP' : Game.wave));
 
       if (!Game.bossAlive && t > BAL.bossMinTime && t-Game.lastBossAt > BAL.bossInterval){
         Game.lastBossAt = t;
@@ -13144,6 +13153,20 @@ setupPlayerEmittersFromBuild(b);
     spawnShockwave(W*0.5, 92, C.Y, 240, 0.55);
   }
 
+  if (mode === 'workshop'){
+    // online workshop duel: both sides use Build A
+    Game.wave = 1;
+    Game.time = 0;
+    Game.score = 0;
+    enemies.length = 0;
+
+    const rival = makeRivalFromBuild(Builds.A);
+    enemies.push(rival);
+
+    textPop(W*0.5, 92, 'WORKSHOP 1V1 (A vs A)', C.P2);
+    spawnShockwave(W*0.5, 92, C.P2, 260, 0.58);
+  }
+
 if (mode === 'lab'){
     Game.wave = 1;
     Game.time = 0;
@@ -15576,8 +15599,10 @@ ui.btnMpLeave?.addEventListener('click', ()=>{
 });
 
 ui.btnMpStart?.addEventListener('click', ()=>{
+  const mode = ui.inpMpMode?.value || 'survival';
   const wave = parseInt(document.getElementById('inpStartWave')?.value || '1') || 1;
-  const cfg = {mode:'survival', wave};
+  const forge = (mode === 'lab' && typeof readForgeSpecFromUI === 'function') ? readForgeSpecFromUI() : null;
+  const cfg = {mode, wave: (mode==='survival' || mode==='challenge') ? wave : 1, forge};
   startRun(cfg);
   Multiplayer.syncStart(cfg);
 });
@@ -15591,20 +15616,17 @@ btnSurvival?.addEventListener('click', ()=>{
   const wave = parseInt(waveInput?.value) || 1;
   const cfg = {mode:'survival', wave};
   startRun(cfg);
-  Multiplayer.syncStart(cfg);
 });
 
 document.getElementById('btnStartDuel')?.addEventListener('click', ()=>{
   const cfg = {mode:'duel', wave:1};
   startRun(cfg);
-  Multiplayer.syncStart(cfg);
 });
 
 document.getElementById('btnStartLab')?.addEventListener('click', ()=>{
   const forge = (typeof readForgeSpecFromUI === 'function') ? readForgeSpecFromUI() : null;
   const cfg = {mode:'lab', wave:1, forge};
   startRun(cfg);
-  Multiplayer.syncStart(cfg);
 });
 
 ui.btnRestart?.addEventListener('click', () => {
@@ -15693,7 +15715,6 @@ document.getElementById('btnStartChallenge')?.addEventListener('click', () => {
   const w = parseInt(document.getElementById('inpStartWave')?.value) || 1;
   const cfg = {mode:'challenge', wave:w};
   startRun(cfg);
-  Multiplayer.syncStart(cfg);
 });
 
 // 为暂停界面的重试按钮绑定逻辑
