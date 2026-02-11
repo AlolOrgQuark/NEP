@@ -1231,7 +1231,8 @@ input[type="checkbox"] {
 <details class="acc" style="margin-top:10px;">
   <summary>联机 MULTIPLAYER <span class="muted">SURVIVAL / CHALLENGE / LAB / WORKSHOP</span></summary>
   <div class="acc-body" style="padding-top:8px;">
-    <div class="field"><label>ROOM</label><input id="inpMpRoom" type="text" maxlength="20" placeholder="房间号（同浏览器标签页）"></div>
+    <div class="field"><label>SERVER</label><input id="inpMpServer" type="text" maxlength="120" placeholder="ws://127.0.0.1:8787"></div>
+    <div class="field"><label>ROOM</label><input id="inpMpRoom" type="text" maxlength="20" placeholder="房间号（大写字母/数字）"></div>
     <div class="field"><label>NICK</label><input id="inpMpNick" type="text" maxlength="16" placeholder="昵称（默认 PILOT）"></div>
     <div class="field"><label>NET MODE</label>
       <select id="inpMpMode">
@@ -1242,7 +1243,9 @@ input[type="checkbox"] {
       </select>
     </div>
     <div class="menu-actions" style="margin-top:8px;gap:8px;flex-wrap:wrap;justify-content:flex-start;">
-      <button id="btnMpJoin" class="mini-btn" style="border-color:var(--c-cyan);">JOIN</button>
+      <button id="btnMpConnect" class="mini-btn" style="border-color:var(--c-magenta);color:var(--c-magenta)">CONNECT</button>
+      <button id="btnMpCreate" class="mini-btn" style="border-color:var(--c-cyan);">CREATE ROOM</button>
+      <button id="btnMpJoin" class="mini-btn" style="border-color:var(--c-cyan);">JOIN ROOM</button>
       <button id="btnMpLeave" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">LEAVE</button>
       <button id="btnMpStart" class="mini-btn" style="border-color:var(--c-yellow);color:var(--c-yellow)">PREPARE</button>
     </div>
@@ -1781,8 +1784,11 @@ input[type="checkbox"] {
     btnRevive: $('btnRevive'),
     btnOption: $('btnOption'),
 
+    inpMpServer: $('inpMpServer'),
     inpMpRoom: $('inpMpRoom'),
     inpMpNick: $('inpMpNick'),
+    btnMpConnect: $('btnMpConnect'),
+    btnMpCreate: $('btnMpCreate'),
     btnMpJoin: $('btnMpJoin'),
     btnMpLeave: $('btnMpLeave'),
     btnMpStart: $('btnMpStart'),
@@ -10980,9 +10986,11 @@ const BG_Effect = {
 // 初始化背景
 BG_Effect.init();
 
-  // ================= Multiplayer (BroadcastChannel) =================
+  // ================= Multiplayer (WebSocket) =================
   const Multiplayer = {
-    channel: null,
+    socket: null,
+    connected: false,
+    serverUrl: '',
     room: '',
     nick: 'PILOT',
     localId: `P-${Math.random().toString(36).slice(2,8)}`,
@@ -10995,44 +11003,68 @@ BG_Effect.init();
     waitingStart: false,
     hitCache: new Map(),
 
-    setStatus(msg){
-      if (ui.mpStatus) ui.mpStatus.textContent = msg;
-    },
-
-    isActive(){ return !!this.channel; },
+    setStatus(msg){ if (ui.mpStatus) ui.mpStatus.textContent = msg; },
+    isActive(){ return this.connected && !!this.room; },
 
     normalizeRoom(v){
       return (v || '').trim().replace(/\s+/g,'-').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,20).toUpperCase();
     },
 
-    join(roomInput, nickInput){
-      if (typeof BroadcastChannel === 'undefined'){
-        this.setStatus('当前浏览器不支持 BroadcastChannel');
-        return;
-      }
-      const room = this.normalizeRoom(roomInput) || 'NEP-ROOM';
-      this.leave(false);
-
-      this.room = room;
-      this.nick = (nickInput || '').trim().slice(0,16) || 'PILOT';
-      this.channel = new BroadcastChannel(`NEP:${room}`);
-      this.channel.onmessage = (ev)=> this.onMessage(ev.data);
-      this.joinedAt = performance.now();
-      this.broadcast({type:'hello', nick:this.nick});
-      this.setStatus(`已加入房间 ${room} · ID ${this.localId}`);
+    normalizeServer(v){
+      const raw = (v || '').trim();
+      if (!raw) return '';
+      if (/^wss?:\/\//i.test(raw)) return raw;
+      return `ws://${raw}`;
     },
 
-    leave(announce=true){
-      if (announce && this.channel){
-        this.broadcast({type:'bye'});
+    connect(serverInput, nickInput){
+      const url = this.normalizeServer(serverInput) || 'ws://127.0.0.1:8787';
+      this.nick = (nickInput || '').trim().slice(0,16) || 'PILOT';
+      this.disconnect(false);
+      this.serverUrl = url;
+      this.setStatus(`连接服务器中 ${url} ...`);
+      try {
+        const ws = new WebSocket(url);
+        this.socket = ws;
+        ws.onopen = ()=>{
+          this.connected = true;
+          this.joinedAt = performance.now();
+          this.sendServer({type:'hello', nick:this.nick});
+          this.setStatus(`服务器在线 · ${url}`);
+        };
+        ws.onmessage = (ev)=>{
+          try { this.onServerMessage(JSON.parse(ev.data)); } catch(_){ }
+        };
+        ws.onclose = ()=>{
+          const hadRoom = !!this.room;
+          this.connected = false;
+          this.socket = null;
+          this.room = '';
+          this.peers.clear();
+          if (this.localPrepared || hadRoom || (Game.lastStart && Game.lastStart.net)){
+            this.onPeerDisconnected('SERVER');
+          } else {
+            this.setStatus('服务器已断开');
+          }
+          this.localPrepared = false;
+          this.pendingCfg = null;
+          this.waitingStart = false;
+          if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
+        };
+        ws.onerror = ()=> this.setStatus('服务器连接失败');
+      } catch(_){
+        this.setStatus('服务器地址无效');
       }
-      if (this.channel){
-        this.channel.close();
-      }
-      this.channel = null;
+    },
+
+    disconnect(announce=true){
+      this.leaveRoom(false);
+      if (announce) this.sendServer({type:'bye'});
+      if (this.socket){ try { this.socket.close(); } catch(_){} }
+      this.socket = null;
+      this.connected = false;
+      this.serverUrl = '';
       this.peers.clear();
-      this.heartbeatCd = 0;
-      this.stateCd = 0;
       this.localPrepared = false;
       this.pendingCfg = null;
       this.waitingStart = false;
@@ -11041,58 +11073,118 @@ BG_Effect.init();
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
     },
 
-    broadcast(payload){
-      if (!this.channel) return;
-      this.channel.postMessage({
-        ...payload,
-        from: this.localId,
-        room: this.room,
-        t: performance.now(),
-      });
+    createRoom(roomInput){
+      if (!this.connected) return this.setStatus('请先 CONNECT 到服务器');
+      const room = this.normalizeRoom(roomInput) || `ROOM-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+      this.sendServer({type:'create_room', room, nick:this.nick});
     },
 
-    onMessage(msg){
-      if (!msg || !this.channel || msg.room !== this.room || msg.from === this.localId) return;
+    joinRoom(roomInput){
+      if (!this.connected) return this.setStatus('请先 CONNECT 到服务器');
+      const room = this.normalizeRoom(roomInput);
+      if (!room) return this.setStatus('请输入房间号');
+      this.sendServer({type:'join_room', room, nick:this.nick});
+    },
+
+    leaveRoom(announce=true){
+      if (announce && this.connected && this.room){ this.sendServer({type:'leave_room'}); }
+      this.room = '';
+      this.peers.clear();
+      this.heartbeatCd = 0;
+      this.stateCd = 0;
+      this.localPrepared = false;
+      this.pendingCfg = null;
+      this.waitingStart = false;
+      this.hitCache.clear();
+      if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
+      this.refreshStatus();
+    },
+
+    sendServer(payload){
+      if (!this.socket || this.socket.readyState !== 1) return;
+      this.socket.send(JSON.stringify({ ...payload, from: this.localId, room: this.room, t: performance.now() }));
+    },
+
+    broadcast(payload){
+      if (!this.room) return;
+      this.sendServer({type:'relay', payload: { ...payload, nick: this.nick, room:this.room }});
+    },
+
+    onServerMessage(msg){
+      if (!msg) return;
+      if (msg.type === 'welcome'){
+        this.localId = msg.id || this.localId;
+        return;
+      }
+      if (msg.type === 'room_joined'){
+        this.room = msg.room || '';
+        this.peers.clear();
+        const peers = Array.isArray(msg.peers) ? msg.peers : [];
+        for (const p of peers){
+          if (!p || p.id === this.localId) continue;
+          this.peers.set(p.id, {id:p.id, nick:p.nick||'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, lastSeen:performance.now(), smoothBullets:[]});
+        }
+        this.setStatus(`已进入房间 ${this.room} · ${this.peers.size+1} 人`);
+        return;
+      }
+      if (msg.type === 'peer_joined'){
+        if (!msg.peer || msg.peer.id === this.localId) return;
+        const p = msg.peer;
+        this.peers.set(p.id, {id:p.id, nick:p.nick||'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, lastSeen:performance.now(), smoothBullets:[]});
+        this.refreshStatus();
+        return;
+      }
+      if (msg.type === 'peer_left'){
+        const peer = this.peers.get(msg.peerId);
+        if (peer){
+          this.peers.delete(msg.peerId);
+          if ((peer.prepared || this.localPrepared || (Game.lastStart && Game.lastStart.net))) this.onPeerDisconnected(peer.nick);
+        }
+        this.refreshStatus();
+        return;
+      }
+      if (msg.type === 'error'){
+        this.setStatus(msg.message || '服务器错误');
+        return;
+      }
+      if (msg.type === 'relay' && msg.payload){
+        this.onPeerMessage(msg.from, msg.payload);
+      }
+    },
+
+    onPeerMessage(from, msg){
+      if (!msg || from === this.localId || !this.room) return;
       const now = performance.now();
-      const peer = this.peers.get(msg.from) || {id: msg.from, nick: msg.nick || 'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, lastSeen: now};
+      const peer = this.peers.get(from) || {id: from, nick: msg.nick || 'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, lastSeen: now, smoothBullets:[]};
       peer.lastSeen = now;
       if (msg.nick) peer.nick = msg.nick;
 
       if (msg.type === 'hello'){
-        this.peers.set(msg.from, peer);
+        this.peers.set(from, peer);
         this.broadcast({type:'hello_ack', nick:this.nick});
       } else if (msg.type === 'hello_ack'){
-        this.peers.set(msg.from, peer);
+        this.peers.set(from, peer);
       } else if (msg.type === 'state' && msg.state){
         Object.assign(peer, msg.state);
         peer.netBullets = Array.isArray(msg.state.bullets) ? msg.state.bullets.slice(0, 120) : [];
-        this.peers.set(msg.from, peer);
+        peer.smoothBullets = this.smoothBulletState(peer, peer.netBullets);
+        this.peers.set(from, peer);
       } else if (msg.type === 'prepare' && msg.cfg){
         peer.prepared = true;
         peer.prepareCfg = msg.cfg;
         peer.buildA = msg.buildA || null;
-        this.peers.set(msg.from, peer);
+        this.peers.set(from, peer);
         this.tryAutoStart();
       } else if (msg.type === 'unprepare'){
         peer.prepared = false;
         peer.prepareCfg = null;
-        this.peers.set(msg.from, peer);
-      } else if (msg.type === 'prepare' && msg.cfg){
-        peer.prepared = true;
-        peer.prepareCfg = msg.cfg;
-        peer.buildA = msg.buildA || null;
-        this.peers.set(msg.from, peer);
-        this.tryAutoStart();
-      } else if (msg.type === 'unprepare'){
-        peer.prepared = false;
-        peer.prepareCfg = null;
-        this.peers.set(msg.from, peer);
+        this.peers.set(from, peer);
       } else if (msg.type === 'bye'){
         const wasPrepared = !!peer.prepared;
-        this.peers.delete(msg.from);
+        this.peers.delete(from);
         if (wasPrepared && (this.localPrepared || (Game.lastStart && Game.lastStart.net))) this.onPeerDisconnected(peer.nick);
       } else if (msg.type === 'start' && msg.cfg){
-        this.startPreparedMatch(msg.cfg, msg.from);
+        this.startPreparedMatch(msg.cfg, from);
       } else if (msg.type === 'peer_hit'){
         if (Game.mode === 'workshop' && Game.state === 'playing' && Player.alive){
           onPlayerHit(Math.max(1, msg.dmg || 1), 0);
@@ -11102,10 +11194,38 @@ BG_Effect.init();
       this.refreshStatus();
     },
 
-    cfgCompatible(cfgA, cfgB){
-      if (!cfgA || !cfgB) return false;
-      return cfgA.mode === cfgB.mode;
+    smoothBulletState(peer, incoming){
+      const prev = Array.isArray(peer.smoothBullets) ? peer.smoothBullets : [];
+      const now = performance.now()/1000;
+      const byKey = new Map(prev.map((b)=>[b.key, b]));
+      const next = [];
+      for (let i=0; i<incoming.length; i++){
+        const src = incoming[i] || {};
+        const key = `${src.seed || ''}:${(src.t||0).toFixed(2)}:${i}`;
+        const old = byKey.get(key);
+        const tx = src.x ?? 0, ty = src.y ?? 0;
+        const nx = old ? lerp(old.x, tx, 0.7) : tx;
+        const ny = old ? lerp(old.y, ty, 0.7) : ty;
+        next.push({
+          key,
+          alive:true,
+          x:nx, y:ny,
+          vx:src.vx ?? (old?.vx || 0), vy:src.vy ?? (old?.vy || 0),
+          r:src.r ?? 3,
+          col:src.col || C.P2,
+          dmg:src.dmg ?? 8,
+          spr:src.spr || 'glowP2',
+          style:src.style ?? 1,
+          team:'P',
+          t:src.t || now,
+          _phaseAlpha: src._phaseAlpha,
+          _phaseVisible: src._phaseVisible,
+        });
+      }
+      return next;
     },
+
+    cfgCompatible(cfgA, cfgB){ return !!cfgA && !!cfgB && cfgA.mode === cfgB.mode; },
 
     projectedPeer(peer){
       if (!peer) return null;
@@ -11114,15 +11234,13 @@ BG_Effect.init();
         ...peer,
         x: workshopMirror ? (W - (peer.x ?? W*0.5)) : (peer.x ?? W*0.5),
         y: workshopMirror ? (H - (peer.y ?? H*0.75)) : (peer.y ?? H*0.75),
-        bullets: (peer.netBullets || []).map((b, i)=>({
+        bullets: (peer.smoothBullets || []).map((b, i)=>({
+          ...b,
           id: `${peer.id}:${i}:${(b.t||0).toFixed(2)}`,
           x: workshopMirror ? (W - (b.x ?? 0)) : (b.x ?? 0),
           y: workshopMirror ? (H - (b.y ?? 0)) : (b.y ?? 0),
           vx: workshopMirror ? -(b.vx ?? 0) : (b.vx ?? 0),
           vy: workshopMirror ? -(b.vy ?? 0) : (b.vy ?? 0),
-          r: b.r ?? 3,
-          col: b.col || C.P2,
-          dmg: b.dmg ?? 8,
         })),
       };
     },
@@ -11131,22 +11249,16 @@ BG_Effect.init();
       const out = [];
       for (const b of bulletsP){
         if (!b.alive) continue;
-        out.push({x:b.x, y:b.y, vx:b.vx, vy:b.vy, r:b.r, col:b.col, dmg:b.dmg, t:b.t});
-        if (out.length >= 80) break;
+        out.push({x:b.x, y:b.y, vx:b.vx, vy:b.vy, r:b.r, col:b.col, dmg:b.dmg, t:b.t, spr:b.spr, style:b.style, _phaseAlpha:b._phaseAlpha, _phaseVisible:b._phaseVisible});
+        if (out.length >= 90) break;
       }
       return out;
     },
 
     validateRoomForMode(mode){
       const players = this.peers.size + 1;
-      if (mode === 'workshop' && players !== 2){
-        this.setStatus('WORKSHOP 房间必须 2 人（你 + 1 对手）');
-        return false;
-      }
-      if (players < 2){
-        this.setStatus('至少需要 2 人才可开始联机');
-        return false;
-      }
+      if (mode === 'workshop' && players !== 2){ this.setStatus('WORKSHOP 房间必须 2 人（你 + 1 对手）'); return false; }
+      if (players < 2){ this.setStatus('至少需要 2 人才可开始联机'); return false; }
       return true;
     },
 
@@ -11156,17 +11268,12 @@ BG_Effect.init();
     },
 
     prepare(cfg){
-      if (!this.channel) return;
+      if (!this.isActive()) return;
       if (!this.validateRoomForMode(cfg.mode)) return;
       this.localPrepared = true;
       this.pendingCfg = deepClone(cfg);
       this.waitingStart = true;
-      this.broadcast({
-        type:'prepare',
-        nick:this.nick,
-        cfg: this.pendingCfg,
-        buildA: cfg.mode==='workshop' ? deepClone(Builds.A) : null,
-      });
+      this.broadcast({ type:'prepare', nick:this.nick, cfg:this.pendingCfg, buildA: cfg.mode==='workshop' ? deepClone(Builds.A) : null });
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'CANCEL PREPARE';
       this.tryAutoStart();
       this.refreshStatus();
@@ -11176,24 +11283,19 @@ BG_Effect.init();
       this.localPrepared = false;
       this.pendingCfg = null;
       this.waitingStart = false;
-      if (announce && this.channel) this.broadcast({type:'unprepare', nick:this.nick});
+      if (announce && this.isActive()) this.broadcast({type:'unprepare', nick:this.nick});
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
       this.refreshStatus();
     },
 
-    leaderId(){
-      return [this.localId, ...this.peers.keys()].sort()[0];
-    },
+    leaderId(){ return [this.localId, ...this.peers.keys()].sort()[0]; },
 
     tryAutoStart(){
-      if (!this.channel || !this.localPrepared || !this.pendingCfg) return;
+      if (!this.isActive() || !this.localPrepared || !this.pendingCfg) return;
       const peers = [...this.peers.values()];
       if (!this.validateRoomForMode(this.pendingCfg.mode)) return;
       if (!peers.length || peers.some(p => !p.prepared || !p.prepareCfg)) return;
-      if (peers.some(p => !this.cfgCompatible(this.pendingCfg, p.prepareCfg))){
-        this.setStatus('PREPARE 失败：双方选择的 NET MODE 不一致');
-        return;
-      }
+      if (peers.some(p => !this.cfgCompatible(this.pendingCfg, p.prepareCfg))){ this.setStatus('PREPARE 失败：双方选择的 NET MODE 不一致'); return; }
       if (this.leaderId() !== this.localId) return;
       this.broadcast({type:'start', cfg:this.pendingCfg, nick:this.nick});
       this.startPreparedMatch(this.pendingCfg, this.localId);
@@ -11203,9 +11305,7 @@ BG_Effect.init();
       if (!cfg) return;
       const starter = (starterId === this.localId) ? this.nick : (this.peers.get(starterId)?.nick || 'PILOT');
       const netCfg = deepClone(cfg);
-      if (netCfg.mode === 'workshop'){
-        netCfg.opponentBuild = this.getWorkshopOpponentBuild();
-      }
+      if (netCfg.mode === 'workshop') netCfg.opponentBuild = this.getWorkshopOpponentBuild();
       startRun({...netCfg, net:true});
       this.localPrepared = false;
       this.pendingCfg = null;
@@ -11216,13 +11316,14 @@ BG_Effect.init();
 
     onPeerDisconnected(nick='PILOT'){
       this.setStatus(`${nick} 掉线，已自动踢出房间`);
-      this.leave(false);
+      this.leaveRoom(false);
       toMenu();
       textPop(W*0.5, 120, `对手掉线 · 已退房`, C.R);
     },
 
     refreshStatus(){
-      if (!this.channel){ this.setStatus('联机未连接'); return; }
+      if (!this.connected){ this.setStatus('联机未连接'); return; }
+      if (!this.room){ this.setStatus(`已连接服务器 ${this.serverUrl} · 未加入房间`); return; }
       const list = [...this.peers.values()];
       const names = list.slice(0,4).map(p=>p.nick).join(', ');
       const preparedPeers = list.filter(p=>p.prepared).length;
@@ -11232,59 +11333,34 @@ BG_Effect.init();
     },
 
     update(dt){
-      if (!this.channel) return;
+      if (!this.connected || !this.room) return;
       this.heartbeatCd -= dt;
       this.stateCd -= dt;
-
-      if (this.heartbeatCd <= 0){
-        this.heartbeatCd = 1.0;
-        this.broadcast({type:'hello', nick:this.nick});
-      }
+      if (this.heartbeatCd <= 0){ this.heartbeatCd = 0.8; this.broadcast({type:'hello', nick:this.nick}); }
       if (Game.state === 'playing' && this.stateCd <= 0){
-        this.stateCd = 1/15;
-        this.broadcast({
-          type:'state',
-          nick:this.nick,
-          state:{
-            x: Player.x, y: Player.y,
-            hp: Player.hp, hpMax: Player.maxHp,
-            alive: Player.alive,
-            shield: Player.shield,
-            invuln: Player.invuln,
-            score: Game.score,
-            wave: Game.wave,
-            bullets: this.collectLocalBulletState(),
-          }
-        });
+        this.stateCd = 1/30;
+        this.broadcast({ type:'state', nick:this.nick, state:{ x: Player.x, y: Player.y, hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState() } });
       }
-
       const nowS = performance.now()/1000;
-      for (const [k,exp] of this.hitCache.entries()){
-        if (exp <= nowS) this.hitCache.delete(k);
-      }
-
+      for (const [k,exp] of this.hitCache.entries()) if (exp <= nowS) this.hitCache.delete(k);
       const now = performance.now();
       for (const [id,p] of this.peers.entries()){
         if ((now - p.lastSeen) > 4500){
           this.peers.delete(id);
-          if ((p.prepared || this.localPrepared || (Game.lastStart && Game.lastStart.net))){
-            this.onPeerDisconnected(p.nick);
-            return;
-          }
+          if ((p.prepared || this.localPrepared || (Game.lastStart && Game.lastStart.net))){ this.onPeerDisconnected(p.nick); return; }
         }
       }
       this.refreshStatus();
     },
 
     drawPeers(){
-      if (!this.channel || !this.peers.size) return;
+      if (!this.room || !this.peers.size) return;
       ctx.save();
       ctx.globalCompositeOperation = PERF.additive ? 'lighter' : 'source-over';
       for (const peer of this.peers.values()){
         if (peer.alive === false) continue;
         const pp = this.projectedPeer(peer);
-        const rx = pp.x;
-        const ry = pp.y;
+        const rx = pp.x, ry = pp.y;
         ctx.save();
         ctx.translate(rx, ry);
         if (Game.mode==='workshop') ctx.rotate(Math.PI);
@@ -11296,12 +11372,10 @@ BG_Effect.init();
         ctx.fill(); ctx.stroke();
         drawGlow(Spr.glowP2, 0, 15, 0.85, 0.7);
         ctx.restore();
-
         ctx.fillStyle = '#E7D8FF';
         ctx.font = '700 10px "Consolas", monospace';
         ctx.textAlign = 'center';
         ctx.fillText(`${peer.nick}  HP:${Math.max(0, Math.ceil(peer.hp||0))} SHD:${(peer.shield||0).toFixed(1)}`, rx, ry - 24);
-
         if ((peer.shield||0) > 0){
           ctx.strokeStyle = 'rgba(179,108,255,0.8)';
           ctx.lineWidth = 1.5;
@@ -11314,34 +11388,30 @@ BG_Effect.init();
     },
 
     drawPeerBullets(){
-      if (!this.channel || !this.peers.size) return;
+      if (!this.room || !this.peers.size) return;
       ctx.save();
+      if (PERF.additive) ctx.globalCompositeOperation='lighter';
+      const minX = -50, maxX = W+50, minY = -50, maxY = H+50;
       for (const peer of this.peers.values()){
         const pp = this.projectedPeer(peer);
         for (const b of pp.bullets){
-          ctx.globalAlpha = 0.9;
-          ctx.fillStyle = b.col || C.P2;
-          ctx.beginPath();
-          ctx.arc(b.x, b.y, Math.max(1.8, b.r||2.6), 0, Math.PI*2);
-          ctx.fill();
+          if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
+          drawBulletVisual(b);
         }
       }
+      ctx.globalCompositeOperation='source-over';
       ctx.restore();
     },
 
     tryHitWorkshopPeerByBullet(b){
-      if (!this.channel || Game.mode !== 'workshop' || !b || !b.alive) return false;
+      if (!this.room || Game.mode !== 'workshop' || !b || !b.alive) return false;
       for (const peer of this.peers.values()){
         if (peer.alive === false) continue;
         const pp = this.projectedPeer(peer);
         if (!hitCircle(b.x,b.y,b.r, pp.x,pp.y, Player.r)) continue;
         sparks(b.x,b.y,'glowP2', 8, 220);
-        if (b.pierce>0){
-          b.pierce--;
-          b.noHitT = 0.03;
-        } else {
-          killBullet(b, 'hit', {childMods: propagateMods(b.mods)});
-        }
+        if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; }
+        else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
         this.broadcast({type:'peer_hit', dmg:b.dmg, nick:this.nick});
         return true;
       }
@@ -12522,44 +12592,39 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
   }
 
 
+  function drawBulletVisual(b){
+    if (!b || !b.alive) return;
+    if (b._phaseVisible === false){
+      const spr = Spr[b.spr] || Spr.glowW;
+      drawGlow(spr, b.x, b.y, 0.20, 0.15);
+      return;
+    }
+    if (b.style===1){
+      const n = Math.hypot(b.vx,b.vy) || 1;
+      const ux=b.vx/n, uy=b.vy/n;
+      const len = (b.team==='P') ? 22 : 14;
+      ctx.globalAlpha = 0.6 * ((b._phaseAlpha != null) ? b._phaseAlpha : 1.0);
+      ctx.strokeStyle = rgbToRgba(b.col, 0.9);
+      ctx.lineWidth = b.r;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(b.x,b.y);
+      ctx.lineTo(b.x-ux*len, b.y-uy*len);
+      ctx.stroke();
+    }
+    const spr = Spr[b.spr] || Spr.glowW;
+    const pulse = 1.0 + 0.2*Math.sin(Game.time*20 + (b.t||0)*10);
+    const alpha = (b._phaseAlpha != null) ? b._phaseAlpha : 1.0;
+    drawGlow(spr, b.x,b.y, (0.50 + b.r*0.08)*pulse, alpha);
+  }
+
   function drawBullets(arr){
     if (PERF.additive) ctx.globalCompositeOperation='lighter';
-    
-    // 预计算可视区域边界 (额外留出 50px buffer 防止边缘闪烁)
     const minX = -50, maxX = W+50, minY = -50, maxY = H+50;
-    
     for(const b of arr){
       if (!b.alive) continue;
-      
-      // 核心优化：剔除屏幕外的子弹，不执行绘制指令
       if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
-      
-      
-      if (b._phaseVisible === false){
-        const spr = Spr[b.spr] || Spr.glowW;
-        drawGlow(spr, b.x, b.y, 0.20, 0.15);   // 极淡残影
-        continue;
-      }
-      // Draw tail/streak if fast style
-            if (b.style===1){
-        const n = Math.hypot(b.vx,b.vy) || 1;
-        const ux=b.vx/n, uy=b.vy/n;
-        const len = (b.team==='P') ? 22 : 14;
-        ctx.globalAlpha = 0.6 * ((b._phaseAlpha != null) ? b._phaseAlpha : 1.0);
-        ctx.strokeStyle = rgbToRgba(b.col, 0.9);
-        ctx.lineWidth = b.r;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(b.x,b.y);
-        ctx.lineTo(b.x-ux*len, b.y-uy*len);
-        ctx.stroke();
-      }
-      
-      // Draw glow sprite
-      const spr = Spr[b.spr] || Spr.glowW;
-      const pulse = 1.0 + 0.2*Math.sin(Game.time*20 + b.t*10);
-            const alpha = (b._phaseAlpha != null) ? b._phaseAlpha : 1.0;
-      drawGlow(spr, b.x,b.y, (0.50 + b.r*0.08)*pulse, alpha);
+      drawBulletVisual(b);
     }
     ctx.globalCompositeOperation='source-over';
   }
@@ -15806,12 +15871,22 @@ function randomizeForgeState() {
 
 
 // ================= UI events (robust) =================
+if (ui.inpMpServer && !ui.inpMpServer.value) ui.inpMpServer.value = 'ws://127.0.0.1:8787';
+
+ui.btnMpConnect?.addEventListener('click', ()=>{
+  Multiplayer.connect(ui.inpMpServer?.value, ui.inpMpNick?.value);
+});
+
+ui.btnMpCreate?.addEventListener('click', ()=>{
+  Multiplayer.createRoom(ui.inpMpRoom?.value);
+});
+
 ui.btnMpJoin?.addEventListener('click', ()=>{
-  Multiplayer.join(ui.inpMpRoom?.value, ui.inpMpNick?.value);
+  Multiplayer.joinRoom(ui.inpMpRoom?.value);
 });
 
 ui.btnMpLeave?.addEventListener('click', ()=>{
-  Multiplayer.leave();
+  Multiplayer.disconnect();
 });
 
 ui.btnMpStart?.addEventListener('click', ()=>{
@@ -15830,7 +15905,7 @@ ui.btnMpStart?.addEventListener('click', ()=>{
   Multiplayer.prepare(cfg);
 });
 
-window.addEventListener('beforeunload', ()=> Multiplayer.leave(), {passive:true});
+window.addEventListener('beforeunload', ()=> Multiplayer.disconnect(), {passive:true});
 
 const btnSurvival = document.getElementById('btnStartSurvival') || ui.btnStart;
 const waveInput  = document.getElementById('inpStartWave') || ui.inpWave;
@@ -15888,7 +15963,7 @@ ui.btnRestart?.addEventListener('click', () => {
   });
 });
 ui.btnBack?.addEventListener('click', ()=>{
-  if (Game.lastStart?.net) Multiplayer.leave();
+  if (Game.lastStart?.net) Multiplayer.disconnect();
   toMenu();
 });
 ui.btnPause?.addEventListener('click', ()=>{ if (Game.state==='playing'||Game.state==='paused') togglePause(); });
@@ -15942,7 +16017,7 @@ document.getElementById('btnResumePause')?.addEventListener('click', ()=>{
   // Exit to Menu 按钮
   document.getElementById('btnOptMenu')?.addEventListener('click', () => {
     showOverlay('optionPanel', false);
-    if (Game.lastStart?.net) Multiplayer.leave();
+    if (Game.lastStart?.net) Multiplayer.disconnect();
     toMenu();
   });
 })();
