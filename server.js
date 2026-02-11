@@ -83,15 +83,11 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    if (msg.type === 'create_room' || msg.type === 'join_room') {
+    if (msg.type === 'join_room') {
       c.nick = (msg.nick || c.nick || 'PILOT').toString().trim().slice(0, 16) || 'PILOT';
       const room = (msg.room || '').toString().trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20).toUpperCase();
       if (!room) {
         safeSend(ws, { type: 'error', message: 'invalid room' });
-        return;
-      }
-      if (msg.type === 'join_room' && !rooms.has(room)) {
-        safeSend(ws, { type: 'error', message: `room ${room} not found` });
         return;
       }
       joinRoom(ws, room);
@@ -131,4 +127,4 @@ wss.on('connection', (ws) => {
   });
 });
 
-console.log(`[NEP] WebSocket server running on ws://0.0.0.0:${PORT}`);
+console.log(`[NEP] Realtime server running on ws://0.0.0.0:${PORT} (join-only room flow)`);
