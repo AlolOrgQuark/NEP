@@ -2568,12 +2568,26 @@ const addShake = (m, t=0.16) => {
   };
 
   // ================= Input =================
-  const Input = {
+const Input = {
     active:false,
     px:W*0.5, py:H*0.78,
     tx:W*0.5, ty:H*0.78
   };
   const hoverOffset = 64;
+
+  // 桌面鼠标输入缓冲：避免高回报率鼠标在 pointermove 中频繁计算导致卡顿
+  const MouseAim = {
+    dirty: false,
+    x: 0,
+    y: 0,
+    push(x, y){ this.x = x; this.y = y; this.dirty = true; },
+    consume(){
+      if (!this.dirty) return false;
+      this.dirty = false;
+      updateDragInput(this.x, this.y);
+      return true;
+    }
+  };
 
   // ================================================================
   //  输入系统：移动端 DRAG/JOYSTICK  |  桌面端 MOUSE/KEYBOARD
@@ -2734,6 +2748,21 @@ function updateDragInput(cx, cy) {
   }
 }
 
+// 联机场景下如果出现 pointer capture 丢失，允许一键恢复本地输入
+function recoverLocalControl(){
+  Input.active = (!IS_TOUCH && inputMode === 'mouse');
+  Input.pid = null;
+  Joy.active = false;
+  Joy.pid = null;
+  Joy.dx = 0;
+  Joy.dy = 0;
+  Input.tx = Player.x;
+  Input.ty = Player.y;
+  Input.px = Player.x;
+  Input.py = Player.y;
+  joyUpdateVisual();
+}
+
   canvas.addEventListener('pointerdown', (e) => {
     if (Game.state !== 'playing') return;
     ensureAudio();
@@ -2767,6 +2796,13 @@ function updateDragInput(cx, cy) {
   }, {passive: true});
 
   canvas.addEventListener('pointermove', (e) => {
+    // 桌面 mouse 模式：仅缓存坐标，主循环每帧消费一次，避免高频同步卡顿
+    if (!IS_TOUCH && inputMode === 'mouse'){
+      Input.active = true;
+      MouseAim.push(e.clientX, e.clientY);
+      return;
+    }
+
     if (e.pointerId !== Input.pid) return;
 
     if (inputMode === 'joystick'){
@@ -11006,6 +11042,7 @@ BG_Effect.init();
     rtcPeerId: '',
     rtcReconnectCd: 0,
     worldSyncCd: 0,
+    worldSyncSeq: 0,
 
     setStatus(msg){ if (ui.mpStatus) ui.mpStatus.textContent = msg; },
     isActive(){ return this.connected && !!this.room; },
@@ -11076,6 +11113,7 @@ BG_Effect.init();
       this.hitCache.clear();
       this.resetRtc();
       this.worldSyncCd = 0;
+      this.worldSyncSeq = 0;
       this.setStatus('联机未连接');
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
     },
@@ -11099,6 +11137,7 @@ BG_Effect.init();
       this.hitCache.clear();
       this.resetRtc();
       this.worldSyncCd = 0;
+      this.worldSyncSeq = 0;
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
       this.refreshStatus();
     },
@@ -11190,24 +11229,28 @@ BG_Effect.init();
       } catch(_){ }
     },
 
-    serializeWorldState(){
+    serializeWorldState(includeBullets=true){
       return {
         t: performance.now(),
         mode: Game.mode,
         wave: Game.wave,
         score: Game.score,
         spawnerCd: Spawner.cd,
-        enemies: enemies.slice(0,80).map((e, i)=>({
+        enemies: enemies.slice(0,64).map((e, i)=>({
           k: e.spawnId || `${e.type||'E'}:${i}`,
           x:e.x,y:e.y,vx:e.vx,vy:e.vy,hp:e.hp,maxHp:e.maxHp,r:e.r,
           col:e.baseCol||e.tint||C.E1,type:e.type||'ENEMY'
         })),
-        bulletsE: bulletsE.slice(0,140).map((b)=>({x:b.x,y:b.y,vx:b.vx,vy:b.vy,r:b.r,col:b.col,dmg:b.dmg,t:b.t,spr:b.spr,style:b.style}))
+        bulletsE: includeBullets
+          ? bulletsE.slice(0,72).map((b)=>({x:b.x,y:b.y,vx:b.vx,vy:b.vy,r:b.r,col:b.col,dmg:b.dmg,t:b.t,spr:b.spr,style:b.style}))
+          : null
       };
     },
 
-    applyWorldState(world){
+    applyWorldState(world, relayTs=0){
       if (!world || !world.mode || world.mode !== Game.mode || Game.state !== 'playing') return;
+      // 估算 relay one-way 延迟并做轻量前推，降低“场景慢半拍”观感
+      const leadS = clamp(((Date.now() - (relayTs || 0)) / 1000) + 0.02, 0, 0.22);
       if (world.wave != null) Game.wave = world.wave;
       if (world.score != null) Game.score = Math.max(Game.score, world.score);
       if (world.spawnerCd != null) Spawner.cd = world.spawnerCd;
@@ -11222,7 +11265,8 @@ BG_Effect.init();
           e.emitters = [];
           enemies.push(e);
         }
-        e.x = src.x ?? e.x; e.y = src.y ?? e.y;
+        e.x = (src.x ?? e.x) + (src.vx ?? e.vx ?? 0) * leadS;
+        e.y = (src.y ?? e.y) + (src.vy ?? e.vy ?? 0) * leadS;
         e.vx = src.vx ?? e.vx; e.vy = src.vy ?? e.vy;
         e.hp = src.hp ?? e.hp; e.maxHp = src.maxHp ?? e.maxHp;
         e.r = src.r ?? e.r;
@@ -11234,8 +11278,14 @@ BG_Effect.init();
         const e = enemies[i];
         if (!used.has(e) && !e.isBoss) enemies.splice(i,1);
       }
-      bulletsE.length = 0;
-      for (const b of (world.bulletsE || [])) bulletsE.push({...b, alive:true});
+      // 子弹快照是高开销项，允许发送端按帧抽样；仅在收到时替换
+      if (Array.isArray(world.bulletsE)){
+        bulletsE.length = 0;
+        for (const b of world.bulletsE){
+          const vx = b.vx ?? 0, vy = b.vy ?? 0;
+          bulletsE.push({...b, x:(b.x ?? 0) + vx * leadS, y:(b.y ?? 0) + vy * leadS, alive:true});
+        }
+      }
     },
 
     onServerMessage(msg){
@@ -11279,11 +11329,11 @@ BG_Effect.init();
         return;
       }
       if (msg.type === 'relay' && msg.payload){
-        this.onPeerMessage(msg.from, msg.payload);
+        this.onPeerMessage(msg.from, msg.payload, msg.t || 0);
       }
     },
 
-    onPeerMessage(from, msg){
+    onPeerMessage(from, msg, relayTs=0){
       if (!msg || from === this.localId || !this.room) return;
       const now = performance.now();
       const peer = this.peers.get(from) || {id: from, nick: msg.nick || 'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, lastSeen: now, smoothBullets:[]};
@@ -11293,7 +11343,7 @@ BG_Effect.init();
       if (msg.type === 'rtc_offer' || msg.type === 'rtc_answer' || msg.type === 'rtc_ice'){
         this.onRtcSignal(from, msg);
       } else if (msg.type === 'world_sync' && msg.world){
-        this.applyWorldState(msg.world);
+        this.applyWorldState(msg.world, relayTs);
       } else if (msg.type === 'hello'){
         this.peers.set(from, peer);
         this.broadcast({type:'hello_ack', nick:this.nick});
@@ -11487,8 +11537,12 @@ BG_Effect.init();
       if (Game.state === 'playing' && Game.mode !== 'workshop'){
         this.worldSyncCd -= dt;
         if (this.worldSyncCd <= 0 && this.leaderId() === this.localId){
-          this.worldSyncCd = 0.2;
-          this.sendNet({type:'world_sync', world:this.serializeWorldState()});
+          const heavy = enemies.length + bulletsE.length;
+          const hz = (heavy > 180) ? 8 : (heavy > 110 ? 10 : 12);
+          this.worldSyncCd = 1 / hz;
+          this.worldSyncSeq = (this.worldSyncSeq + 1) | 0;
+          const includeBullets = (this.worldSyncSeq % 2) === 0 || heavy < 120;
+          this.sendNet({type:'world_sync', world:this.serializeWorldState(includeBullets)});
         }
       }
       const nowS = performance.now()/1000;
@@ -11574,6 +11628,10 @@ BG_Effect.init();
     BG_Effect.update(dt);
     Multiplayer.update(dt);
     Game.time += dt;
+
+    // 仅在主循环中消费一次鼠标目标，避免 pointermove 高频触发计算
+    if (!IS_TOUCH && inputMode === 'mouse') MouseAim.consume();
+
     if (AutoPilot.active) {
       AutoPilot.update(dt);
     }
@@ -13497,6 +13555,7 @@ applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
   function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild=null} = {}){
   // 1. Reset
   resetGame();
+  recoverLocalControl();
   Game.lastStart = { 
     mode, 
     wave, 
