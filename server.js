@@ -5,7 +5,7 @@ const PORT = Number(process.env.PORT || 8787);
 const TICK_MS = 50;
 const DT = TICK_MS / 1000;
 const PLAYER_TIMEOUT_MS = 12_000;
-const WORLD_PUSH_EVERY_TICKS = 2;
+const WORLD_PUSH_EVERY_TICKS = 1;
 
 const wss = new WebSocketServer({ port: PORT });
 

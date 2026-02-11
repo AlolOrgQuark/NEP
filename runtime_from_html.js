@@ -215,7 +215,7 @@ function createHeadlessGameRuntime() {
   function start(mode, wave) {
     const safeMode = JSON.stringify(mode || 'survival');
     const safeWave = Math.max(1, Number(wave) || 1);
-    exec(`audioOn = false; startRun({mode:${safeMode}, wave:${safeWave}, net:true}); Game.lastStart.net = true; if (typeof ui==='object'){ const __d = document.getElementById('bombDotStub'); ui.bombDots = new Proxy([], { get:(t,k)=> (k in t ? t[k] : __d) }); }`);
+    exec(`audioOn = false; startRun({mode:${safeMode}, wave:${safeWave}, net:false}); if (typeof ui==='object'){ const __d = document.getElementById('bombDotStub'); ui.bombDots = new Proxy([], { get:(t,k)=> (k in t ? t[k] : __d) }); }`);
   }
 
   function tick(dt, players) {
@@ -280,7 +280,11 @@ function createHeadlessGameRuntime() {
         type:e.type||'ENEMY'
       })),
       bulletsE: bulletsE.slice(0,140).map((b)=>({
-        x:b.x,y:b.y,vx:b.vx,vy:b.vy,r:b.r,col:b.col,dmg:b.dmg,t:b.t,spr:b.spr,style:b.style
+        x:b.x,y:b.y,vx:b.vx,vy:b.vy,r:b.r,col:b.col,dmg:b.dmg,t:b.t,spr:b.spr,style:b.style,
+        life:b.life,noHitT:b.noHitT,turnAfter:b.turnAfter,reverseT:b.reverseT,
+        accel:b.accel,angVel:b.angVel,pauseT:b.pauseT,homing:b.homing,
+        waveA:b.waveA,waveF:b.waveF,waveP:b.waveP,mineT:b.mineT,bounce:b.bounce,
+        mods:Array.isArray(b.mods)?b.mods:[]
       }))
     })`);
     return JSON.parse(json);
