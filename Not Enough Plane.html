@@ -11385,7 +11385,7 @@ BG_Effect.init();
       const peers = [...this.peers.values()];
       if (!this.validateRoomForMode(this.pendingCfg.mode)) return;
       if (!peers.length || peers.some(p => !p.prepared)) return;
-      if (this.leaderId() !== this.localId) return;
+      // Server is authoritative for room start; any prepared player can request start.
       this.sendServer({type:'start_request', cfg:this.pendingCfg, nick:this.nick});
     },
 
@@ -11434,16 +11434,9 @@ BG_Effect.init();
           state:{ x: Player.x, y: Player.y, hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState() }
         });
       }
-      if (Game.state === 'playing' && Game.mode !== 'workshop' && this.leaderId() === this.localId){
-        this.worldSyncCd -= dt;
-        if (this.worldSyncCd <= 0){
-          const heavy = enemies.length + bulletsE.length;
-          const hz = (heavy > 180) ? 8 : (heavy > 110 ? 10 : 12);
-          this.worldSyncCd = 1 / hz;
-          this.worldSyncSeq = (this.worldSyncSeq + 1) | 0;
-          const includeBullets = (this.worldSyncSeq % 2) === 0 || heavy < 120;
-          this.sendServer({type:'world_state', world:this.serializeWorldState(includeBullets)});
-        }
+      // Server-authoritative world simulation: clients no longer relay world snapshots.
+      if (Game.state === 'playing' && Game.mode !== 'workshop'){
+        this.worldSyncCd = 0;
       }
       const nowS = performance.now()/1000;
       for (const [k,exp] of this.hitCache.entries()) if (exp <= nowS) this.hitCache.delete(k);
