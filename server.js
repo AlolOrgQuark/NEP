@@ -1,5 +1,4 @@
 const { WebSocketServer } = require('ws');
-const dgram = require('dgram');
 const { createHeadlessGameRuntime } = require('./runtime_from_html');
 
 const PORT = Number(process.env.PORT || 8787);
@@ -7,15 +6,11 @@ const TICK_MS = 50;
 const DT = TICK_MS / 1000;
 const PLAYER_TIMEOUT_MS = 12_000;
 const WORLD_PUSH_EVERY_TICKS = 1;
-const FULL_STATE_EVERY_TICKS = 10;
-const UDP_PORT = Number(process.env.UDP_PORT || PORT);
 
 const wss = new WebSocketServer({ port: PORT });
 
 const clients = new Map();
-const clientsById = new Map();
 const rooms = new Map();
-const udpServer = dgram.createSocket('udp4');
 
 const uid = () => `P-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -31,16 +26,6 @@ function clipNum(v, d = 0) {
 function safeSend(ws, payload) {
   if (!ws || ws.readyState !== ws.OPEN) return;
   ws.send(JSON.stringify(payload));
-}
-
-function safeSendUdp(endpoint, payload) {
-  if (!endpoint?.port || !endpoint?.address) return;
-  try {
-    const buf = Buffer.from(JSON.stringify(payload));
-    udpServer.send(buf, endpoint.port, endpoint.address);
-  } catch {
-    // ignore bad endpoint / payload
-  }
 }
 
 function sanitizeRoom(raw) {
@@ -300,17 +285,6 @@ function handleMessage(ws, msg) {
     return;
   }
 
-  if (msg.type === 'udp_bind') {
-    const port = clipNum(msg.port, 0) | 0;
-    if (port > 0 && port < 65536) {
-      c.udpEndpoint = {
-        address: (msg.address || '').toString().trim() || null,
-        port,
-      };
-    }
-    return;
-  }
-
   if (msg.type === 'prepare') {
     onPrepare(room, c, msg);
     return;
@@ -338,46 +312,6 @@ function handleMessage(ws, msg) {
       });
     }
   }
-}
-
-function handleUdpMessage(msg, rinfo) {
-  if (!msg || typeof msg !== 'object') return;
-  const id = (msg.id || '').toString();
-  if (!id) return;
-  const c = clientsById.get(id);
-  if (!c) return;
-
-  c.lastSeenAt = nowMs();
-  c.udpEndpoint = { address: rinfo.address, port: rinfo.port };
-
-  if (msg.type === 'hello') {
-    return;
-  }
-
-  if (msg.type !== 'input_state') return;
-  if (!c.room) return;
-  const room = rooms.get(c.room);
-  if (!room) return;
-  const p = room.players.get(c.id);
-  if (!p) return;
-
-  p.input = msg.input || null;
-  if (msg.state && typeof msg.state === 'object') {
-    const s = msg.state;
-    p.state = {
-      x: clipNum(s.x, 360),
-      y: clipNum(s.y, 980),
-      hp: clipNum(s.hp, 100),
-      hpMax: clipNum(s.hpMax, 100),
-      alive: Boolean(s.alive !== false),
-      shield: clipNum(s.shield, 0),
-      invuln: clipNum(s.invuln, 0),
-      score: clipNum(s.score, 0),
-      wave: clipNum(s.wave, 1),
-      bullets: Array.isArray(s.bullets) ? s.bullets.slice(0, 120) : [],
-    };
-  }
-  p.lastInputAt = nowMs();
 }
 
 function roomTick() {
@@ -430,26 +364,19 @@ function roomTick() {
       state: p.state,
     }));
 
-    const isFullState = (room.tickSeq % FULL_STATE_EVERY_TICKS) === 0;
     const payload = {
       type: 'room_state',
-      packet: isFullState ? 'full' : 'delta',
       room: room.name,
       seq: room.tickSeq,
       serverTime: now,
       leaderId: room.leaderId,
       worldVersion: room.worldVersion,
       players,
-      world: isFullState && (room.tickSeq % WORLD_PUSH_EVERY_TICKS) === 0 ? room.world : null,
+      world: (room.tickSeq % WORLD_PUSH_EVERY_TICKS) === 0 ? room.world : null,
     };
 
     for (const ws of room.members) {
-      const client = clients.get(ws);
-      if (client?.udpEndpoint?.address && client?.udpEndpoint?.port) {
-        safeSendUdp(client.udpEndpoint, payload);
-      } else {
-        safeSend(ws, payload);
-      }
+      safeSend(ws, payload);
     }
   }
 }
@@ -457,7 +384,6 @@ function roomTick() {
 wss.on('connection', (ws) => {
   const state = { id: uid(), nick: 'PILOT', room: '', lastSeenAt: nowMs() };
   clients.set(ws, state);
-  clientsById.set(state.id, state);
   safeSend(ws, { type: 'welcome', id: state.id });
 
   ws.on('message', (raw) => {
@@ -473,23 +399,10 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     leaveRoom(ws, 'disconnect');
-    clientsById.delete(state.id);
     clients.delete(ws);
   });
 });
 
-udpServer.on('message', (raw, rinfo) => {
-  let msg;
-  try {
-    msg = JSON.parse(raw.toString());
-  } catch {
-    return;
-  }
-  handleUdpMessage(msg, rinfo);
-});
-
-udpServer.bind(UDP_PORT, '0.0.0.0');
-
 setInterval(roomTick, TICK_MS);
 
-console.log(`[NEP] HTML-driven authoritative server running on ws://0.0.0.0:${PORT} + udp://0.0.0.0:${UDP_PORT}`);
+console.log(`[NEP] HTML-driven authoritative server running on ws://0.0.0.0:${PORT}`);
