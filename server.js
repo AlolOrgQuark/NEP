@@ -5,7 +5,8 @@ const PORT = Number(process.env.PORT || 8787);
 const TICK_MS = 50;
 const DT = TICK_MS / 1000;
 const PLAYER_TIMEOUT_MS = 12_000;
-const WORLD_PUSH_EVERY_TICKS = 1;
+const WORLD_PUSH_EVERY_TICKS = 2;
+const FULL_STATE_INTERVAL_MS = 5_000;
 
 const wss = new WebSocketServer({ port: PORT });
 
@@ -47,6 +48,7 @@ function ensureRoom(roomName) {
       world: null,
       worldVersion: 0,
       tickSeq: 0,
+      lastFullStateAt: 0,
       leaderId: '',
       pendingStartCfg: null,
       runtime: null,
@@ -320,17 +322,21 @@ function roomTick() {
     room.tickSeq += 1;
     assignLeader(room);
 
+    const socketByPlayerId = new Map();
+    for (const ws of room.members) {
+      const c = clients.get(ws);
+      if (c?.id) socketByPlayerId.set(c.id, { ws, client: c });
+    }
+
     for (const [pid, p] of room.players.entries()) {
-      const playerSocket = [...room.members].find((ws) => clients.get(ws)?.id === pid);
-      const playerClient = playerSocket ? clients.get(playerSocket) : null;
-      const seenAt = Math.max(p.lastInputAt || 0, playerClient?.lastSeenAt || 0);
+      const playerConn = socketByPlayerId.get(pid);
+      const seenAt = Math.max(p.lastInputAt || 0, playerConn?.client?.lastSeenAt || 0);
       if (now - seenAt > PLAYER_TIMEOUT_MS) {
         room.players.delete(pid);
-        for (const ws of room.members) {
-          const c = clients.get(ws);
-          if (c?.id !== pid) continue;
+        const staleWs = playerConn?.ws;
+        if (staleWs) {
           try {
-            ws.close();
+            staleWs.close();
           } catch {
             // ignore
           }
@@ -347,7 +353,9 @@ function roomTick() {
         safeSend([...room.members][0], { type: 'error', message: `runtime tick failed: ${err.message}` });
       }
 
-      if ((room.tickSeq % WORLD_PUSH_EVERY_TICKS) === 0) {
+      const shouldCaptureWorld = (room.tickSeq % WORLD_PUSH_EVERY_TICKS) === 0
+        || (now - (room.lastFullStateAt || 0)) >= FULL_STATE_INTERVAL_MS;
+      if (shouldCaptureWorld) {
         try {
           room.world = room.runtime.snapshot();
           room.worldVersion += 1;
@@ -364,6 +372,10 @@ function roomTick() {
       state: p.state,
     }));
 
+    const forceFullState = (now - (room.lastFullStateAt || 0)) >= FULL_STATE_INTERVAL_MS;
+    if (forceFullState) room.lastFullStateAt = now;
+    const includeWorld = forceFullState || ((room.tickSeq % WORLD_PUSH_EVERY_TICKS) === 0);
+
     const payload = {
       type: 'room_state',
       room: room.name,
@@ -371,8 +383,9 @@ function roomTick() {
       serverTime: now,
       leaderId: room.leaderId,
       worldVersion: room.worldVersion,
+      fullState: forceFullState,
       players,
-      world: (room.tickSeq % WORLD_PUSH_EVERY_TICKS) === 0 ? room.world : null,
+      world: includeWorld ? room.world : null,
     };
 
     for (const ws of room.members) {

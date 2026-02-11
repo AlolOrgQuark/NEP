@@ -228,6 +228,8 @@ function createHeadlessGameRuntime() {
       bullets: Array.isArray(p.bullets) ? p.bullets.slice(0, 120) : [],
     }));
     context.__serverPlayers = arr;
+    context.__serverTickId = (context.__serverTickId || 0) + 1;
+    context.__enemySpawnSeq = context.__enemySpawnSeq || 1;
 
     exec(`
       if (Array.isArray(__serverPlayers) && __serverPlayers.length){
@@ -244,6 +246,9 @@ function createHeadlessGameRuntime() {
       if (Array.isArray(__serverPlayers) && __serverPlayers.length){
         for (const e of enemies){
           if (!e || !e.alive) continue;
+          if (!e.__svSpawnId){
+            e.__svSpawnId = 'SVE-' + (__enemySpawnSeq++);
+          }
           let best = null, bd2 = 1e30;
           for (const p of __serverPlayers){
             if (!p || p.alive===false) continue;
@@ -259,6 +264,8 @@ function createHeadlessGameRuntime() {
           const sp = Math.hypot(e.vx||0, e.vy||0) || (90 + (Game.difficulty||1)*12);
           e.vx = lerp(e.vx||0, nx*sp, steer);
           e.vy = lerp(e.vy||0, ny*sp, steer);
+          e.x = Math.max(-120, Math.min((W||720) + 120, e.x||0));
+          e.y = Math.max(-180, Math.min((H||1280) + 180, e.y||0));
         }
       }
     `);
@@ -273,10 +280,10 @@ function createHeadlessGameRuntime() {
       spawnerCd: Spawner.cd,
       bossAlive: Game.bossAlive,
       enemies: enemies.slice(0,96).map((e,i)=>({
-        k: e.spawnId || e.id || (e.type||'E')+':'+i,
+        k: e.__svSpawnId || e.spawnId || e.id || (e.type||'E')+':'+i,
         x:e.x,y:e.y,vx:e.vx,vy:e.vy,hp:e.hp,maxHp:e.maxHp,r:e.r,
         col:e.baseCol||e.tint||'#FF2F57',
-        bodySeed:e.bodySeed||0,
+        bodySeed:Number.isFinite(e.bodySeed) ? e.bodySeed : null,
         type:e.type||'ENEMY'
       })),
       bulletsE: bulletsE.slice(0,140).map((b)=>({

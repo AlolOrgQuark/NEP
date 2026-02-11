@@ -11048,6 +11048,8 @@ BG_Effect.init();
     worldSyncCd: 0,
     worldSyncSeq: 0,
     joinedAt: 0,
+    lastRoomSeq: 0,
+    lastWorldVersion: 0,
     localPrepared: false,
     pendingCfg: null,
     waitingStart: false,
@@ -11124,6 +11126,8 @@ BG_Effect.init();
       this.hitCache.clear();
       this.worldSyncCd = 0;
       this.worldSyncSeq = 0;
+      this.lastRoomSeq = 0;
+      this.lastWorldVersion = 0;
       this.setStatus('联机未连接');
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
     },
@@ -11149,6 +11153,8 @@ BG_Effect.init();
       this.hitCache.clear();
       this.worldSyncCd = 0;
       this.worldSyncSeq = 0;
+      this.lastRoomSeq = 0;
+      this.lastWorldVersion = 0;
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
       this.refreshStatus();
     },
@@ -11178,9 +11184,9 @@ BG_Effect.init();
       };
     },
 
-    applyWorldState(world, relayTs=0){
+    applyWorldState(world, relayTs=0, isFullState=false){
       if (!world || !world.mode || world.mode !== Game.mode || Game.state !== 'playing') return;
-      const leadS = clamp(((Date.now() - (relayTs || 0)) / 1000) + 0.02, 0, 0.22);
+      const leadS = clamp(((Date.now() - (relayTs || 0)) / 1000) + 0.015, 0, isFullState ? 0.26 : 0.18);
       if (world.wave != null) Game.wave = world.wave;
       if (world.score != null) Game.score = Math.max(Game.score, world.score);
       if (world.spawnerCd != null) Spawner.cd = world.spawnerCd;
@@ -11205,16 +11211,17 @@ BG_Effect.init();
           e.bodySeed = fallbackSeed;
           e.body = genEnemyBody(fallbackSeed);
         }
-        const tx = (src.x ?? e.x) + (src.vx ?? e.vx ?? 0) * leadS;
-        const ty = (src.y ?? e.y) + (src.vy ?? e.vy ?? 0) * leadS;
+        const tx = clamp((src.x ?? e.x) + (src.vx ?? e.vx ?? 0) * leadS, -160, W + 160);
+        const ty = clamp((src.y ?? e.y) + (src.vy ?? e.vy ?? 0) * leadS, -220, H + 220);
         if (e._netSnapSeen){
-          e.x = lerp(e.x, tx, 0.55);
-          e.y = lerp(e.y, ty, 0.55);
+          const follow = isFullState ? 0.9 : 0.62;
+          e.x = lerp(e.x, tx, follow);
+          e.y = lerp(e.y, ty, follow);
         } else {
           e.x = tx; e.y = ty;
           e._netSnapSeen = true;
         }
-        e.vx = src.vx ?? e.vx; e.vy = src.vy ?? e.vy;
+        e.vx = clamp(src.vx ?? e.vx, -520, 520); e.vy = clamp(src.vy ?? e.vy, -520, 520);
         e.hp = src.hp ?? e.hp; e.maxHp = src.maxHp ?? e.maxHp;
         e.r = src.r ?? e.r;
         e.type = src.type || e.type;
@@ -11271,6 +11278,8 @@ BG_Effect.init();
         this.room = msg.room || '';
         this.roomLeaderId = msg.leaderId || this.roomLeaderId;
         this.peers.clear();
+        this.lastRoomSeq = 0;
+        this.lastWorldVersion = 0;
         const peers = Array.isArray(msg.peers) ? msg.peers : [];
         for (const p of peers){
           if (!p || p.id === this.localId) continue;
@@ -11327,6 +11336,9 @@ BG_Effect.init();
 
     applyRoomState(msg){
       if (!msg || !this.room || msg.room !== this.room) return;
+      const seq = Number(msg.seq) || 0;
+      if (seq && seq <= this.lastRoomSeq) return;
+      this.lastRoomSeq = Math.max(this.lastRoomSeq, seq);
       this.roomLeaderId = msg.leaderId || this.roomLeaderId;
       const now = performance.now();
       const incoming = new Set();
@@ -11346,7 +11358,10 @@ BG_Effect.init();
         this.peers.set(item.id, peer);
       }
       for (const id of [...this.peers.keys()]) if (!incoming.has(id)) this.peers.delete(id);
-      if (msg.world) this.applyWorldState(msg.world, msg.serverTime || 0);
+      if (msg.world){
+        this.lastWorldVersion = Math.max(this.lastWorldVersion, Number(msg.worldVersion) || 0);
+        this.applyWorldState(msg.world, msg.serverTime || 0, !!msg.fullState);
+      }
       this.refreshStatus();
     },
 
@@ -11485,7 +11500,7 @@ BG_Effect.init();
       this.stateCd -= dt;
       if (this.heartbeatCd <= 0){ this.heartbeatCd = 0.8; this.sendServer({type:'hello', nick:this.nick}); }
       if (Game.state === 'playing' && this.stateCd <= 0){
-        this.stateCd = 1/30;
+        this.stateCd = 1/24;
         this.sendServer({
           type:'input_state',
           nick:this.nick,
