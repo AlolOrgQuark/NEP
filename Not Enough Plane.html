@@ -10414,11 +10414,24 @@ function grantPlayerEmitter(){
 
   // ================= Updates =================
   function updateBullets(dt, arr){
+    if (!Array.isArray(arr) || !arr.length) return;
     for(const b of arr){
-      if (!b.alive) continue;
-      b.t += dt;
-      b.noHitT = Math.max(0, b.noHitT - dt);
-      b.life -= dt;
+      if (!b?.alive) continue;
+      if (!Array.isArray(b.mods)) b.mods = [];
+      b.t = (Number.isFinite(b.t) ? b.t : 0) + dt;
+      b.noHitT = Math.max(0, (Number.isFinite(b.noHitT) ? b.noHitT : 0) - dt);
+      b.life = (Number.isFinite(b.life) ? b.life : 1.2) - dt;
+      if (!Number.isFinite(b.turnAfter)) b.turnAfter = 0;
+      if (!Number.isFinite(b.reverseT)) b.reverseT = 0;
+      if (!Number.isFinite(b.accel)) b.accel = 0;
+      if (!Number.isFinite(b.angVel)) b.angVel = 0;
+      if (!Number.isFinite(b.pauseT)) b.pauseT = 0;
+      if (!Number.isFinite(b.homing)) b.homing = 0;
+      if (!Number.isFinite(b.waveA)) b.waveA = 0;
+      if (!Number.isFinite(b.waveF)) b.waveF = 0;
+      if (!Number.isFinite(b.waveP)) b.waveP = 0;
+      if (!Number.isFinite(b.mineT)) b.mineT = 0;
+      if (!Number.isFinite(b.bounce)) b.bounce = 0;
 
       // affix onUpdate
       if (b.mods.length){
@@ -11192,11 +11205,21 @@ BG_Effect.init();
           e.bodySeed = fallbackSeed;
           e.body = genEnemyBody(fallbackSeed);
         }
-        e.x = (src.x ?? e.x) + (src.vx ?? e.vx ?? 0) * leadS;
-        e.y = (src.y ?? e.y) + (src.vy ?? e.vy ?? 0) * leadS;
+        const tx = (src.x ?? e.x) + (src.vx ?? e.vx ?? 0) * leadS;
+        const ty = (src.y ?? e.y) + (src.vy ?? e.vy ?? 0) * leadS;
+        if (e._netSnapSeen){
+          e.x = lerp(e.x, tx, 0.55);
+          e.y = lerp(e.y, ty, 0.55);
+        } else {
+          e.x = tx; e.y = ty;
+          e._netSnapSeen = true;
+        }
         e.vx = src.vx ?? e.vx; e.vy = src.vy ?? e.vy;
         e.hp = src.hp ?? e.hp; e.maxHp = src.maxHp ?? e.maxHp;
         e.r = src.r ?? e.r;
+        e.type = src.type || e.type;
+        e.isBoss = (e.type === 'BOSS');
+        e.isNetGhost = true;
         if (src.col) { e.baseCol = src.col; e.tint = src.col; }
         e.alive = true;
         used.add(e);
@@ -11208,8 +11231,32 @@ BG_Effect.init();
       if (Array.isArray(world.bulletsE)){
         bulletsE.length = 0;
         for (const b of world.bulletsE){
-          const vx = b.vx ?? 0, vy = b.vy ?? 0;
-          bulletsE.push({...b, x:(b.x ?? 0) + vx * leadS, y:(b.y ?? 0) + vy * leadS, alive:true});
+          const vx = Number.isFinite(b?.vx) ? b.vx : 0;
+          const vy = Number.isFinite(b?.vy) ? b.vy : 0;
+          bulletsE.push({
+            ...b,
+            team: 'E',
+            x:(b?.x ?? 0) + vx * leadS,
+            y:(b?.y ?? 0) + vy * leadS,
+            vx,
+            vy,
+            t: Number.isFinite(b?.t) ? b.t : 0,
+            life: Number.isFinite(b?.life) ? b.life : 1.2,
+            noHitT: Number.isFinite(b?.noHitT) ? b.noHitT : 0,
+            turnAfter: Number.isFinite(b?.turnAfter) ? b.turnAfter : 0,
+            reverseT: Number.isFinite(b?.reverseT) ? b.reverseT : 0,
+            accel: Number.isFinite(b?.accel) ? b.accel : 0,
+            angVel: Number.isFinite(b?.angVel) ? b.angVel : 0,
+            pauseT: Number.isFinite(b?.pauseT) ? b.pauseT : 0,
+            homing: Number.isFinite(b?.homing) ? b.homing : 0,
+            waveA: Number.isFinite(b?.waveA) ? b.waveA : 0,
+            waveF: Number.isFinite(b?.waveF) ? b.waveF : 0,
+            waveP: Number.isFinite(b?.waveP) ? b.waveP : 0,
+            mineT: Number.isFinite(b?.mineT) ? b.mineT : 0,
+            bounce: Number.isFinite(b?.bounce) ? b.bounce : 0,
+            mods: Array.isArray(b?.mods) ? b.mods : [],
+            alive:true
+          });
         }
       }
     },
@@ -11605,7 +11652,7 @@ BG_Effect.init();
         e._freezeT -= dt;
         // 冻结期间不调用 update（不移动不射击）
         if (chance(0.12)) sparks(e.x, e.y, 'glowP', 2, 120);
-      } else {
+      } else if (!(isNetAuthoritative && e.isNetGhost)) {
         e.update(dt);
       }
       // timers for support buffs
@@ -11622,8 +11669,10 @@ BG_Effect.init();
       }
       if (e.y > H/Camera.zoom + 220) e.alive=false;
     }
-    enforceHoverLimit();
-    separateEnemies(dt);
+    if (!isNetAuthoritative){
+      enforceHoverLimit();
+      separateEnemies(dt);
+    }
 
     // P bullets vs enemies
     
