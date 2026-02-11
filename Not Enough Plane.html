@@ -11031,18 +11031,14 @@ BG_Effect.init();
     peers: new Map(),
     heartbeatCd: 0,
     stateCd: 0,
+    worldSyncCd: 0,
+    worldSyncSeq: 0,
     joinedAt: 0,
     localPrepared: false,
     pendingCfg: null,
     waitingStart: false,
+    roomLeaderId: '',
     hitCache: new Map(),
-    rtcPeer: null,
-    rtcDc: null,
-    rtcReady: false,
-    rtcPeerId: '',
-    rtcReconnectCd: 0,
-    worldSyncCd: 0,
-    worldSyncSeq: 0,
 
     setStatus(msg){ if (ui.mpStatus) ui.mpStatus.textContent = msg; },
     isActive(){ return this.connected && !!this.room; },
@@ -11090,7 +11086,7 @@ BG_Effect.init();
           this.localPrepared = false;
           this.pendingCfg = null;
           this.waitingStart = false;
-          this.resetRtc();
+          this.roomLeaderId = '';
           if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
         };
         ws.onerror = ()=> this.setStatus('服务器连接失败');
@@ -11110,13 +11106,14 @@ BG_Effect.init();
       this.localPrepared = false;
       this.pendingCfg = null;
       this.waitingStart = false;
+      this.roomLeaderId = '';
       this.hitCache.clear();
-      this.resetRtc();
       this.worldSyncCd = 0;
       this.worldSyncSeq = 0;
       this.setStatus('联机未连接');
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
     },
+
     joinRoom(roomInput){
       if (!this.connected) return this.setStatus('请先 CONNECT 到服务器');
       const room = this.normalizeRoom(roomInput);
@@ -11134,8 +11131,8 @@ BG_Effect.init();
       this.localPrepared = false;
       this.pendingCfg = null;
       this.waitingStart = false;
+      this.roomLeaderId = '';
       this.hitCache.clear();
-      this.resetRtc();
       this.worldSyncCd = 0;
       this.worldSyncSeq = 0;
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
@@ -11144,89 +11141,9 @@ BG_Effect.init();
 
     sendServer(payload){
       if (!this.socket || this.socket.readyState !== 1) return;
-      const msg = {
-        from: this.localId,
-        t: performance.now(),
-        ...payload,
-      };
+      const msg = { from: this.localId, t: performance.now(), ...payload };
       msg.room = (payload && payload.room != null) ? payload.room : this.room;
       this.socket.send(JSON.stringify(msg));
-    },
-
-    broadcast(payload){
-      if (!this.room) return;
-      this.sendServer({type:'relay', payload: { ...payload, nick: this.nick, room:this.room }});
-    },
-
-    sendNet(payload){
-      if (!payload || !this.room) return;
-      const pack = { ...payload, nick:this.nick, room:this.room };
-      if (this.rtcReady && this.rtcDc && this.rtcDc.readyState === 'open'){
-        try { this.rtcDc.send(JSON.stringify(pack)); return; } catch(_){ this.rtcReady = false; }
-      }
-      this.sendServer({type:'relay', payload: pack});
-    },
-
-    setupRtcDataChannel(dc){
-      if (!dc) return;
-      this.rtcDc = dc;
-      dc.onopen = ()=>{ this.rtcReady = true; this.setStatus(`房间 ${this.room} · UDP通道已建立`); };
-      dc.onclose = ()=>{ this.rtcReady = false; this.rtcDc = null; };
-      dc.onerror = ()=>{ this.rtcReady = false; };
-      dc.onmessage = (ev)=>{
-        try { this.onPeerMessage(this.rtcPeerId, JSON.parse(ev.data)); } catch(_){}
-      };
-    },
-
-    resetRtc(){
-      this.rtcReady = false;
-      this.rtcPeerId = '';
-      if (this.rtcDc){ try { this.rtcDc.close(); } catch(_){} }
-      if (this.rtcPeer){ try { this.rtcPeer.close(); } catch(_){} }
-      this.rtcDc = null;
-      this.rtcPeer = null;
-      this.rtcReconnectCd = 0;
-    },
-
-    async ensureRtc(peerId){
-      if (!peerId || this.peers.size !== 1) return;
-      if (this.rtcReady && this.rtcPeerId === peerId) return;
-      if (this.rtcPeer && this.rtcPeer.connectionState !== 'closed' && this.rtcPeerId === peerId) return;
-      this.resetRtc();
-      this.rtcPeerId = peerId;
-      const pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-      this.rtcPeer = pc;
-      pc.onicecandidate = (ev)=>{ if (ev.candidate) this.broadcast({type:'rtc_ice', target:peerId, candidate:ev.candidate}); };
-      pc.ondatachannel = (ev)=> this.setupRtcDataChannel(ev.channel);
-      pc.onconnectionstatechange = ()=>{
-        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') this.rtcReady = false;
-      };
-      const isOfferer = this.localId < peerId;
-      if (isOfferer){
-        this.setupRtcDataChannel(pc.createDataChannel('nep-udp'));
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        this.broadcast({type:'rtc_offer', target:peerId, sdp:offer});
-      }
-    },
-
-    async onRtcSignal(from, msg){
-      if (!msg || !from || (msg.target && msg.target !== this.localId) || this.peers.size !== 1) return;
-      if (!this.rtcPeer || this.rtcPeerId !== from) await this.ensureRtc(from);
-      const pc = this.rtcPeer;
-      if (!pc) return;
-      try {
-        if (msg.type === 'rtc_offer' && msg.sdp){
-          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-          const ans = await pc.createAnswer();
-          await pc.setLocalDescription(ans);
-          this.broadcast({type:'rtc_answer', target:from, sdp:ans});
-        } else if (msg.type === 'rtc_answer' && msg.sdp){
-          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-        } else if (msg.type === 'rtc_ice' && msg.candidate){
-          await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-        }
-      } catch(_){ }
     },
 
     serializeWorldState(includeBullets=true){
@@ -11249,7 +11166,6 @@ BG_Effect.init();
 
     applyWorldState(world, relayTs=0){
       if (!world || !world.mode || world.mode !== Game.mode || Game.state !== 'playing') return;
-      // 估算 relay one-way 延迟并做轻量前推，降低“场景慢半拍”观感
       const leadS = clamp(((Date.now() - (relayTs || 0)) / 1000) + 0.02, 0, 0.22);
       if (world.wave != null) Game.wave = world.wave;
       if (world.score != null) Game.score = Math.max(Game.score, world.score);
@@ -11278,7 +11194,6 @@ BG_Effect.init();
         const e = enemies[i];
         if (!used.has(e) && !e.isBoss) enemies.splice(i,1);
       }
-      // 子弹快照是高开销项，允许发送端按帧抽样；仅在收到时替换
       if (Array.isArray(world.bulletsE)){
         bulletsE.length = 0;
         for (const b of world.bulletsE){
@@ -11296,21 +11211,21 @@ BG_Effect.init();
       }
       if (msg.type === 'room_joined'){
         this.room = msg.room || '';
+        this.roomLeaderId = msg.leaderId || this.roomLeaderId;
         this.peers.clear();
         const peers = Array.isArray(msg.peers) ? msg.peers : [];
         for (const p of peers){
           if (!p || p.id === this.localId) continue;
-          this.peers.set(p.id, {id:p.id, nick:p.nick||'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, lastSeen:performance.now(), smoothBullets:[]});
+          this.peers.set(p.id, {id:p.id, nick:p.nick||'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, prepared:false, lastSeen:performance.now(), smoothBullets:[]});
         }
-        if (this.peers.size === 1){ const first = this.peers.keys().next().value; this.ensureRtc(first); }
         this.setStatus(`已进入房间 ${this.room} · ${this.peers.size+1} 人`);
         return;
       }
       if (msg.type === 'peer_joined'){
         if (!msg.peer || msg.peer.id === this.localId) return;
         const p = msg.peer;
-        this.peers.set(p.id, {id:p.id, nick:p.nick||'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, lastSeen:performance.now(), smoothBullets:[]});
-        this.ensureRtc(p.id);
+        this.peers.set(p.id, {id:p.id, nick:p.nick||'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, prepared:false, lastSeen:performance.now(), smoothBullets:[]});
+        this.roomLeaderId = msg.leaderId || this.roomLeaderId;
         this.refreshStatus();
         return;
       }
@@ -11320,62 +11235,60 @@ BG_Effect.init();
           this.peers.delete(msg.peerId);
           if ((peer.prepared || this.localPrepared || (Game.lastStart && Game.lastStart.net))) this.onPeerDisconnected(peer.nick);
         }
-        if (msg.peerId === this.rtcPeerId) this.resetRtc();
         this.refreshStatus();
         return;
       }
-      if (msg.type === 'error'){
-        this.setStatus(msg.message || '服务器错误');
+      if (msg.type === 'room_event'){
+        this.onRoomEvent(msg);
         return;
       }
-      if (msg.type === 'relay' && msg.payload){
-        this.onPeerMessage(msg.from, msg.payload, msg.t || 0);
+      if (msg.type === 'room_state'){
+        this.applyRoomState(msg);
+        return;
+      }
+      if (msg.type === 'error') this.setStatus(msg.message || '服务器错误');
+    },
+
+    onRoomEvent(msg){
+      if (!msg || !msg.event) return;
+      if (msg.event === 'prepared_updated'){
+        const prepared = new Set(Array.isArray(msg.prepared) ? msg.prepared : []);
+        this.roomLeaderId = msg.leaderId || this.roomLeaderId;
+        for (const p of this.peers.values()) p.prepared = prepared.has(p.id);
+        this.refreshStatus();
+      } else if (msg.event === 'start_match' && msg.cfg){
+        this.startPreparedMatch(msg.cfg, msg.starterId || this.roomLeaderId || this.localId);
+      } else if (msg.event === 'peer_hit'){
+        if (Game.mode === 'workshop' && Game.state === 'playing' && Player.alive){
+          const peer = this.peers.get(msg.from);
+          onPlayerHit(Math.max(1, msg.dmg || 1), 0);
+          textPop(Player.x, Player.y - 28, `HIT BY ${peer?.nick || 'PILOT'}`, C.R);
+        }
       }
     },
 
-    onPeerMessage(from, msg, relayTs=0){
-      if (!msg || from === this.localId || !this.room) return;
+    applyRoomState(msg){
+      if (!msg || !this.room || msg.room !== this.room) return;
+      this.roomLeaderId = msg.leaderId || this.roomLeaderId;
       const now = performance.now();
-      const peer = this.peers.get(from) || {id: from, nick: msg.nick || 'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, lastSeen: now, smoothBullets:[]};
-      peer.lastSeen = now;
-      if (msg.nick) peer.nick = msg.nick;
-
-      if (msg.type === 'rtc_offer' || msg.type === 'rtc_answer' || msg.type === 'rtc_ice'){
-        this.onRtcSignal(from, msg);
-      } else if (msg.type === 'world_sync' && msg.world){
-        this.applyWorldState(msg.world, relayTs);
-      } else if (msg.type === 'hello'){
-        this.peers.set(from, peer);
-        this.broadcast({type:'hello_ack', nick:this.nick});
-      } else if (msg.type === 'hello_ack'){
-        this.peers.set(from, peer);
-      } else if (msg.type === 'state' && msg.state){
-        Object.assign(peer, msg.state);
-        peer.netBullets = Array.isArray(msg.state.bullets) ? msg.state.bullets.slice(0, 120) : [];
-        peer.smoothBullets = this.smoothBulletState(peer, peer.netBullets);
-        this.peers.set(from, peer);
-      } else if (msg.type === 'prepare' && msg.cfg){
-        peer.prepared = true;
-        peer.prepareCfg = msg.cfg;
-        peer.buildA = msg.buildA || null;
-        this.peers.set(from, peer);
-        this.tryAutoStart();
-      } else if (msg.type === 'unprepare'){
-        peer.prepared = false;
-        peer.prepareCfg = null;
-        this.peers.set(from, peer);
-      } else if (msg.type === 'bye'){
-        const wasPrepared = !!peer.prepared;
-        this.peers.delete(from);
-        if (wasPrepared && (this.localPrepared || (Game.lastStart && Game.lastStart.net))) this.onPeerDisconnected(peer.nick);
-      } else if (msg.type === 'start' && msg.cfg){
-        this.startPreparedMatch(msg.cfg, from);
-      } else if (msg.type === 'peer_hit'){
-        if (Game.mode === 'workshop' && Game.state === 'playing' && Player.alive){
-          onPlayerHit(Math.max(1, msg.dmg || 1), 0);
-          textPop(Player.x, Player.y - 28, `HIT BY ${peer.nick}`, C.R);
+      const incoming = new Set();
+      const list = Array.isArray(msg.players) ? msg.players : [];
+      for (const item of list){
+        if (!item || item.id === this.localId) continue;
+        incoming.add(item.id);
+        const peer = this.peers.get(item.id) || {id:item.id, nick:item.nick||'PILOT', x:W*0.5, y:H*0.75, hp:100, hpMax:100, alive:true, score:0, wave:1, prepared:false, smoothBullets:[]};
+        peer.nick = item.nick || peer.nick;
+        peer.lastSeen = now;
+        peer.prepared = !!item.prepared;
+        if (item.state){
+          Object.assign(peer, item.state);
+          peer.netBullets = Array.isArray(item.state.bullets) ? item.state.bullets.slice(0, 120) : [];
+          peer.smoothBullets = this.smoothBulletState(peer, peer.netBullets);
         }
+        this.peers.set(item.id, peer);
       }
+      for (const id of [...this.peers.keys()]) if (!incoming.has(id)) this.peers.delete(id);
+      if (msg.world) this.applyWorldState(msg.world, msg.serverTime || 0);
       this.refreshStatus();
     },
 
@@ -11392,25 +11305,15 @@ BG_Effect.init();
         const nx = old ? lerp(old.x, tx, 0.7) : tx;
         const ny = old ? lerp(old.y, ty, 0.7) : ty;
         next.push({
-          key,
-          alive:true,
-          x:nx, y:ny,
+          key, alive:true, x:nx, y:ny,
           vx:src.vx ?? (old?.vx || 0), vy:src.vy ?? (old?.vy || 0),
-          r:src.r ?? 3,
-          col:src.col || C.P2,
-          dmg:src.dmg ?? 8,
-          spr:src.spr || 'glowP2',
-          style:src.style ?? 1,
-          team:'P',
-          t:src.t || now,
-          _phaseAlpha: src._phaseAlpha,
-          _phaseVisible: src._phaseVisible,
+          r:src.r ?? 3, col:src.col || C.P2, dmg:src.dmg ?? 8,
+          spr:src.spr || 'glowP2', style:src.style ?? 1, team:'P',
+          t:src.t || now, _phaseAlpha: src._phaseAlpha, _phaseVisible: src._phaseVisible,
         });
       }
       return next;
     },
-
-    cfgCompatible(cfgA, cfgB){ return !!cfgA && !!cfgB && cfgA.mode === cfgB.mode; },
 
     projectedPeer(peer){
       if (!peer) return null;
@@ -11440,6 +11343,8 @@ BG_Effect.init();
       return out;
     },
 
+    cfgCompatible(cfgA, cfgB){ return !!cfgA && !!cfgB && cfgA.mode === cfgB.mode; },
+
     validateRoomForMode(mode){
       const players = this.peers.size + 1;
       if (mode === 'workshop' && players !== 2){ this.setStatus('WORKSHOP 房间必须 2 人（你 + 1 对手）'); return false; }
@@ -11458,7 +11363,7 @@ BG_Effect.init();
       this.localPrepared = true;
       this.pendingCfg = deepClone(cfg);
       this.waitingStart = true;
-      this.sendNet({ type:'prepare', nick:this.nick, cfg:this.pendingCfg, buildA: cfg.mode==='workshop' ? deepClone(Builds.A) : null });
+      this.sendServer({ type:'prepare', nick:this.nick, cfg:this.pendingCfg, buildA: cfg.mode==='workshop' ? deepClone(Builds.A) : null });
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'CANCEL PREPARE';
       this.tryAutoStart();
       this.refreshStatus();
@@ -11468,22 +11373,20 @@ BG_Effect.init();
       this.localPrepared = false;
       this.pendingCfg = null;
       this.waitingStart = false;
-      if (announce && this.isActive()) this.sendNet({type:'unprepare', nick:this.nick});
+      if (announce && this.isActive()) this.sendServer({type:'unprepare', nick:this.nick});
       if (ui.btnMpStart) ui.btnMpStart.textContent = 'PREPARE';
       this.refreshStatus();
     },
 
-    leaderId(){ return [this.localId, ...this.peers.keys()].sort()[0]; },
+    leaderId(){ return this.roomLeaderId || [this.localId, ...this.peers.keys()].sort()[0]; },
 
     tryAutoStart(){
       if (!this.isActive() || !this.localPrepared || !this.pendingCfg) return;
       const peers = [...this.peers.values()];
       if (!this.validateRoomForMode(this.pendingCfg.mode)) return;
-      if (!peers.length || peers.some(p => !p.prepared || !p.prepareCfg)) return;
-      if (peers.some(p => !this.cfgCompatible(this.pendingCfg, p.prepareCfg))){ this.setStatus('PREPARE 失败：双方选择的 NET MODE 不一致'); return; }
+      if (!peers.length || peers.some(p => !p.prepared)) return;
       if (this.leaderId() !== this.localId) return;
-      this.sendNet({type:'start', cfg:this.pendingCfg, nick:this.nick});
-      this.startPreparedMatch(this.pendingCfg, this.localId);
+      this.sendServer({type:'start_request', cfg:this.pendingCfg, nick:this.nick});
     },
 
     startPreparedMatch(cfg, starterId){
@@ -11514,46 +11417,36 @@ BG_Effect.init();
       const preparedPeers = list.filter(p=>p.prepared).length;
       const preparedTotal = (this.localPrepared ? 1 : 0) + preparedPeers;
       const prepText = (preparedTotal > 0) ? ` · PREPARE ${preparedTotal}/${list.length+1}` : '';
-      this.setStatus(`房间 ${this.room} · 在线 ${list.length+1} 人${names?` · ${names}`:''}${prepText}`);
+      const leader = this.leaderId() === this.localId ? '你' : (this.peers.get(this.leaderId())?.nick || '未知');
+      this.setStatus(`房间 ${this.room} · 在线 ${list.length+1} 人 · LEADER:${leader}${names?` · ${names}`:''}${prepText}`);
     },
 
     update(dt){
       if (!this.connected || !this.room) return;
       this.heartbeatCd -= dt;
       this.stateCd -= dt;
-      if (this.heartbeatCd <= 0){ this.heartbeatCd = 0.8; this.sendNet({type:'hello', nick:this.nick}); }
+      if (this.heartbeatCd <= 0){ this.heartbeatCd = 0.8; this.sendServer({type:'hello', nick:this.nick}); }
       if (Game.state === 'playing' && this.stateCd <= 0){
         this.stateCd = 1/30;
-        this.sendNet({ type:'state', nick:this.nick, state:{ x: Player.x, y: Player.y, hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState() } });
+        this.sendServer({
+          type:'input_state',
+          nick:this.nick,
+          state:{ x: Player.x, y: Player.y, hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState() }
+        });
       }
-      if (this.peers.size === 1 && !this.rtcReady){
-        this.rtcReconnectCd -= dt;
-        if (this.rtcReconnectCd <= 0){
-          this.rtcReconnectCd = 2.0;
-          const peerId = this.peers.keys().next().value;
-          this.ensureRtc(peerId);
-        }
-      }
-      if (Game.state === 'playing' && Game.mode !== 'workshop'){
+      if (Game.state === 'playing' && Game.mode !== 'workshop' && this.leaderId() === this.localId){
         this.worldSyncCd -= dt;
-        if (this.worldSyncCd <= 0 && this.leaderId() === this.localId){
+        if (this.worldSyncCd <= 0){
           const heavy = enemies.length + bulletsE.length;
           const hz = (heavy > 180) ? 8 : (heavy > 110 ? 10 : 12);
           this.worldSyncCd = 1 / hz;
           this.worldSyncSeq = (this.worldSyncSeq + 1) | 0;
           const includeBullets = (this.worldSyncSeq % 2) === 0 || heavy < 120;
-          this.sendNet({type:'world_sync', world:this.serializeWorldState(includeBullets)});
+          this.sendServer({type:'world_state', world:this.serializeWorldState(includeBullets)});
         }
       }
       const nowS = performance.now()/1000;
       for (const [k,exp] of this.hitCache.entries()) if (exp <= nowS) this.hitCache.delete(k);
-      const now = performance.now();
-      for (const [id,p] of this.peers.entries()){
-        if ((now - p.lastSeen) > 4500){
-          this.peers.delete(id);
-          if ((p.prepared || this.localPrepared || (Game.lastStart && Game.lastStart.net))){ this.onPeerDisconnected(p.nick); return; }
-        }
-      }
       this.refreshStatus();
     },
 
@@ -11616,14 +11509,14 @@ BG_Effect.init();
         sparks(b.x,b.y,'glowP2', 8, 220);
         if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; }
         else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
-        this.sendNet({type:'peer_hit', dmg:b.dmg, nick:this.nick});
+        this.sendServer({type:'peer_hit', dmg:b.dmg, nick:this.nick});
         return true;
       }
       return false;
     }
   };
 
-  // ================= Main update =================
+// ================= Main update =================
   function update(dt){
     BG_Effect.update(dt);
     Multiplayer.update(dt);
