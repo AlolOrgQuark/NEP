@@ -668,6 +668,35 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   padding-right:42px;
 }
 
+
+/* forge extra wrapper/emitter select (same cyber style as .field select) */
+.forge-extra-select{
+  appearance:none;
+  -webkit-appearance:none;
+  width:100%;
+  pointer-events:auto;
+  background:rgba(0,0,0,0.55);
+  border:1px solid rgba(82,230,255,0.45);
+  color:#fff;
+  padding:8px 42px 8px 8px;
+  outline:none;
+  font-family:var(--font-mono);
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(82,230,255,0.9) 50%),
+    linear-gradient(135deg, rgba(82,230,255,0.9) 50%, transparent 50%),
+    linear-gradient(to right, rgba(255,255,255,0.12), rgba(255,255,255,0.12));
+  background-position:
+    calc(100% - 18px) 55%,
+    calc(100% - 12px) 55%,
+    calc(100% - 34px) 50%;
+  background-size:6px 6px, 6px 6px, 1px 60%;
+  background-repeat:no-repeat;
+}
+.forge-extra-select:focus{
+  box-shadow:0 0 12px rgba(82,230,255,0.25);
+  border-color:rgba(82,230,255,0.85);
+}
+
 /* slider row */
 .slider-row{
   display:grid;
@@ -16641,7 +16670,7 @@ function uiModelToEmitter(model){
   return cur;
 }
 
-function renderWrapperCfgFieldsUI(container, item, wrapIdx){
+function renderWrapperCfgFieldsUI(container, item, wrapIdx, onChanged){
   const key = item.wrapperType || '';
   const defs = WrapperFieldDefs[key] || [];
   container.innerHTML = '';
@@ -16655,7 +16684,7 @@ function renderWrapperCfgFieldsUI(container, item, wrapIdx){
   if (key==='INTERLEAVE'){
     const w = document.createElement('div');
     w.className = 'muted';
-    w.textContent = 'INTERLEAVE 包含双分支，UI 模式仅编辑主分支。需要完整双分支请切到 JSON 模式。';
+    w.textContent = 'INTERLEAVE 包含双分支，UI 模式仅编辑主分支。完整双分支请切到 JSON 模式。';
     container.appendChild(w);
   }
   if (!defs.length){
@@ -16665,33 +16694,73 @@ function renderWrapperCfgFieldsUI(container, item, wrapIdx){
     container.appendChild(m);
     return;
   }
+
   for (const def of defs){
     const row = document.createElement('div');
     row.className = 'field';
     row.style.marginBottom = '4px';
+
     const lb = document.createElement('label');
     lb.textContent = def.id;
-    const ip = document.createElement('input');
-    ip.type = (def.type==='int' || def.type==='num') ? 'number' : 'text';
-    if (def.type==='num' && def.step!=null) ip.step = String(def.step);
-    if (def.type==='int') ip.step = '1';
-    let v = item.compCfg?.[def.id];
-    if (v==null) v = def.def;
-    ip.value = String(v ?? '');
-    ip.addEventListener('input', ()=>{
-      if (!item.compCfg) item.compCfg = {};
-      if (def.type==='int') item.compCfg[def.id] = (ip.value==='' ? null : (parseInt(ip.value,10)||0));
-      else if (def.type==='num') item.compCfg[def.id] = (ip.value==='' ? null : (+ip.value||0));
-      else item.compCfg[def.id] = ip.value;
-    });
     row.appendChild(lb);
-    row.appendChild(ip);
+
+    let input;
+    if (def.type === 'select' || def.type === 'selectEmitter'){
+      input = document.createElement('select');
+      input.className = 'forge-extra-select';
+      const opts = (def.type==='selectEmitter') ? Object.keys(EmitterCatalog).filter(k=>k!=='LASER') : (def.opts || []);
+      for (const v of opts){
+        const o = document.createElement('option');
+        o.value = String(v);
+        o.textContent = String(v);
+        input.appendChild(o);
+      }
+      const cur = (item.compCfg?.[def.id] ?? def.def ?? (opts[0] ?? ''));
+      input.value = String(cur);
+      input.addEventListener('change', ()=>{
+        if (!item.compCfg) item.compCfg = {};
+        item.compCfg[def.id] = input.value;
+        onChanged?.();
+      });
+    } else {
+      input = document.createElement('input');
+      if (def.type === 'number' || def.type === 'num' || def.type === 'int') input.type = 'number';
+      else input.type = 'text';
+      if ((def.type === 'number' || def.type === 'num') && def.step!=null) input.step = String(def.step);
+      if (def.type === 'int') input.step = '1';
+      if (def.min!=null) input.min = String(def.min);
+      if (def.max!=null) input.max = String(def.max);
+      let v = item.compCfg?.[def.id];
+      if (v==null) v = def.def;
+      input.value = (v==null) ? '' : String(v);
+      input.addEventListener('change', ()=>{
+        if (!item.compCfg) item.compCfg = {};
+        if (def.id === 'pattern'){
+          const arr = String(input.value||'').split(',').map(x=>+x.trim()).filter(n=>Number.isFinite(n));
+          item.compCfg[def.id] = arr.length ? arr : [0,1];
+        } else if (def.type === 'int') {
+          item.compCfg[def.id] = (input.value==='') ? null : (parseInt(input.value,10)||0);
+        } else if (def.type === 'number' || def.type === 'num') {
+          item.compCfg[def.id] = (input.value==='') ? null : (+input.value||0);
+        } else {
+          item.compCfg[def.id] = input.value;
+        }
+        onChanged?.();
+      });
+    }
+
+    row.appendChild(input);
     container.appendChild(row);
   }
 }
 
 function renderEmitterUiEditor(card, item, idx){
   const model = emitterToUiModel(item);
+
+  const persist = ()=>{
+    ForgeState.extraEmitters[idx] = uiModelToEmitter(model);
+    saveForge();
+  };
 
   const baseWrap = document.createElement('div');
   baseWrap.style.cssText = 'border:1px dashed rgba(255,255,255,0.2);padding:6px;margin-bottom:6px';
@@ -16702,11 +16771,12 @@ function renderEmitterUiEditor(card, item, idx){
   const typeLb = document.createElement('label');
   typeLb.textContent = 'TYPE';
   const typeSel = document.createElement('select');
+  typeSel.className = 'forge-extra-select';
   Object.keys(EmitterCatalog).forEach(k=>{
     const op=document.createElement('option'); op.value=k; op.textContent=k; typeSel.appendChild(op);
   });
   typeSel.value = model.base.type;
-  typeSel.addEventListener('change', ()=>{ model.base.type = typeSel.value; });
+  typeSel.addEventListener('change', ()=>{ model.base.type = typeSel.value; persist(); });
   typeRow.appendChild(typeLb); typeRow.appendChild(typeSel);
 
   const cdSp = document.createElement('div');
@@ -16715,7 +16785,7 @@ function renderEmitterUiEditor(card, item, idx){
     const f=document.createElement('div');f.className='field';
     const l=document.createElement('label');l.textContent=label;
     const i=document.createElement('input');i.type='number';i.step=step;i.value=String(v);
-    i.addEventListener('input',()=>cb(+i.value||0));
+    i.addEventListener('change',()=>{ cb(+i.value||0); persist(); });
     f.appendChild(l);f.appendChild(i);return f;
   };
   cdSp.appendChild(mkNum('CD', model.base.cd, '0.01', v=>model.base.cd=v));
@@ -16723,14 +16793,30 @@ function renderEmitterUiEditor(card, item, idx){
 
   const modsRow = document.createElement('div');
   modsRow.className = 'field';
-  const modsLb = document.createElement('label'); modsLb.textContent = 'BASE MODS (comma separated)';
-  const modsInput = document.createElement('input');
-  modsInput.value = (model.base.mods||[]).join(', ');
-  modsInput.placeholder = 'FIREWORK, PIERCE, ...';
-  modsInput.addEventListener('change', ()=>{
-    model.base.mods = modsInput.value.split(',').map(x=>x.trim()).filter(Boolean);
+  const modsLb = document.createElement('label'); modsLb.textContent = 'BASE MODS';
+  const modsChips = document.createElement('div');
+  modsChips.className = 'chip-pick';
+  modsChips.style.maxHeight = '120px';
+  modsChips.style.overflowY = 'auto';
+  const selected = new Set(model.base.mods || []);
+  Object.keys(BulletAffixCatalog).forEach(k=>{
+    const btn = document.createElement('button');
+    btn.type='button';
+    btn.className='pick-chip';
+    btn.textContent=k;
+    btn.dataset.key=k;
+    btn.classList.toggle('on', selected.has(k));
+    btn.addEventListener('click', ()=>{
+      if (selected.has(k)) selected.delete(k);
+      else selected.add(k);
+      model.base.mods = Array.from(selected).slice(0,24);
+      btn.classList.toggle('on', selected.has(k));
+      persist();
+    });
+    modsChips.appendChild(btn);
   });
-  modsRow.appendChild(modsLb); modsRow.appendChild(modsInput);
+  modsRow.appendChild(modsLb);
+  modsRow.appendChild(modsChips);
 
   baseWrap.appendChild(typeRow);
   baseWrap.appendChild(cdSp);
@@ -16750,24 +16836,25 @@ function renderEmitterUiEditor(card, item, idx){
       row.style.cssText='border:1px solid rgba(179,108,255,0.25);padding:6px;background:rgba(179,108,255,0.08)';
 
       const top = document.createElement('div');
-      top.style.cssText='display:flex;gap:6px;align-items:center';
+      top.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap';
       const sel = document.createElement('select');
+      sel.className = 'forge-extra-select';
+      sel.style.minWidth = '0';
+      sel.style.flex = '1 1 220px';
       const empty = document.createElement('option'); empty.value=''; empty.textContent='(NONE)'; sel.appendChild(empty);
       Object.keys(CompositeWrappers).forEach(k=>{ const op=document.createElement('option'); op.value=k; op.textContent=k; sel.appendChild(op); });
       sel.value = w.wrapperType || '';
-      sel.addEventListener('change', ()=>{ w.wrapperType = sel.value; if(!w.compCfg) w.compCfg={}; rerender(); });
+      sel.addEventListener('change', ()=>{ w.wrapperType = sel.value; if(!w.compCfg) w.compCfg={}; persist(); rerender(); });
 
-      const up = document.createElement('button'); up.className='mini-btn'; up.textContent='↑';
-      up.addEventListener('click', ()=>{ if (wi<=0) return; [model.wrappers[wi-1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi-1]]; rerender(); });
-      const dn = document.createElement('button'); dn.className='mini-btn'; dn.textContent='↓';
-      dn.addEventListener('click', ()=>{ if (wi>=model.wrappers.length-1) return; [model.wrappers[wi+1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi+1]]; rerender(); });
-      const del = document.createElement('button'); del.className='mini-btn'; del.textContent='REMOVE';
-      del.addEventListener('click', ()=>{ model.wrappers.splice(wi,1); rerender(); });
+      const mkBtn=(txt,fn)=>{ const b=document.createElement('button'); b.className='mini-btn'; b.textContent=txt; b.addEventListener('click',fn); return b; };
+      const up = mkBtn('↑', ()=>{ if (wi<=0) return; [model.wrappers[wi-1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi-1]]; persist(); rerender(); });
+      const dn = mkBtn('↓', ()=>{ if (wi>=model.wrappers.length-1) return; [model.wrappers[wi+1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi+1]]; persist(); rerender(); });
+      const del = mkBtn('REMOVE', ()=>{ model.wrappers.splice(wi,1); persist(); rerender(); });
       top.appendChild(sel); top.appendChild(up); top.appendChild(dn); top.appendChild(del);
 
       const cfgBox = document.createElement('div');
       cfgBox.style.marginTop='6px';
-      renderWrapperCfgFieldsUI(cfgBox, w, wi);
+      renderWrapperCfgFieldsUI(cfgBox, w, wi, persist);
 
       row.appendChild(top);
       row.appendChild(cfgBox);
@@ -16778,22 +16865,11 @@ function renderEmitterUiEditor(card, item, idx){
   rerender();
   const addW = document.createElement('button');
   addW.className='mini-btn'; addW.textContent='ADD WRAPPER';
-  addW.addEventListener('click', ()=>{ model.wrappers.push({wrapperType:'', compCfg:{}}); rerender(); });
+  addW.addEventListener('click', ()=>{ model.wrappers.push({wrapperType:'', compCfg:{}}); persist(); rerender(); });
 
   wrappersWrap.appendChild(list);
   wrappersWrap.appendChild(addW);
   card.appendChild(wrappersWrap);
-
-  const applyBtn = document.createElement('button');
-  applyBtn.className = 'mini-btn';
-  applyBtn.textContent = 'APPLY UI CHANGES';
-  applyBtn.addEventListener('click', ()=>{
-    ForgeState.extraEmitters[idx] = uiModelToEmitter(model);
-    saveForge();
-    syncForgeUIFromState();
-    textPop(W*0.5, 90, `EXTRA #${idx+1} UPDATED`, C.P1);
-  });
-  card.appendChild(applyBtn);
 }
 
 function renderForgeExtraEmittersUI(){
