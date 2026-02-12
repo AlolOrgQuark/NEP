@@ -2712,6 +2712,7 @@ const addShake = (m, t=0.16) => {
     previewPointerId:null,
     squadRoles:new Map(),
     squadIntelCd:0,
+    autoAssaultStall:0,
     catalog:{
       barricade:{cost:3,w:46,h:16,hp:220,col:'#b8d28a',type:'barricade'},
       wall:{cost:6,w:78,h:20,hp:520,col:'#7ef9c0',type:'wall'},
@@ -2862,6 +2863,7 @@ const addShake = (m, t=0.16) => {
       this.previewPointerId=null;
       this.squadRoles.clear();
       this.squadIntelCd=0;
+      this.autoAssaultStall=0;
     },
     start(){
       this.reset();
@@ -13194,8 +13196,10 @@ ui.score.textContent = formatValue(Game.score);
         // 如果 buffer 为空（比如刚开局就死），则继续执行下面的死亡逻辑
       }
       Game.killerData = null;
-    Game.failReason = '';
-    Game.failSnapshot = null;
+      if (Game.failReason !== 'flag'){
+        Game.failReason = '';
+        Game.failSnapshot = null;
+      }
       // 查找最近的敌人作为"杀手"
       let killer = null, killerD = Infinity;
       for (const e of enemies){
@@ -13409,15 +13413,92 @@ const AutoPilot = {
     };
     if (placeAnyAffordable()){
       this._fortBuildCd = 0.18;
+      Fortress.autoAssaultStall = 0;
       return;
     }
 
     const minCost = Object.values(Fortress.catalog).reduce((m, it)=>Math.min(m, it.cost||999), 999);
     const cannotAffordAny = Fortress.stock < minCost;
-    if (cannotAffordAny || Fortress.structures.length >= 18){
+    const dynamicCap = clamp(18 + Math.floor(Fortress.stock/8) + Math.floor(Game.wave/2), 18, 56);
+    const canStillAffordMany = Fortress.stock >= (minCost * 2);
+    Fortress.autoAssaultStall = (Fortress.autoAssaultStall||0) + 1;
+    if ((cannotAffordAny || Fortress.structures.length >= dynamicCap) && !canStillAffordMany && Fortress.autoAssaultStall >= 8){
       Fortress.beginAssault();
       this._fortBuildCd = 0.25;
+      Fortress.autoAssaultStall = 0;
+      return;
     }
+
+    // 卡住但仍有大额材料：继续尝试，不急着开波
+    if (Fortress.stock >= 30){
+      this._fortBuildCd = 0.10;
+      return;
+    }
+  },
+
+  _fortressGapGuardPoint(){
+    if (Game.mode!=='fortress' || Game.state!=='playing' || Fortress.phase!=='assault') return null;
+    const slots = [0.18,0.32,0.46,0.54,0.68,0.82].map(k=>W*k);
+
+    let best = null;
+    let bestRisk = -1e18;
+
+    for (const x of slots){
+      // 该通道防线强度（HP + 厚度）
+      let defenseHp = 0;
+      let defenseCount = 0;
+      for (const st of Fortress.structures){
+        if (st.hp<=0) continue;
+        if (Math.abs(st.x - x) > (st.w*0.55 + 20)) continue;
+        if (st.y < H*0.46) continue;
+        defenseHp += st.hp;
+        defenseCount += 1;
+      }
+      const defenseNorm = clamp(defenseHp / 2400, 0, 1.4);
+
+      // 该通道来袭威胁（敌机 + 敌弹）
+      let enemyThreat = 0;
+      let nearestEnemyY = -9999;
+      for (const e of enemies){
+        if (!e.alive) continue;
+        const lane = Math.abs(e.x - x);
+        if (lane > 130) continue;
+        const nearFlag = clamp((e.y - H*0.28) / (H*0.70), 0, 1);
+        const laneW = 1 - lane/130;
+        enemyThreat += laneW * (0.7 + nearFlag*1.6);
+        if (e.y > nearestEnemyY) nearestEnemyY = e.y;
+      }
+
+      let bulletThreat = 0;
+      for (const b of bulletsE){
+        if (!b.alive) continue;
+        if (b.vy <= 0) continue;
+        const lane = Math.abs(b.x - x);
+        if (lane > 95) continue;
+        const nearFlag = clamp((b.y - H*0.30) / (H*0.72), 0, 1);
+        bulletThreat += (1 - lane/95) * (0.4 + nearFlag*1.5);
+      }
+
+      const laneThreat = enemyThreat + bulletThreat*0.85;
+      const weakness = clamp(1.55 - defenseNorm - defenseCount*0.08, 0.25, 1.75);
+      const flagLowMul = (Fortress.flagHp < Fortress.flagMaxHp*0.45) ? 1.35 : 1.0;
+      const centerBonus = 1 - Math.min(1, Math.abs(x - W*0.5)/(W*0.5));
+      const distW = 1 / (1 + Math.abs(Player.x - x) * 0.011);
+
+      const risk = laneThreat * weakness * flagLowMul + centerBonus*0.45 + distW*0.25;
+      if (risk > bestRisk){
+        bestRisk = risk;
+        const targetY = (nearestEnemyY > 0)
+          ? clamp(nearestEnemyY + 46, H*0.58, H-116)
+          : clamp(H-152, 84, H-44);
+        best = {x, y:targetY, risk};
+      }
+    }
+
+    if (!best) return null;
+    const urgent = best.risk > 1.05 || Fortress.flagHp < Fortress.flagMaxHp*0.55;
+    if (!urgent) return null;
+    return {x:best.x, y:best.y};
   },
 
   _fortressGuardPoint(){
@@ -13445,9 +13526,15 @@ const AutoPilot = {
     const C = this.CONFIG;
 
     const fortGuard = this._fortressGuardPoint();
+    const fortGap = this._fortressGapGuardPoint();
     if (fortGuard){
       this.goalX = fortGuard.x;
       this.goalY = fortGuard.y;
+      this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
+    } else if (fortGap){
+      // 优先补位旗帜防线空档，不刻意追求与建筑重合
+      this.goalX = fortGap.x;
+      this.goalY = fortGap.y;
       this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
     } else {
       // 限频思考
@@ -13616,6 +13703,8 @@ const AutoPilot = {
 
     // D) 子弹全仿真（核心）
     score += this._simulateBulletsDangerAtPoint(x, y, bullets);
+
+
 
     // E) 安全期输出奖励（只作为弱奖励，且依赖 predX 是否存在）
     if (predX != null){
@@ -13915,7 +14004,9 @@ const TimeMachine = {
         isBoss: (e.type === 'BOSS'),
         bossStage: e.state, // 'enter' 或 'fight'
         bossPhase: e.phase,
-        isChaos: (e.type === 'CHAOS_BEAST')
+        isChaos: (e.type === 'CHAOS_BEAST'),
+        baseCol: e.baseCol,
+        tint: e.tint,
       }
     }));
 
@@ -14022,8 +14113,8 @@ Game.bossAlive = frame.game.bossAlive;
         e.type = state.isBoss ? 'BOSS' : (state.isChaos ? 'CHAOS_BEAST' : 'ENEMY');
         if (state.isBoss) Game.bossAlive = true;
 
-        e.baseCol = specData.col;
-        e.tint = specData.col;
+        e.baseCol = state.baseCol || specData.baseCol || specData.col;
+        e.tint = (state.tint != null) ? state.tint : (specData.tint || specData.col);
         e.maxHp = state.maxHp;
         e.hp = state.hp;
         e.x = state.x; e.y = state.y;
@@ -14268,19 +14359,20 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
     if (PERF.additive) ctx.globalCompositeOperation='lighter';
     for(const p of supplies){
       const def = Supply[p.key];
+      if (!def) continue;
       const spr = Spr[def.spr] || Spr.glowP;
       
       // Rotating Box for supply
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(Game.time * 2);
-      ctx.strokeStyle = rgbToRgba(def.col, 0.8);
+      ctx.strokeStyle = rgbToRgba(def.col || '#fff', 0.8);
       ctx.lineWidth = 2;
       ctx.strokeRect(-8, -8, 16, 16);
       ctx.restore();
 
       // Glow
-      drawGlow(spr, p.x,p.y, 0.8 + 0.2*Math.sin(p.t*8), 1.0);
+      drawGlow(spr, p.x,p.y, 0.8 + 0.2*Math.sin((p.t||0)*8), 1.0);
       
       // Text
       ctx.globalAlpha=1;
@@ -14288,7 +14380,7 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
       ctx.font='700 10px "Consolas", monospace';
       ctx.textAlign='center';
       ctx.textBaseline='middle';
-      ctx.fillText(def.name, p.x, p.y);
+      ctx.fillText(def.name || 'SUP', p.x, p.y);
     }
     ctx.globalCompositeOperation='source-over';
   }
@@ -15410,6 +15502,8 @@ function extractEnemyForForge(e) {
     isBoss: (e.type === 'BOSS'),
     hp: e.maxHp,
     col: e.baseCol || e.tint || 'rgb(255,77,109)',
+    baseCol: e.baseCol || null,
+    tint: (e.tint != null ? e.tint : null),
     moveKeys: moveKeys,
     moveKey: moveKeys[0], 
     mods: (e.waveBulletMods || []).slice(0, 6),
