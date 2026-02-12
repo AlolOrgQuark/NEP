@@ -13307,6 +13307,31 @@ const AutoPilot = {
       byType[st.type] = (byType[st.type]||0) + 1;
     }
 
+    const hpRatio = Player.maxHp>0 ? (Player.hp/Player.maxHp) : 1;
+    const flagRatio = Fortress.flagMaxHp>0 ? (Fortress.flagHp/Fortress.flagMaxHp) : 1;
+
+    if ((byType.repairplayer||0) < 1 && hpRatio < 0.82){
+      const cfg = Fortress.catalog.repairplayer;
+      if (cfg && Fortress.stock >= cfg.cost){
+        Fortress.selected = 'repairplayer';
+        if (Fortress.placeAt(clamp(Player.x, 44, W-44), clamp(Player.y + 34, H*0.52, H-72))){
+          this._fortBuildCd = 0.12;
+          return;
+        }
+      }
+    }
+
+    if ((byType.repair||0) < 1 && flagRatio < 0.94){
+      const cfg = Fortress.catalog.repair;
+      if (cfg && Fortress.stock >= cfg.cost){
+        Fortress.selected = 'repair';
+        if (Fortress.placeAt(W*0.5, H-112)){
+          this._fortBuildCd = 0.12;
+          return;
+        }
+      }
+    }
+
     const baseY = H - 132;
     const rows = [baseY, baseY - 58, baseY - 108];
     const slots = [0.18,0.32,0.46,0.54,0.68,0.82].map(k=>W*k);
@@ -13436,6 +13461,55 @@ const AutoPilot = {
     }
   },
 
+  _fortressSelfPreservePoint(){
+    if (Game.mode!=='fortress' || Game.state!=='playing' || !Player.alive) return null;
+    const hpRatio = Player.maxHp>0 ? (Player.hp/Player.maxHp) : 1;
+    if (hpRatio > 0.62 && Player.invuln<=0 && Player.shield>0) return null;
+
+    let threat = 0;
+    for (const b of bulletsE){
+      if (!b.alive) continue;
+      const d2 = dist2(Player.x, Player.y, b.x, b.y);
+      if (d2 < 180*180) threat += 1.0 - Math.sqrt(d2)/180;
+    }
+
+    const needRetreat = hpRatio < 0.52 || threat > 2.2;
+    if (!needRetreat) return null;
+
+    const healers = Fortress.structures.filter(st => st.hp>0 && st.type==='repairplayer');
+    if (healers.length){
+      let best = healers[0], bd = Infinity;
+      for (const st of healers){
+        const d2 = dist2(Player.x, Player.y, st.x, st.y);
+        if (d2 < bd){ bd = d2; best = st; }
+      }
+      return { x: clamp(best.x, 20, W-20), y: clamp(best.y - 20, 60, H-28) };
+    }
+
+    return { x: clamp(W*0.5 + (Player.x<W*0.5?-66:66), 20, W-20), y: clamp(H-130, 70, H-24) };
+  },
+
+  _fortressFlagInterceptPoint(){
+    if (Game.mode!=='fortress' || Game.state!=='playing' || Fortress.phase!=='assault') return null;
+    const flagX = W*0.5, flagY = H-62;
+    let best = null, bestScore = -1e18;
+    for (const e of enemies){
+      if (!e.alive) continue;
+      const downThreat = (e.vy||0) > -30 ? 1 : 0.6;
+      const toFlagX = Math.abs(e.x - flagX);
+      if (toFlagX > 230) continue;
+      const nearBottom = clamp((e.y - H*0.36)/(H*0.52), 0, 1);
+      const flagRush = clamp((flagY - e.y)/Math.max(30, flagY), 0, 1);
+      const score = nearBottom*1.6 + (1 - toFlagX/230)*1.4 + downThreat*0.9 + (1-flagRush)*0.8;
+      if (score > bestScore){ bestScore = score; best = e; }
+    }
+    if (!best || bestScore < 1.1) return null;
+    return {
+      x: clamp(best.x, W*0.5-170, W*0.5+170),
+      y: clamp(Math.min(H-120, best.y + 34), H*0.56, H-76)
+    };
+  },
+
   _fortressGapGuardPoint(){
     if (Game.mode!=='fortress' || Game.state!=='playing' || Fortress.phase!=='assault') return null;
     const slots = [0.18,0.32,0.46,0.54,0.68,0.82].map(k=>W*k);
@@ -13525,14 +13599,24 @@ const AutoPilot = {
 
     const C = this.CONFIG;
 
+    const fortSelf = this._fortressSelfPreservePoint();
+    const fortFlagIntercept = this._fortressFlagInterceptPoint();
     const fortGuard = this._fortressGuardPoint();
     const fortGap = this._fortressGapGuardPoint();
-    if (fortGuard){
+    if (fortSelf){
+      this.goalX = fortSelf.x;
+      this.goalY = fortSelf.y;
+      this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
+    } else if (fortFlagIntercept){
+      this.goalX = fortFlagIntercept.x;
+      this.goalY = fortFlagIntercept.y;
+      this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
+    } else if (fortGuard){
       this.goalX = fortGuard.x;
       this.goalY = fortGuard.y;
       this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
     } else if (fortGap){
-      // 优先补位旗帜防线空档，不刻意追求与建筑重合
+      // 次级策略：补位旗帜防线空档，再看建筑保护
       this.goalX = fortGap.x;
       this.goalY = fortGap.y;
       this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
@@ -15491,6 +15575,46 @@ function serializeEmitterRecursive(em) {
   };
 }
 
+function deserializeEmitterRecursive(data) {
+  if (!data) return null;
+  if (data.wrapperType === 'INTERLEAVE') {
+    const wrapperFn = CompositeWrappers['INTERLEAVE'];
+    if (!wrapperFn) return null;
+    const factoryA = () => deserializeEmitterRecursive(data.innerA);
+    const factoryB = () => deserializeEmitterRecursive(data.innerB);
+    const em = wrapperFn(factoryA, { ...(data.compCfg || {}), factoryB });
+    if (em && data.cd != null) em.cd = data.cd;
+    return em;
+  }
+  if (data.isWrapper) {
+    const wrapperFn = CompositeWrappers[data.wrapperType];
+    if (!wrapperFn) return null;
+    const innerFactory = () => deserializeEmitterRecursive(data.inner || data.innerA || data.innerB);
+    const em = wrapperFn(innerFactory, data.compCfg || {});
+    if (em && data.cd != null) em.cd = data.cd;
+    return em;
+  }
+  const factory = EmitterCatalog[data.type || 'AIM'];
+  if (!factory) return null;
+  return factory({ baseCd: data.cd, speed: data.speed, mods: data.mods || [] });
+}
+
+function buildEmitterSpecFromSerialized(data) {
+  if (!data) return null;
+  if (data.isWrapper || data.wrapperType === 'INTERLEAVE') {
+    const inst = deserializeEmitterRecursive(data);
+    return inst ? { type:'_COMPOSITE', _compositeInstance:inst, cfg:{} } : null;
+  }
+  return {
+    type: data.type || 'AIM',
+    cfg: {
+      baseCd: data.cd ?? 1.2,
+      speed: data.speed ?? 220,
+      mods: Array.isArray(data.mods) ? data.mods : []
+    }
+  };
+}
+
 // 代码位置：替换旧的 extractEnemyForForge 函数
 function extractEnemyForForge(e) {
   if (!e) return null;
@@ -15513,7 +15637,8 @@ function extractEnemyForForge(e) {
     bodyScale: 1.0,
     bodyOpt: {},
     slot1: null,
-    slot2: null
+    slot2: null,
+    emitters: []
   };
 
   // 1. 提取 Body 参数
@@ -15550,8 +15675,9 @@ function extractEnemyForForge(e) {
   return serializeEmitterRecursive(target);
 };
   
-  data.slot1 = resolveAndSerialize(srcEms[0]);
-  data.slot2 = resolveAndSerialize(srcEms[1]);
+  data.emitters = srcEms.map(resolveAndSerialize).filter(Boolean);
+  data.slot1 = data.emitters[0] || null;
+  data.slot2 = data.emitters[1] || null;
 
   return data;
 }
@@ -15740,7 +15866,8 @@ let ForgeState = {
   isBoss:false, moveKey:'DRIFT', col:C.E2, hp:900,
   em1:{type:'AIM', cd:1.2, speed:220},
   em2:{type:'RING', cd:2.2, speed:180},
-  mods:[], traits:[]
+  mods:[], traits:[],
+  extraEmitters:[]
 };
 ForgeState.bodyKind = ForgeState.bodyKind || 'AUTO';
 ForgeState.bodySeed = (ForgeState.bodySeed ?? 1337);
@@ -16894,7 +17021,18 @@ function importBuildsJSON(str){
   saveBuilds();
   syncWorkshopFromModel();
 }
-function exportForgeJSON(){ return JSON.stringify({version:1,type:'forge',forge:ForgeState}, null, 2); }
+function exportForgeJSON(){
+  const forgeOut = Object.assign({}, ForgeState);
+  const emitters = [
+    serializeEmitterRecursive(buildEmitterSpecFromSlot(1)?._compositeInstance || EmitterCatalog[ForgeState.em1?.type||'AIM']?.({baseCd:ForgeState.em1?.cd||1.2,speed:ForgeState.em1?.speed||220,mods:ForgeState.slot1?.baseMods||[]})),
+    serializeEmitterRecursive(buildEmitterSpecFromSlot(2)?._compositeInstance || EmitterCatalog[ForgeState.em2?.type||'RING']?.({baseCd:ForgeState.em2?.cd||2.2,speed:ForgeState.em2?.speed||180,mods:ForgeState.slot2?.baseMods||[]})),
+    ...((ForgeState.extraEmitters||[]).map(it => it?.isWrapper || it?.wrapperType || it?.type ? deepClone(it) : serializeEmitterRecursive(it)))
+  ].filter(Boolean);
+  forgeOut.emitters = emitters;
+  forgeOut.slot1 = emitters[0] || null;
+  forgeOut.slot2 = emitters[1] || null;
+  return JSON.stringify({version:1,type:'forge',forge:forgeOut}, null, 2);
+}
 // 代码位置：替换旧的 importForgeJSON 函数
 function importForgeJSON(str) {
   let obj;
@@ -16927,19 +17065,24 @@ function importForgeJSON(str) {
   // 重置 Emitter State
   ForgeState.slot1 = { layer1:'', layer2:'', layer1Cfg:{}, layer2Cfg:{}, baseMods:[] };
   ForgeState.slot2 = { layer1:'', layer2:'', layer1Cfg:{}, layer2Cfg:{}, baseMods:[] };
+  ForgeState.extraEmitters = [];
   ForgeState.em1 = { type:'AIM', cd:1.2, speed:220 };
   ForgeState.em2 = { type:'RING', cd:2.2, speed:180 };
 
-  // 解析 Slot 数据
+  const emittersIn = Array.isArray(data.emitters) ? data.emitters : [data.slot1, data.slot2].filter(Boolean);
+  const first = emittersIn[0] || data.slot1 || null;
+  const second = emittersIn[1] || data.slot2 || null;
+
+  // 兼容 UI 的双层 wrapper 展示（超过两层仍完整保存在 extraEmitters/emittersIn）
   const parseSlot = (srcSlotData, targetSlotNum) => {
     if (!srcSlotData) return;
     const emState = (targetSlotNum===1) ? ForgeState.em1 : ForgeState.em2;
     const slotState = ForgeState[`slot${targetSlotNum}`];
     let current = srcSlotData;
-    let layersFound = [];
+    const layersFound = [];
     while (current && current.isWrapper) {
       layersFound.push({ type: current.wrapperType, cfg: current.compCfg });
-      current = current.inner;
+      current = current.inner || current.innerA || current.innerB;
     }
     if (current) {
       emState.type = current.type || 'AIM';
@@ -16957,9 +17100,11 @@ function importForgeJSON(str) {
     }
   };
 
-  if (data.slot1) parseSlot(data.slot1, 1);
-  if (data.slot2) parseSlot(data.slot2, 2);
+  if (first) parseSlot(first, 1);
+  if (second) parseSlot(second, 2);
 
+  const extraSerialized = emittersIn.slice(2).filter(Boolean);
+  ForgeState.extraEmitters = extraSerialized.map(it=>deepClone(it));
   saveForge();
   syncForgeUIFromState();
 }
@@ -16996,7 +17141,11 @@ function readForgeSpecFromUI() {
       bodySeed: ForgeState.bodySeed,
       bodyScale: ForgeState.bodyScale,
       bodyOpt: deepClone(ForgeState.bodyOpt || {}),
-      emitters: [ buildEmitterSpecFromSlot(1), buildEmitterSpecFromSlot(2) ].filter(e=>e),
+      emitters: [
+        buildEmitterSpecFromSlot(1),
+        buildEmitterSpecFromSlot(2),
+        ...((ForgeState.extraEmitters||[]).map(buildEmitterSpecFromSerialized))
+      ].filter(e=>e),
       waveBulletMods: ForgeState.mods || []
     }
   };
@@ -17029,6 +17178,7 @@ function resetForgeStateAndUI(){
   // 清空 Slot 1 和 Slot 2 的所有配置
   ForgeState.slot1 = { layer1:'', layer2:'', layer1Cfg:{}, layer2Cfg:{}, baseMods:[] };
   ForgeState.slot2 = { layer1:'', layer2:'', layer1Cfg:{}, layer2Cfg:{}, baseMods:[] };
+  ForgeState.extraEmitters = [];
 
   // 兼容旧属性（虽然新逻辑不主要使用，但重置以保持状态干净）
   ForgeState.em1Composite = '';
