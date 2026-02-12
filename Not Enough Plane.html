@@ -9978,6 +9978,7 @@ for (const em of e.emitters){
           e.hp = e.maxHp;
           e.score = Math.round(e.score * proto.scoreMul);
 
+          normalizeFortressSpawn(e);
           resolveSpawnOverlap(e, 12);
           enemies.push(e);
           Fortress.spawnLeft -= 1;
@@ -10053,6 +10054,7 @@ for (const em of e.emitters){
         e.hp = e.maxHp;
         e.score = Math.round(e.score * proto.scoreMul);
 
+        normalizeFortressSpawn(e);
         resolveSpawnOverlap(e, 12);
         enemies.push(e);
       }
@@ -11890,6 +11892,16 @@ function updateBeams(dt){
   }
 }
 
+function normalizeFortressSpawn(e){
+  if (Game.mode!=='fortress' || !e || e.type==='BOSS') return;
+  // 堡垒模式敌人必须从屏幕上方入场，避免在可见区域“凭空出现”
+  if (!Number.isFinite(e.y) || e.y > H*0.06){
+    e.y = -60 - rand(0, 40);
+  }
+  // 避免频繁在左上角聚集
+  if (e.x < W*0.14) e.x = clamp(e.x + rand(40, 110), 24, W-24);
+}
+
 function enforceHoverLimit(){
   const hover = [];
   for(const e of enemies){
@@ -13231,13 +13243,26 @@ const AutoPilot = {
       {type:'wall', max:4, y:rows[0]},
       {type:'heavywall', max:2, y:rows[1]},
       {type:'bunker', max:1, y:rows[2]},
+      {type:'shield', max:2, y:rows[1]},
       {type:'turret', max:4, y:rows[1]},
       {type:'gatling', max:3, y:rows[0]},
       {type:'sniper', max:2, y:rows[2]},
       {type:'missile', max:1, y:rows[2]},
+      {type:'tesla', max:2, y:rows[1]},
+      {type:'flame', max:2, y:rows[0]},
+      {type:'mortar', max:1, y:rows[2]},
+      {type:'dronepad', max:1, y:rows[1]},
+      {type:'pulse', max:1, y:rows[1]},
+      {type:'mine', max:4, y:rows[0]},
+      {type:'slow', max:2, y:rows[1]},
       {type:'repairfield', max:1, y:rows[2]},
       {type:'repair', max:1, y:rows[1]},
+      {type:'repairplayer', max:1, y:rows[1]},
       {type:'factory', max:1, y:rows[1]},
+      {type:'spinner', max:1, y:rows[1]},
+      {type:'ram', max:1, y:rows[1]},
+      {type:'beacon', max:1, y:rows[1]},
+      {type:'taunt', max:1, y:rows[2]},
     ];
 
     const offenseSet = new Set(['turret','gatling','sniper','missile','tesla','flame','mortar','dronepad','pulse']);
@@ -13280,7 +13305,30 @@ const AutoPilot = {
       }
     }
 
-    if (Fortress.stock < 6 || Fortress.structures.length >= 18){
+    // 兜底：若有可负担的建筑但布局冲突，尝试从全目录扫描任意可放置项
+    const placeAnyAffordable = () => {
+      const keys = Object.keys(Fortress.catalog);
+      const affordable = keys.filter(k => Fortress.stock >= (Fortress.catalog[k]?.cost || 1e9));
+      if (!affordable.length) return false;
+      for (const k of affordable){
+        const cfg = Fortress.catalog[k];
+        Fortress.selected = k;
+        for (let i=0;i<slots.length;i++){
+          const x = slots[i] + ((i%2) ? 16 : -16);
+          const y = rows[(i + (cfg?.w||0)) % rows.length] + ((i%3)-1)*10;
+          if (Fortress.placeAt(x, y)) return true;
+        }
+      }
+      return false;
+    };
+    if (placeAnyAffordable()){
+      this._fortBuildCd = 0.18;
+      return;
+    }
+
+    const minCost = Object.values(Fortress.catalog).reduce((m, it)=>Math.min(m, it.cost||999), 999);
+    const cannotAffordAny = Fortress.stock < minCost;
+    if (cannotAffordAny || Fortress.structures.length >= 18){
       Fortress.beginAssault();
       this._fortBuildCd = 0.25;
     }
@@ -13812,6 +13860,9 @@ spawnerCd: Spawner.cd,
         sid: Fortress.sid, sellMode: Fortress.sellMode, bossSpawned: Fortress.bossSpawned,
         structures: Fortress.structures.map(st => ({...st})),
         undoStack: Fortress.undoStack.map(it => ({...it})),
+        activeDrag: Fortress.activeDrag ? {...Fortress.activeDrag} : null,
+        preview: Fortress.preview ? {...Fortress.preview} : null,
+        previewPointerId: Fortress.previewPointerId,
       } : null
     };
 
@@ -13866,11 +13917,19 @@ Game.bossAlive = frame.game.bossAlive;
               updateEmitters(e, dt);
           };
       } else {
-          // 普通怪或 Lab 模式 Boss，走模板流程
-          const moveKey = specData.moveKey || 'DRIFT';
-          const moveFactory = MoveCatalog[moveKey];
-          if (!moveFactory) return;
-          e = moveFactory(d);
+          // 普通怪统一通过 EnemyFactory 重建，确保 move mixer / emitters 与堡垒机制完全一致
+          const rebuildProto = {
+            moveKeys: (Array.isArray(specData.moveKeys) && specData.moveKeys.length) ? specData.moveKeys : [specData.moveKey || 'DRIFT'],
+            moveKey: specData.moveKey || ((Array.isArray(specData.moveKeys) && specData.moveKeys[0]) ? specData.moveKeys[0] : 'DRIFT'),
+            baseCol: specData.baseCol || specData.col,
+            bodySeed: specData.bodySeed || 1337,
+            waveBulletMods: specData.mods || specData.waveBulletMods || [],
+            emitters: specData.emitters || [],
+            traitsForced: specData.traits || [],
+            hpMul: 1,
+            scoreMul: 1,
+          };
+          e = EnemyFactory.spawnFromProto(rebuildProto, d);
       }
 
       if (e) {
@@ -13967,7 +14026,9 @@ if (frame.fortress && Game.mode==='fortress') {
   Fortress.bossSpawned = frame.fortress.bossSpawned;
   Fortress.structures = frame.fortress.structures.map(st => ({...st}));
   Fortress.undoStack = frame.fortress.undoStack.map(it => ({...it}));
-  Fortress.activeDrag = null;
+  Fortress.activeDrag = frame.fortress.activeDrag ? {...frame.fortress.activeDrag} : null;
+  Fortress.preview = frame.fortress.preview ? {...frame.fortress.preview} : null;
+  Fortress.previewPointerId = frame.fortress.previewPointerId ?? null;
   Fortress.syncSelectionUI();
   Fortress.updatePanel();
 }
