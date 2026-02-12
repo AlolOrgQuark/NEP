@@ -201,8 +201,12 @@ function maybeStart(room, starterId, cfg) {
   room.pendingStartCfg = cfg || players[0].prepareCfg;
   const wave = Math.max(1, clipNum(room.pendingStartCfg?.wave, 1) | 0);
 
-  room.runtime = createHeadlessGameRuntime();
-  room.runtime.start(mode, wave);
+  if (mode !== 'fortress_duel'){
+    room.runtime = createHeadlessGameRuntime();
+    room.runtime.start(mode, wave);
+  } else {
+    room.runtime = null;
+  }
 
   room.match = {
     active: true,
@@ -280,6 +284,16 @@ function handleMessage(ws, msg) {
         score: clipNum(s.score, 0),
         wave: clipNum(s.wave, 1),
         bullets: Array.isArray(s.bullets) ? s.bullets.slice(0, 120) : [],
+        fortress: (s.fortress && typeof s.fortress === 'object') ? {
+          flagHp: clipNum(s.fortress.flagHp, 1),
+          flagMaxHp: clipNum(s.fortress.flagMaxHp, 1),
+          structures: Array.isArray(s.fortress.structures) ? s.fortress.structures.slice(0, 80).map((st)=>({
+            id: clipNum(st?.id, 0)|0, x: clipNum(st?.x, 0), y: clipNum(st?.y, 0),
+            w: clipNum(st?.w, 20), h: clipNum(st?.h, 20),
+            hp: clipNum(st?.hp, 0), maxHp: clipNum(st?.maxHp, 1),
+            col: String(st?.col || '#fff').slice(0,20), type: String(st?.type || '').slice(0,24)
+          })) : []
+        } : null,
       };
     }
     p.lastInputAt = nowMs();
@@ -311,6 +325,8 @@ function handleMessage(ws, msg) {
         event: 'peer_hit',
         from: c.id,
         dmg: clipNum(msg.dmg, 1),
+        kind: (msg.kind || 'player').toString().slice(0,24),
+        sid: clipNum(msg.sid, 0)|0,
       });
     }
   }
@@ -344,7 +360,7 @@ function roomTick() {
       }
     }
 
-    if (room.match.active && room.runtime && room.match.mode !== 'workshop') {
+    if (room.match.active && room.runtime && room.match.mode !== 'workshop' && room.match.mode !== 'fortress_duel') {
       const playerStates = [...room.players.values()].map((p) => p.state);
       try {
         room.runtime.tick(DT, playerStates);
