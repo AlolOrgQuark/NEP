@@ -3009,7 +3009,7 @@ const addShake = (m, t=0.16) => {
       const x = p.x;
       const y = p.y;
       const id = this.sid++;
-      const st = {id,x,y,w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,cd:cfg.cd||0,cost:cfg.cost};
+      const st = {id,x,y,w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,cd:cfg.cd||0,cost:cfg.cost,_builtAt:Game.time||0,_builtWave:Game.wave||1};
       this.getBehavior(st.type)?.onCreate?.(st, {fortress:this});
       this.structures.push(st);
       this.stock -= cfg.cost;
@@ -13350,6 +13350,38 @@ const AutoPilot = {
     this.setActive(!this.active);
   },
 
+  _fortItemPower(type){
+    const score = {
+      barricade:0.8, wall:1.2, heavywall:2.0, bunker:2.8, shield:2.3,
+      turret:2.6, gatling:2.9, sniper:2.5, missile:3.6, tesla:3.0, flame:2.7, mortar:3.2,
+      dronepad:2.5, pulse:2.6, mine:1.0, slow:1.3,
+      repair:2.2, repairplayer:3.2, repairfield:2.0, factory:1.6,
+      spinner:2.6, ram:2.2, beacon:2.4, taunt:2.8
+    };
+    return score[type] || 1.0;
+  },
+
+  _fortPreferredPlacement(type, have, rows, slots){
+    const left = slots[Math.max(0, Math.floor(slots.length*0.25)-1)] || slots[1] || W*0.32;
+    const right = slots[Math.min(slots.length-1, Math.floor(slots.length*0.75))] || slots[4] || W*0.68;
+    const center = W*0.5;
+    const lane = slots[have % slots.length] || center;
+
+    if (['barricade','wall','heavywall','bunker','shield'].includes(type)){
+      const x = slots[(have*2 + 1) % slots.length] || lane;
+      return {x, y: rows[0] + ((have%2)?8:-6)};
+    }
+    if (type==='repairplayer') return {x: clamp(center + ((have%2)?-72:72), 40, W-40), y: rows[1] + 18};
+    if (type==='repair') return {x:center, y:rows[1]};
+    if (type==='sniper' || type==='mortar' || type==='missile') return {x:(have%2?left:right), y:rows[2]-4};
+    if (type==='gatling' || type==='flame' || type==='spinner' || type==='ram') return {x:lane, y:rows[0]-6};
+    if (type==='tesla' || type==='pulse' || type==='dronepad' || type==='beacon') return {x:lane, y:rows[1]-4};
+    if (type==='mine' || type==='slow') return {x:slots[(have*3+2)%slots.length] || lane, y:rows[0]+14};
+    if (type==='factory' || type==='repairfield') return {x:(have%2?left:right), y:rows[2]+6};
+    if (type==='taunt') return {x:center, y:rows[2]-10};
+    return {x:lane, y:rows[1]};
+  },
+
   _fortTrySellFor(itemType, preferredSacrifice=[]){
     const cfg = Fortress.catalog[itemType];
     if (!cfg) return false;
@@ -13363,15 +13395,25 @@ const AutoPilot = {
         const c = Fortress.catalog[st.type];
         const refund = Math.max(1, Math.floor((st.cost||c?.cost||6)*0.6));
         const hpPct = clamp(st.hp / Math.max(1, st.maxHp||1), 0, 1);
+        const builtAge = (Game.time||0) - (st._builtAt||0);
+        const builtWaveAge = (Game.wave||1) - (st._builtWave||1);
+        const keepMin = (countByType[st.type]||0) <= (minKeep[st.type]||0);
+        const sellable = !keepMin && (builtAge >= 18 || builtWaveAge >= 2);
+        const oldPower = this._fortItemPower(st.type);
+        const powerGain = targetPower - oldPower;
         const pref = sacSet.has(st.type) ? 0 : 1;
-        const score = pref*1000 + hpPct*100 + (st.cost||c?.cost||0);
-        return {st, refund, score};
+        const score = pref*1000 + hpPct*100 + (st.cost||c?.cost||0) - powerGain*80;
+        return {st, refund, score, sellable, powerGain};
       })
-      .filter(it => it.refund > 0)
+      .filter(it => it.refund > 0 && it.sellable && it.powerGain > 0.55)
       .sort((a,b)=>a.score-b.score);
 
     for (const it of candidates){
-      if (Fortress.sellAt(it.st.x, it.st.y)) return true;
+      if ((Fortress.stock + it.refund) < cfg.cost) continue;
+      if (Fortress.sellAt(it.st.x, it.st.y)){
+        this._fortLastSellT = Game.time || 0;
+        return true;
+      }
     }
     return false;
   },
@@ -13521,8 +13563,9 @@ const AutoPilot = {
       if (!cfg || Fortress.stock < cfg.cost) continue;
       if (wantOffense && defenseSet.has(step.type)) continue; // 优先补攻击位
       Fortress.selected = step.type;
-      const x = slots[(have + (step.type.length%slots.length)) % slots.length];
-      const y = step.y + ((have%2) ? 12 : -8);
+      const p = this._fortPreferredPlacement(step.type, have, rows, slots);
+      const x = p.x;
+      const y = p.y;
       if (Fortress.placeAt(x, y)){
         this._fortBuildCd = 0.18;
         return;
