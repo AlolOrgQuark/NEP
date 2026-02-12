@@ -1657,6 +1657,20 @@ input[type="checkbox"] {
 </details>
 
           <details class="acc" open>
+            <summary>EXTRA EMITTERS <span class="muted">UNLIMITED</span></summary>
+            <div class="acc-body">
+              <div class="menu-actions" style="justify-content:flex-start;gap:6px">
+                <button id="btnForgeExtraAdd" class="mini-btn">ADD BASE</button>
+                <button id="btnForgeExtraAddFrom1" class="mini-btn">COPY SLOT1</button>
+                <button id="btnForgeExtraAddFrom2" class="mini-btn">COPY SLOT2</button>
+                <button id="btnForgeExtraMode" class="mini-btn">VIEW: UI</button>
+              </div>
+              <div class="muted" style="margin:6px 0 8px">每个条目支持完整 emitter/wrapper JSON，可无限追加、修改、删除。</div>
+              <div id="forgeExtraEmittersList" style="display:flex;flex-direction:column;gap:8px"></div>
+            </div>
+          </details>
+
+          <details class="acc" open>
             <summary>FORGE MODS / TRAITS</summary>
             <div class="acc-body">
               <div class="field"><label>BULLET AFFIX (BOTH EMITTERS)</label>
@@ -13307,6 +13321,31 @@ const AutoPilot = {
       byType[st.type] = (byType[st.type]||0) + 1;
     }
 
+    const hpRatio = Player.maxHp>0 ? (Player.hp/Player.maxHp) : 1;
+    const flagRatio = Fortress.flagMaxHp>0 ? (Fortress.flagHp/Fortress.flagMaxHp) : 1;
+
+    if ((byType.repairplayer||0) < 1 && hpRatio < 0.82){
+      const cfg = Fortress.catalog.repairplayer;
+      if (cfg && Fortress.stock >= cfg.cost){
+        Fortress.selected = 'repairplayer';
+        if (Fortress.placeAt(clamp(Player.x, 44, W-44), clamp(Player.y + 34, H*0.52, H-72))){
+          this._fortBuildCd = 0.12;
+          return;
+        }
+      }
+    }
+
+    if ((byType.repair||0) < 1 && flagRatio < 0.94){
+      const cfg = Fortress.catalog.repair;
+      if (cfg && Fortress.stock >= cfg.cost){
+        Fortress.selected = 'repair';
+        if (Fortress.placeAt(W*0.5, H-112)){
+          this._fortBuildCd = 0.12;
+          return;
+        }
+      }
+    }
+
     const baseY = H - 132;
     const rows = [baseY, baseY - 58, baseY - 108];
     const slots = [0.18,0.32,0.46,0.54,0.68,0.82].map(k=>W*k);
@@ -13436,6 +13475,55 @@ const AutoPilot = {
     }
   },
 
+  _fortressSelfPreservePoint(){
+    if (Game.mode!=='fortress' || Game.state!=='playing' || !Player.alive) return null;
+    const hpRatio = Player.maxHp>0 ? (Player.hp/Player.maxHp) : 1;
+    if (hpRatio > 0.62 && Player.invuln<=0 && Player.shield>0) return null;
+
+    let threat = 0;
+    for (const b of bulletsE){
+      if (!b.alive) continue;
+      const d2 = dist2(Player.x, Player.y, b.x, b.y);
+      if (d2 < 180*180) threat += 1.0 - Math.sqrt(d2)/180;
+    }
+
+    const needRetreat = hpRatio < 0.52 || threat > 2.2;
+    if (!needRetreat) return null;
+
+    const healers = Fortress.structures.filter(st => st.hp>0 && st.type==='repairplayer');
+    if (healers.length){
+      let best = healers[0], bd = Infinity;
+      for (const st of healers){
+        const d2 = dist2(Player.x, Player.y, st.x, st.y);
+        if (d2 < bd){ bd = d2; best = st; }
+      }
+      return { x: clamp(best.x, 20, W-20), y: clamp(best.y - 20, 60, H-28) };
+    }
+
+    return { x: clamp(W*0.5 + (Player.x<W*0.5?-66:66), 20, W-20), y: clamp(H-130, 70, H-24) };
+  },
+
+  _fortressFlagInterceptPoint(){
+    if (Game.mode!=='fortress' || Game.state!=='playing' || Fortress.phase!=='assault') return null;
+    const flagX = W*0.5, flagY = H-62;
+    let best = null, bestScore = -1e18;
+    for (const e of enemies){
+      if (!e.alive) continue;
+      const downThreat = (e.vy||0) > -30 ? 1 : 0.6;
+      const toFlagX = Math.abs(e.x - flagX);
+      if (toFlagX > 230) continue;
+      const nearBottom = clamp((e.y - H*0.36)/(H*0.52), 0, 1);
+      const flagRush = clamp((flagY - e.y)/Math.max(30, flagY), 0, 1);
+      const score = nearBottom*1.6 + (1 - toFlagX/230)*1.4 + downThreat*0.9 + (1-flagRush)*0.8;
+      if (score > bestScore){ bestScore = score; best = e; }
+    }
+    if (!best || bestScore < 1.1) return null;
+    return {
+      x: clamp(best.x, W*0.5-170, W*0.5+170),
+      y: clamp(Math.min(H-120, best.y + 34), H*0.56, H-76)
+    };
+  },
+
   _fortressGapGuardPoint(){
     if (Game.mode!=='fortress' || Game.state!=='playing' || Fortress.phase!=='assault') return null;
     const slots = [0.18,0.32,0.46,0.54,0.68,0.82].map(k=>W*k);
@@ -13525,14 +13613,24 @@ const AutoPilot = {
 
     const C = this.CONFIG;
 
+    const fortSelf = this._fortressSelfPreservePoint();
+    const fortFlagIntercept = this._fortressFlagInterceptPoint();
     const fortGuard = this._fortressGuardPoint();
     const fortGap = this._fortressGapGuardPoint();
-    if (fortGuard){
+    if (fortSelf){
+      this.goalX = fortSelf.x;
+      this.goalY = fortSelf.y;
+      this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
+    } else if (fortFlagIntercept){
+      this.goalX = fortFlagIntercept.x;
+      this.goalY = fortFlagIntercept.y;
+      this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
+    } else if (fortGuard){
       this.goalX = fortGuard.x;
       this.goalY = fortGuard.y;
       this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
     } else if (fortGap){
-      // 优先补位旗帜防线空档，不刻意追求与建筑重合
+      // 次级策略：补位旗帜防线空档，再看建筑保护
       this.goalX = fortGap.x;
       this.goalY = fortGap.y;
       this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
@@ -15491,6 +15589,46 @@ function serializeEmitterRecursive(em) {
   };
 }
 
+function deserializeEmitterRecursive(data) {
+  if (!data) return null;
+  if (data.wrapperType === 'INTERLEAVE') {
+    const wrapperFn = CompositeWrappers['INTERLEAVE'];
+    if (!wrapperFn) return null;
+    const factoryA = () => deserializeEmitterRecursive(data.innerA);
+    const factoryB = () => deserializeEmitterRecursive(data.innerB);
+    const em = wrapperFn(factoryA, { ...(data.compCfg || {}), factoryB });
+    if (em && data.cd != null) em.cd = data.cd;
+    return em;
+  }
+  if (data.isWrapper) {
+    const wrapperFn = CompositeWrappers[data.wrapperType];
+    if (!wrapperFn) return null;
+    const innerFactory = () => deserializeEmitterRecursive(data.inner || data.innerA || data.innerB);
+    const em = wrapperFn(innerFactory, data.compCfg || {});
+    if (em && data.cd != null) em.cd = data.cd;
+    return em;
+  }
+  const factory = EmitterCatalog[data.type || 'AIM'];
+  if (!factory) return null;
+  return factory({ baseCd: data.cd, speed: data.speed, mods: data.mods || [] });
+}
+
+function buildEmitterSpecFromSerialized(data) {
+  if (!data) return null;
+  if (data.isWrapper || data.wrapperType === 'INTERLEAVE') {
+    const inst = deserializeEmitterRecursive(data);
+    return inst ? { type:'_COMPOSITE', _compositeInstance:inst, cfg:{} } : null;
+  }
+  return {
+    type: data.type || 'AIM',
+    cfg: {
+      baseCd: data.cd ?? 1.2,
+      speed: data.speed ?? 220,
+      mods: Array.isArray(data.mods) ? data.mods : []
+    }
+  };
+}
+
 // 代码位置：替换旧的 extractEnemyForForge 函数
 function extractEnemyForForge(e) {
   if (!e) return null;
@@ -15513,7 +15651,8 @@ function extractEnemyForForge(e) {
     bodyScale: 1.0,
     bodyOpt: {},
     slot1: null,
-    slot2: null
+    slot2: null,
+    emitters: []
   };
 
   // 1. 提取 Body 参数
@@ -15550,8 +15689,9 @@ function extractEnemyForForge(e) {
   return serializeEmitterRecursive(target);
 };
   
-  data.slot1 = resolveAndSerialize(srcEms[0]);
-  data.slot2 = resolveAndSerialize(srcEms[1]);
+  data.emitters = srcEms.map(resolveAndSerialize).filter(Boolean);
+  data.slot1 = data.emitters[0] || null;
+  data.slot2 = data.emitters[1] || null;
 
   return data;
 }
@@ -15740,7 +15880,8 @@ let ForgeState = {
   isBoss:false, moveKey:'DRIFT', col:C.E2, hp:900,
   em1:{type:'AIM', cd:1.2, speed:220},
   em2:{type:'RING', cd:2.2, speed:180},
-  mods:[], traits:[]
+  mods:[], traits:[],
+  extraEmitters:[]
 };
 ForgeState.bodyKind = ForgeState.bodyKind || 'AUTO';
 ForgeState.bodySeed = (ForgeState.bodySeed ?? 1337);
@@ -16383,6 +16524,375 @@ function initForgeExtendedUI() {
 }
 
 
+function ensureForgeExtraEmitters(){
+  if (!Array.isArray(ForgeState.extraEmitters)) ForgeState.extraEmitters = [];
+  if (!ForgeState.extraEmittersViewMode) ForgeState.extraEmittersViewMode = 'ui';
+}
+
+function summarizeSerializedEmitter(node){
+  if (!node) return 'EMPTY';
+  const wrappers = [];
+  let cur = node;
+  while (cur && cur.isWrapper){
+    wrappers.push(cur.wrapperType || '?');
+    cur = cur.inner || cur.innerA || cur.innerB;
+  }
+  const baseType = cur?.type || 'AIM';
+  const mods = Array.isArray(cur?.mods) ? cur.mods : [];
+  const modTxt = mods.length ? ` mods:${mods.join(',')}` : '';
+  const wrapTxt = wrappers.length ? ` [${wrappers.join(' -> ')}]` : '';
+  return `${baseType}${wrapTxt}${modTxt}`;
+}
+
+function normalizeSerializedEmitter(node){
+  if (!node) return null;
+  if (node.type && !node.isWrapper){
+    return {
+      isWrapper:false,
+      type: node.type || 'AIM',
+      mods: Array.isArray(node.mods) ? node.mods.slice(0, 24) : [],
+      speed: Number.isFinite(+node.speed) ? +node.speed : 220,
+      cd: Number.isFinite(+node.cd) ? +node.cd : 1.2
+    };
+  }
+  if (node.isWrapper || node.wrapperType){
+    const out = {
+      isWrapper:true,
+      wrapperType: node.wrapperType || node.type || '',
+      compCfg: (node.compCfg && typeof node.compCfg==='object') ? deepClone(node.compCfg) : {}
+    };
+    if (out.wrapperType === 'INTERLEAVE'){
+      out.innerA = normalizeSerializedEmitter(node.innerA || node.inner);
+      out.innerB = normalizeSerializedEmitter(node.innerB || node.inner);
+    } else {
+      out.inner = normalizeSerializedEmitter(node.inner || node.innerA || node.innerB);
+    }
+    return out;
+  }
+  return null;
+}
+
+function getSerializedFromSlot(slotNum){
+  const spec = buildEmitterSpecFromSlot(slotNum);
+  if (!spec) return null;
+  if (spec.type === '_COMPOSITE') return serializeEmitterRecursive(spec._compositeInstance);
+  return normalizeSerializedEmitter({
+    isWrapper:false,
+    type: spec.type || 'AIM',
+    mods: Array.isArray(spec.cfg?.mods) ? spec.cfg.mods : [],
+    speed: spec.cfg?.speed ?? 220,
+    cd: spec.cfg?.baseCd ?? 1.2
+  });
+}
+
+function emitterToUiModel(node){
+  const n = normalizeSerializedEmitter(node) || {isWrapper:false,type:'AIM',mods:[],speed:220,cd:1.2};
+  const wrappers = [];
+  let cur = n;
+  while (cur && cur.isWrapper){
+    wrappers.push({
+      wrapperType: cur.wrapperType || '',
+      compCfg: deepClone(cur.compCfg || {}),
+      _warnInterleave: (cur.wrapperType === 'INTERLEAVE')
+    });
+    cur = cur.inner || cur.innerA || cur.innerB;
+  }
+  return {
+    base: {
+      type: cur?.type || 'AIM',
+      cd: Number.isFinite(+cur?.cd) ? +cur.cd : 1.2,
+      speed: Number.isFinite(+cur?.speed) ? +cur.speed : 220,
+      mods: Array.isArray(cur?.mods) ? cur.mods.slice() : []
+    },
+    wrappers: wrappers.reverse() // inner -> outer
+  };
+}
+
+function uiModelToEmitter(model){
+  const base = {
+    isWrapper:false,
+    type: model?.base?.type || 'AIM',
+    cd: Number.isFinite(+model?.base?.cd) ? +model.base.cd : 1.2,
+    speed: Number.isFinite(+model?.base?.speed) ? +model.base.speed : 220,
+    mods: Array.isArray(model?.base?.mods) ? model.base.mods.slice(0,24) : []
+  };
+  const ws = Array.isArray(model?.wrappers) ? model.wrappers : [];
+  let cur = base;
+  for (const w of ws){
+    const wt = w?.wrapperType || '';
+    if (!wt) continue;
+    if (wt === 'INTERLEAVE'){
+      cur = {
+        isWrapper:true,
+        wrapperType: wt,
+        compCfg: deepClone(w?.compCfg || {}),
+        innerA: cur,
+        innerB: normalizeSerializedEmitter(w?.innerB) || deepClone(cur)
+      };
+    } else {
+      cur = {
+        isWrapper:true,
+        wrapperType: wt,
+        compCfg: deepClone(w?.compCfg || {}),
+        inner: cur
+      };
+    }
+  }
+  return cur;
+}
+
+function renderWrapperCfgFieldsUI(container, item, wrapIdx){
+  const key = item.wrapperType || '';
+  const defs = WrapperFieldDefs[key] || [];
+  container.innerHTML = '';
+  if (!key){
+    const m = document.createElement('div');
+    m.className = 'muted';
+    m.textContent = '先选择 wrapper 类型';
+    container.appendChild(m);
+    return;
+  }
+  if (key==='INTERLEAVE'){
+    const w = document.createElement('div');
+    w.className = 'muted';
+    w.textContent = 'INTERLEAVE 包含双分支，UI 模式仅编辑主分支。需要完整双分支请切到 JSON 模式。';
+    container.appendChild(w);
+  }
+  if (!defs.length){
+    const m = document.createElement('div');
+    m.className = 'muted';
+    m.textContent = '该 wrapper 无公开配置字段。';
+    container.appendChild(m);
+    return;
+  }
+  for (const def of defs){
+    const row = document.createElement('div');
+    row.className = 'field';
+    row.style.marginBottom = '4px';
+    const lb = document.createElement('label');
+    lb.textContent = def.id;
+    const ip = document.createElement('input');
+    ip.type = (def.type==='int' || def.type==='num') ? 'number' : 'text';
+    if (def.type==='num' && def.step!=null) ip.step = String(def.step);
+    if (def.type==='int') ip.step = '1';
+    let v = item.compCfg?.[def.id];
+    if (v==null) v = def.def;
+    ip.value = String(v ?? '');
+    ip.addEventListener('input', ()=>{
+      if (!item.compCfg) item.compCfg = {};
+      if (def.type==='int') item.compCfg[def.id] = (ip.value==='' ? null : (parseInt(ip.value,10)||0));
+      else if (def.type==='num') item.compCfg[def.id] = (ip.value==='' ? null : (+ip.value||0));
+      else item.compCfg[def.id] = ip.value;
+    });
+    row.appendChild(lb);
+    row.appendChild(ip);
+    container.appendChild(row);
+  }
+}
+
+function renderEmitterUiEditor(card, item, idx){
+  const model = emitterToUiModel(item);
+
+  const baseWrap = document.createElement('div');
+  baseWrap.style.cssText = 'border:1px dashed rgba(255,255,255,0.2);padding:6px;margin-bottom:6px';
+  baseWrap.innerHTML = '<div class="muted" style="margin-bottom:4px">BASE EMITTER</div>';
+
+  const typeRow = document.createElement('div');
+  typeRow.className = 'field';
+  const typeLb = document.createElement('label');
+  typeLb.textContent = 'TYPE';
+  const typeSel = document.createElement('select');
+  Object.keys(EmitterCatalog).forEach(k=>{
+    const op=document.createElement('option'); op.value=k; op.textContent=k; typeSel.appendChild(op);
+  });
+  typeSel.value = model.base.type;
+  typeSel.addEventListener('change', ()=>{ model.base.type = typeSel.value; });
+  typeRow.appendChild(typeLb); typeRow.appendChild(typeSel);
+
+  const cdSp = document.createElement('div');
+  cdSp.className = 'slider-row';
+  const mkNum=(label,v,step,cb)=>{
+    const f=document.createElement('div');f.className='field';
+    const l=document.createElement('label');l.textContent=label;
+    const i=document.createElement('input');i.type='number';i.step=step;i.value=String(v);
+    i.addEventListener('input',()=>cb(+i.value||0));
+    f.appendChild(l);f.appendChild(i);return f;
+  };
+  cdSp.appendChild(mkNum('CD', model.base.cd, '0.01', v=>model.base.cd=v));
+  cdSp.appendChild(mkNum('SPEED', model.base.speed, '1', v=>model.base.speed=v));
+
+  const modsRow = document.createElement('div');
+  modsRow.className = 'field';
+  const modsLb = document.createElement('label'); modsLb.textContent = 'BASE MODS (comma separated)';
+  const modsInput = document.createElement('input');
+  modsInput.value = (model.base.mods||[]).join(', ');
+  modsInput.placeholder = 'FIREWORK, PIERCE, ...';
+  modsInput.addEventListener('change', ()=>{
+    model.base.mods = modsInput.value.split(',').map(x=>x.trim()).filter(Boolean);
+  });
+  modsRow.appendChild(modsLb); modsRow.appendChild(modsInput);
+
+  baseWrap.appendChild(typeRow);
+  baseWrap.appendChild(cdSp);
+  baseWrap.appendChild(modsRow);
+  card.appendChild(baseWrap);
+
+  const wrappersWrap = document.createElement('div');
+  wrappersWrap.style.cssText = 'border:1px dashed rgba(179,108,255,0.35);padding:6px;margin-bottom:6px';
+  wrappersWrap.innerHTML = '<div class="muted" style="margin-bottom:4px">WRAPPERS (INNER -> OUTER)</div>';
+  const list = document.createElement('div');
+  list.style.display='flex'; list.style.flexDirection='column'; list.style.gap='6px';
+
+  const rerender = ()=>{
+    list.innerHTML='';
+    model.wrappers.forEach((w, wi)=>{
+      const row = document.createElement('div');
+      row.style.cssText='border:1px solid rgba(179,108,255,0.25);padding:6px;background:rgba(179,108,255,0.08)';
+
+      const top = document.createElement('div');
+      top.style.cssText='display:flex;gap:6px;align-items:center';
+      const sel = document.createElement('select');
+      const empty = document.createElement('option'); empty.value=''; empty.textContent='(NONE)'; sel.appendChild(empty);
+      Object.keys(CompositeWrappers).forEach(k=>{ const op=document.createElement('option'); op.value=k; op.textContent=k; sel.appendChild(op); });
+      sel.value = w.wrapperType || '';
+      sel.addEventListener('change', ()=>{ w.wrapperType = sel.value; if(!w.compCfg) w.compCfg={}; rerender(); });
+
+      const up = document.createElement('button'); up.className='mini-btn'; up.textContent='↑';
+      up.addEventListener('click', ()=>{ if (wi<=0) return; [model.wrappers[wi-1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi-1]]; rerender(); });
+      const dn = document.createElement('button'); dn.className='mini-btn'; dn.textContent='↓';
+      dn.addEventListener('click', ()=>{ if (wi>=model.wrappers.length-1) return; [model.wrappers[wi+1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi+1]]; rerender(); });
+      const del = document.createElement('button'); del.className='mini-btn'; del.textContent='REMOVE';
+      del.addEventListener('click', ()=>{ model.wrappers.splice(wi,1); rerender(); });
+      top.appendChild(sel); top.appendChild(up); top.appendChild(dn); top.appendChild(del);
+
+      const cfgBox = document.createElement('div');
+      cfgBox.style.marginTop='6px';
+      renderWrapperCfgFieldsUI(cfgBox, w, wi);
+
+      row.appendChild(top);
+      row.appendChild(cfgBox);
+      list.appendChild(row);
+    });
+  };
+
+  rerender();
+  const addW = document.createElement('button');
+  addW.className='mini-btn'; addW.textContent='ADD WRAPPER';
+  addW.addEventListener('click', ()=>{ model.wrappers.push({wrapperType:'', compCfg:{}}); rerender(); });
+
+  wrappersWrap.appendChild(list);
+  wrappersWrap.appendChild(addW);
+  card.appendChild(wrappersWrap);
+
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'mini-btn';
+  applyBtn.textContent = 'APPLY UI CHANGES';
+  applyBtn.addEventListener('click', ()=>{
+    ForgeState.extraEmitters[idx] = uiModelToEmitter(model);
+    saveForge();
+    syncForgeUIFromState();
+    textPop(W*0.5, 90, `EXTRA #${idx+1} UPDATED`, C.P1);
+  });
+  card.appendChild(applyBtn);
+}
+
+function renderForgeExtraEmittersUI(){
+  ensureForgeExtraEmitters();
+  const root = document.getElementById('forgeExtraEmittersList');
+  const modeBtn = document.getElementById('btnForgeExtraMode');
+  if (!root) return;
+  if (modeBtn){
+    modeBtn.textContent = `VIEW: ${ForgeState.extraEmittersViewMode==='json' ? 'JSON' : 'UI'}`;
+  }
+  root.innerHTML = '';
+
+  if (!ForgeState.extraEmitters.length){
+    const empty = document.createElement('div');
+    empty.className = 'muted';
+    empty.textContent = '暂无额外 emitter。可无限添加。';
+    root.appendChild(empty);
+    return;
+  }
+
+  ForgeState.extraEmitters.forEach((item, idx)=>{
+    const card = document.createElement('div');
+    card.style.cssText = 'border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.22);padding:8px';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px';
+    title.innerHTML = `<div class="mono" style="font-size:12px">EXTRA #${idx+1} · ${summarizeSerializedEmitter(item)}</div>`;
+
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:6px';
+    const btnDel = document.createElement('button');
+    btnDel.className = 'mini-btn';
+    btnDel.textContent = 'REMOVE';
+    btns.appendChild(btnDel);
+    title.appendChild(btns);
+
+    btnDel.addEventListener('click', ()=>{
+      ForgeState.extraEmitters.splice(idx,1);
+      saveForge();
+      syncForgeUIFromState();
+    });
+
+    card.appendChild(title);
+
+    if (ForgeState.extraEmittersViewMode === 'json'){
+      const ta = document.createElement('textarea');
+      ta.style.cssText = 'width:100%;min-height:120px;background:rgba(0,0,0,0.4);color:#9deeff;border:1px solid rgba(157,238,255,0.35);font-family:monospace;font-size:11px';
+      ta.value = JSON.stringify(item, null, 2);
+      const btnSave = document.createElement('button');
+      btnSave.className = 'mini-btn';
+      btnSave.textContent = 'APPLY JSON';
+      btnSave.style.marginTop = '6px';
+      btnSave.addEventListener('click', ()=>{
+        try{
+          const parsed = JSON.parse(ta.value || '{}');
+          const norm = normalizeSerializedEmitter(parsed);
+          if (!norm) throw new Error('invalid emitter json');
+          ForgeState.extraEmitters[idx] = norm;
+          saveForge();
+          syncForgeUIFromState();
+          textPop(W*0.5, 90, `EXTRA #${idx+1} UPDATED`, C.P1);
+        }catch(err){
+          alert('Emitter JSON 无效：' + (err?.message || err));
+        }
+      });
+      card.appendChild(ta);
+      card.appendChild(btnSave);
+    } else {
+      renderEmitterUiEditor(card, item, idx);
+    }
+
+    root.appendChild(card);
+  });
+}
+
+function wireForgeExtraEmitterButtons(){
+  const addBase = document.getElementById('btnForgeExtraAdd');
+  const add1 = document.getElementById('btnForgeExtraAddFrom1');
+  const add2 = document.getElementById('btnForgeExtraAddFrom2');
+  const mode = document.getElementById('btnForgeExtraMode');
+  const push = (data)=>{
+    ensureForgeExtraEmitters();
+    const norm = normalizeSerializedEmitter(data || {isWrapper:false,type:'AIM',mods:[],speed:220,cd:1.2});
+    if (!norm) return;
+    ForgeState.extraEmitters.push(norm);
+    saveForge();
+    syncForgeUIFromState();
+  };
+  addBase?.addEventListener('click', ()=>push({isWrapper:false,type:'AIM',mods:[...(ForgeState.mods||[])],speed:220,cd:1.2}));
+  add1?.addEventListener('click', ()=>push(getSerializedFromSlot(1)));
+  add2?.addEventListener('click', ()=>push(getSerializedFromSlot(2)));
+  mode?.addEventListener('click', ()=>{
+    ensureForgeExtraEmitters();
+    ForgeState.extraEmittersViewMode = ForgeState.extraEmittersViewMode === 'json' ? 'ui' : 'json';
+    saveForge();
+    syncForgeUIFromState();
+  });
+}
+
 function restoreWrapperUI(slot, layer) {
   const wrapperName = ForgeState[`slot${slot}`]?.[`layer${layer}`] || '';
   const sel = document.getElementById(`forgeEm${slot}Comp${layer}`);
@@ -16463,6 +16973,7 @@ const moveSet = new Set(ForgeState.moveKeys);
 document.querySelectorAll('#forgeMoveChips .pick-chip').forEach(btn => {
   btn.classList.toggle('on', moveSet.has(btn.dataset.key));
 });
+  renderForgeExtraEmittersUI();
   refreshForgePreview();
 }
 
@@ -16894,7 +17405,18 @@ function importBuildsJSON(str){
   saveBuilds();
   syncWorkshopFromModel();
 }
-function exportForgeJSON(){ return JSON.stringify({version:1,type:'forge',forge:ForgeState}, null, 2); }
+function exportForgeJSON(){
+  const forgeOut = Object.assign({}, ForgeState);
+  const emitters = [
+    serializeEmitterRecursive(buildEmitterSpecFromSlot(1)?._compositeInstance || EmitterCatalog[ForgeState.em1?.type||'AIM']?.({baseCd:ForgeState.em1?.cd||1.2,speed:ForgeState.em1?.speed||220,mods:ForgeState.slot1?.baseMods||[]})),
+    serializeEmitterRecursive(buildEmitterSpecFromSlot(2)?._compositeInstance || EmitterCatalog[ForgeState.em2?.type||'RING']?.({baseCd:ForgeState.em2?.cd||2.2,speed:ForgeState.em2?.speed||180,mods:ForgeState.slot2?.baseMods||[]})),
+    ...((ForgeState.extraEmitters||[]).map(it => it?.isWrapper || it?.wrapperType || it?.type ? deepClone(it) : serializeEmitterRecursive(it)))
+  ].filter(Boolean);
+  forgeOut.emitters = emitters;
+  forgeOut.slot1 = emitters[0] || null;
+  forgeOut.slot2 = emitters[1] || null;
+  return JSON.stringify({version:1,type:'forge',forge:forgeOut}, null, 2);
+}
 // 代码位置：替换旧的 importForgeJSON 函数
 function importForgeJSON(str) {
   let obj;
@@ -16927,19 +17449,24 @@ function importForgeJSON(str) {
   // 重置 Emitter State
   ForgeState.slot1 = { layer1:'', layer2:'', layer1Cfg:{}, layer2Cfg:{}, baseMods:[] };
   ForgeState.slot2 = { layer1:'', layer2:'', layer1Cfg:{}, layer2Cfg:{}, baseMods:[] };
+  ForgeState.extraEmitters = [];
   ForgeState.em1 = { type:'AIM', cd:1.2, speed:220 };
   ForgeState.em2 = { type:'RING', cd:2.2, speed:180 };
 
-  // 解析 Slot 数据
+  const emittersIn = Array.isArray(data.emitters) ? data.emitters : [data.slot1, data.slot2].filter(Boolean);
+  const first = emittersIn[0] || data.slot1 || null;
+  const second = emittersIn[1] || data.slot2 || null;
+
+  // 兼容 UI 的双层 wrapper 展示（超过两层仍完整保存在 extraEmitters/emittersIn）
   const parseSlot = (srcSlotData, targetSlotNum) => {
     if (!srcSlotData) return;
     const emState = (targetSlotNum===1) ? ForgeState.em1 : ForgeState.em2;
     const slotState = ForgeState[`slot${targetSlotNum}`];
     let current = srcSlotData;
-    let layersFound = [];
+    const layersFound = [];
     while (current && current.isWrapper) {
       layersFound.push({ type: current.wrapperType, cfg: current.compCfg });
-      current = current.inner;
+      current = current.inner || current.innerA || current.innerB;
     }
     if (current) {
       emState.type = current.type || 'AIM';
@@ -16957,9 +17484,11 @@ function importForgeJSON(str) {
     }
   };
 
-  if (data.slot1) parseSlot(data.slot1, 1);
-  if (data.slot2) parseSlot(data.slot2, 2);
+  if (first) parseSlot(first, 1);
+  if (second) parseSlot(second, 2);
 
+  const extraSerialized = emittersIn.slice(2).filter(Boolean);
+  ForgeState.extraEmitters = extraSerialized.map(it=>deepClone(it));
   saveForge();
   syncForgeUIFromState();
 }
@@ -16996,7 +17525,11 @@ function readForgeSpecFromUI() {
       bodySeed: ForgeState.bodySeed,
       bodyScale: ForgeState.bodyScale,
       bodyOpt: deepClone(ForgeState.bodyOpt || {}),
-      emitters: [ buildEmitterSpecFromSlot(1), buildEmitterSpecFromSlot(2) ].filter(e=>e),
+      emitters: [
+        buildEmitterSpecFromSlot(1),
+        buildEmitterSpecFromSlot(2),
+        ...((ForgeState.extraEmitters||[]).map(buildEmitterSpecFromSerialized))
+      ].filter(e=>e),
       waveBulletMods: ForgeState.mods || []
     }
   };
@@ -17029,6 +17562,7 @@ function resetForgeStateAndUI(){
   // 清空 Slot 1 和 Slot 2 的所有配置
   ForgeState.slot1 = { layer1:'', layer2:'', layer1Cfg:{}, layer2Cfg:{}, baseMods:[] };
   ForgeState.slot2 = { layer1:'', layer2:'', layer1Cfg:{}, layer2Cfg:{}, baseMods:[] };
+  ForgeState.extraEmitters = [];
 
   // 兼容旧属性（虽然新逻辑不主要使用，但重置以保持状态干净）
   ForgeState.em1Composite = '';
@@ -17093,6 +17627,7 @@ function initMenuUI(){
   hookForgeInputs();
   initForgeExtendedUI();
   buildForgeMoveChips()
+  wireForgeExtraEmitterButtons();
 
   // save 按钮（只负责存档，不再负责 core 绑定）
   document.getElementById('btnSaveBuilds')?.addEventListener('click', ()=>{
@@ -17105,9 +17640,23 @@ function initMenuUI(){
   document.getElementById('btnCloseIO')?.addEventListener('click', closeIO);
 
   document.getElementById('btnExportBuilds')?.addEventListener('click', ()=>setIOText(exportBuildsJSON()));
-  document.getElementById('btnImportBuilds')?.addEventListener('click', ()=>{ importBuildsJSON(getIOText()); });
+  const importIOAuto = (txt)=>{
+    let obj = null;
+    try{ obj = JSON.parse(txt||'{}'); }catch(_){ }
+    const t = obj?.type || '';
+    if (t === 'forge' || obj?.forge || obj?.slot1 || obj?.emitters){ importForgeJSON(txt); return 'forge'; }
+    if (t === 'builds' || obj?.builds){ importBuildsJSON(txt); return 'builds'; }
+    importForgeJSON(txt);
+    return 'forge';
+  };
+
+  document.getElementById('btnImportBuilds')?.addEventListener('click', ()=>{
+    try{ importIOAuto(getIOText()); }catch(err){ alert(err?.message || err); }
+  });
   document.getElementById('btnExportForge')?.addEventListener('click', ()=>setIOText(exportForgeJSON()));
-  document.getElementById('btnImportForge')?.addEventListener('click', ()=>{ importForgeJSON(getIOText()); });
+  document.getElementById('btnImportForge')?.addEventListener('click', ()=>{
+    try{ importIOAuto(getIOText()); }catch(err){ alert(err?.message || err); }
+  });
 
   document.getElementById('btnCopyIO')?.addEventListener('click', async ()=>{
     try{ await navigator.clipboard.writeText(getIOText()); textPop(W*0.5, 86, 'COPIED', C.P1); }catch(e){}
