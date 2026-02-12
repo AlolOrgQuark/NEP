@@ -1514,7 +1514,8 @@ input[type="checkbox"] {
     <option value="crescent">crescent</option>
     <option value="cross">cross</option>
     <option value="chevron">chevron</option>
-    <option value="shard">shard</option>
+    <option value="dodeca">dodeca</option>
+    <option value="cone">cone</option>
   </select>
 </div>
 
@@ -2674,6 +2675,8 @@ const addShake = (m, t=0.16) => {
     lastBossAt:0,
     continues: 999999,
     killerData: null,
+    failReason: '',
+    failSnapshot: null,
     mode: 'survival',      // 'survival' | 'duel' | 'lab' | 'fortress'
     lastStart: { mode:'survival', wave:1 },
     mute(){
@@ -3038,6 +3041,9 @@ const addShake = (m, t=0.16) => {
     hitFlag(dmg){
       this.flagHp = Math.max(0, this.flagHp - dmg);
       if (this.flagHp<=0 && Player.alive){
+        if (TimeMachine.enabled && TimeMachine.rewind('flag')) return;
+        Game.failReason = 'flag';
+        Game.failSnapshot = { hp: Player.hp, shield: Player.shield, invuln: Player.invuln, x: Player.x, y: Player.y };
         Player.hp = 0;
       }
       this.updatePanel();
@@ -7081,25 +7087,12 @@ if (kind === 'lotus') {
     };
   }
 
-  // 4. Shard 特殊处理
-  let pts = null;
-  if (kind === 'shard') {
-    const n = 6 + (R() * 7 | 0);
-    pts = [];
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + (R() * 0.26 - 0.13);
-      const r = 0.55 + R() * 0.70;
-      pts.push({ a, r });
-    }
-    pts.sort((p, q) => p.a - q.a);
-  }
-
   return {
     kind,
     baseN, innerN, ring, spokes,
     rot1, rot2, scale1, scale2,
     starInner, teeth, toothDepth,
-    rr, pts,
+    rr, pts:null,
     crossT, chevT, diaSkew,
     arcSegs, arcSpan, arcGap,
   };
@@ -7176,15 +7169,27 @@ function getPoly3DDef(kind){
   } else if (kind==='octa'){
     verts = [{x:0,y:-1.4,z:0},{x:0,y:1.4,z:0},{x:-1,y:0,z:0},{x:1,y:0,z:0},{x:0,y:0,z:-1},{x:0,y:0,z:1}];
     edges = [[0,2],[0,3],[0,4],[0,5],[1,2],[1,3],[1,4],[1,5],[2,4],[4,3],[3,5],[5,2]];
-  } else if (kind==='tetra'){
-    verts = [{x:0,y:-1.3,z:0},{x:-1.1,y:0.9,z:-0.8},{x:1.1,y:0.9,z:-0.8},{x:0,y:0.9,z:1.15}];
-    edges = [[0,1],[0,2],[0,3],[1,2],[2,3],[3,1]];
   } else if (kind==='prism'){
     verts = [
       {x:-1,y:-0.9,z:-0.8},{x:1,y:-0.9,z:-0.8},{x:0,y:0.9,z:-0.8},
       {x:-1,y:-0.9,z:0.8},{x:1,y:-0.9,z:0.8},{x:0,y:0.9,z:0.8}
     ];
     edges = [[0,1],[1,2],[2,0],[3,4],[4,5],[5,3],[0,3],[1,4],[2,5]];
+  } else if (kind==='dodeca'){
+    const phi = (1 + Math.sqrt(5)) / 2;
+    const inv = 1 / phi;
+    verts = [];
+    for (const sx of [-1,1]) for (const sy of [-1,1]) for (const sz of [-1,1]) verts.push({x:sx,y:sy,z:sz});
+    for (const sy of [-1,1]) for (const sz of [-1,1]) verts.push({x:0,y:sy*inv,z:sz*phi});
+    for (const sx of [-1,1]) for (const sy of [-1,1]) verts.push({x:sx*inv,y:sy*phi,z:0});
+    for (const sx of [-1,1]) for (const sz of [-1,1]) verts.push({x:sx*phi,y:0,z:sz*inv});
+    const th = 2.35;
+    const n = verts.length;
+    for(let i=0;i<n;i++) for(let j=i+1;j<n;j++){
+      const dx=verts[i].x-verts[j].x, dy=verts[i].y-verts[j].y, dz=verts[i].z-verts[j].z;
+      const d=Math.hypot(dx,dy,dz);
+      if (d < th) edges.push([i,j]);
+    }
   }
   return {verts, edges};
 }
@@ -7361,13 +7366,6 @@ if (b.kind === 'crescent'){
   tronStrokeG(col, 2, 0.85);
   g.stroke();
 
-} else if (b.kind === 'shard' && b.pts){
-  tronFillG(col, 0.10);
-  shardPathG(e.x, e.y, R0, b.pts, rot);
-  g.fill();
-  tronStrokeG(col, 2, 0.85);
-  g.stroke();
-
 } else if (b.kind === 'cross'){
   tronFillG(col, 0.10);
   crossPathG(e.x, e.y, R0, rot, b.crossT);
@@ -7465,10 +7463,10 @@ if (b.kind === 'crescent'){
       // 内部核心
       g.beginPath(); g.arc(e.x, e.y, R0*0.3, 0, Math.PI*2); g.stroke();
     }
-    else if (['cube', 'pyramid', 'octa', 'tetra', 'prism'].includes(b.kind)) {
+    else if (['cube', 'pyramid', 'octa', 'prism', 'dodeca'].includes(b.kind)) {
       const t = time * (b.rot1 || 1);
-      const size = R0 * 0.7;
-      drawPoly3DWire(b.kind, e.x, e.y, size, t, col, (b.kind==='octa' || b.kind==='cube' || b.kind==='tetra'), g);
+      const size = R0 * (b.kind==='dodeca' ? 0.62 : 0.7);
+      drawPoly3DWire(b.kind, e.x, e.y, size, t, col, (b.kind==='octa' || b.kind==='cube' || b.kind==='dodeca'), g);
 
 } else if (b.kind === 'spiral') {
   // 游戏内渲染：几何螺旋
@@ -7550,6 +7548,28 @@ if (b.kind === 'crescent'){
   g.moveTo(e.x + R0*0.2, e.y - R0*0.2);
   g.lineTo(e.x + wingSpan, e.y + R0*0.2);
   g.lineTo(e.x + R0*0.4, e.y + R0*0.4);
+  g.stroke();
+} else if (b.kind === 'cone') {
+  const segs = 16;
+  const tipX = e.x + Math.cos(rot - Math.PI/2) * R0 * 1.15;
+  const tipY = e.y + Math.sin(rot - Math.PI/2) * R0 * 1.15;
+  const baseCx = e.x - Math.cos(rot - Math.PI/2) * R0 * 0.32;
+  const baseCy = e.y - Math.sin(rot - Math.PI/2) * R0 * 0.32;
+  const bw = R0 * 0.66, bh = R0 * 0.34;
+  tronFillG(col, 0.16);
+  g.beginPath();
+  g.moveTo(tipX, tipY);
+  for(let i=0;i<=segs;i++){
+    const a = rot + Math.PI/2 + (i/segs)*Math.PI*2;
+    g.lineTo(baseCx + Math.cos(a)*bw, baseCy + Math.sin(a)*bh);
+  }
+  g.closePath();
+  g.fill();
+  tronStrokeG(col, 2, 0.9);
+  g.stroke();
+  tronStrokeG(col, 1.2, 0.55);
+  g.beginPath();
+  g.ellipse(baseCx, baseCy, bw, bh, rot, 0, Math.PI*2);
   g.stroke();
 } else if (b.kind === 'dragon') {
       // 龙形：蛇形身体+翼
@@ -12739,6 +12759,8 @@ ui.score.textContent = formatValue(Game.score);
         // 如果 buffer 为空（比如刚开局就死），则继续执行下面的死亡逻辑
       }
       Game.killerData = null;
+    Game.failReason = '';
+    Game.failSnapshot = null;
       // 查找最近的敌人作为"杀手"
       let killer = null, killerD = Infinity;
       for (const e of enemies){
@@ -13314,14 +13336,22 @@ spawnerCd: Spawner.cd,
       enemiesData: serializedEnemies,
       bulletsP: bulletsP.map(b => ({...b, mods: b.mods ? [...b.mods] : []})),
       bulletsE: bulletsE.map(b => ({...b, mods: b.mods ? [...b.mods] : []})),
-      supplies: supplies.map(s => ({...s}))
+      supplies: supplies.map(s => ({...s})),
+      fortress: (Game.mode==='fortress') ? {
+        phase: Fortress.phase, timer: Fortress.timer, stock: Fortress.stock,
+        flagHp: Fortress.flagHp, flagMaxHp: Fortress.flagMaxHp,
+        selected: Fortress.selected, spawnCd: Fortress.spawnCd, spawnLeft: Fortress.spawnLeft,
+        sid: Fortress.sid, sellMode: Fortress.sellMode, bossSpawned: Fortress.bossSpawned,
+        structures: Fortress.structures.map(st => ({...st})),
+        undoStack: Fortress.undoStack.map(it => ({...it})),
+      } : null
     };
 
     this.buffer.push(frame);
     if (this.buffer.length > this.maxFrames) this.buffer.shift();
   },
 
-  rewind() {
+  rewind(reason='manual') {
     if (this.buffer.length === 0) return false;
     const frame = this.buffer[0]; 
     this.buffer = []; 
@@ -13454,6 +13484,26 @@ Game.bossAlive = frame.game.bossAlive;
     supplies.length = 0; frame.supplies.forEach(s => supplies.push(s));
 
     particles.length = 0; shockwaves.length = 0; beams.length = 0; texts.length = 0;
+
+if (frame.fortress && Game.mode==='fortress') {
+  Fortress.phase = frame.fortress.phase;
+  Fortress.timer = frame.fortress.timer;
+  Fortress.stock = frame.fortress.stock;
+  Fortress.flagHp = frame.fortress.flagHp;
+  Fortress.flagMaxHp = frame.fortress.flagMaxHp;
+  Fortress.selected = frame.fortress.selected;
+  Fortress.spawnCd = frame.fortress.spawnCd;
+  Fortress.spawnLeft = frame.fortress.spawnLeft;
+  Fortress.sid = frame.fortress.sid;
+  Fortress.sellMode = frame.fortress.sellMode;
+  Fortress.bossSpawned = frame.fortress.bossSpawned;
+  Fortress.structures = frame.fortress.structures.map(st => ({...st}));
+  Fortress.undoStack = frame.fortress.undoStack.map(it => ({...it}));
+  Fortress.activeDrag = null;
+  Fortress.syncSelectionUI();
+  Fortress.updatePanel();
+}
+
     textPop(Player.x, Player.y - 40, "TAS: TIMELINE REBUILT", C.P1);
     spawnShockwave(Player.x, Player.y, C.P1, 900, 1.2);
     addShake(25, 0.5);
@@ -14162,6 +14212,8 @@ function render(dt) {
     Game.continues=999999;
     
     Game.killerData = null;
+    Game.failReason = '';
+    Game.failSnapshot = null;
 
     Spawner.reset();
     WaveDirector.onWave(1);
@@ -14828,12 +14880,25 @@ function togglePause(){
 
   function revive(){
     if (Game.continues<=0 || Game.state!=='over') return;
+
+    const isFlagFail = (Game.mode==='fortress' && Game.failReason==='flag');
     Game.continues--;
 
     Player.alive=true;
-    Player.hp = Math.max(1, Math.floor(Player.maxHp*BAL.continueHP));
-    Player.invuln = BAL.continueInvuln;
-    Player.shield = Math.max(Player.shield, 12.0); // Full shield on revive
+    if (isFlagFail){
+      const snap = Game.failSnapshot || {};
+      Player.hp = Math.max(1, snap.hp ?? Player.hp);
+      Player.shield = (snap.shield ?? Player.shield);
+      Player.invuln = Math.max(snap.invuln ?? 0, 1.2);
+      Player.x = snap.x ?? Player.x;
+      Player.y = snap.y ?? Player.y;
+      Fortress.flagHp = Math.max(Fortress.flagMaxHp*0.55, 1);
+      Fortress.updatePanel();
+    } else {
+      Player.hp = Math.max(1, Math.floor(Player.maxHp*BAL.continueHP));
+      Player.invuln = BAL.continueInvuln;
+      Player.shield = Math.max(Player.shield, 12.0); // Full shield on revive
+    }
     Player.slowT = 0;
 
     // Nuke screen
@@ -14843,7 +14908,7 @@ function togglePause(){
     spawnShockwave(Player.x, Player.y, C.G, 520, 0.75);
     sparks(Player.x, Player.y, 'glowG', 60, 720);
     addShake(10,0.25);
-    textPop(Player.x, Player.y-18, 'SYSTEM REBOOTED', C.G);
+    textPop(Player.x, Player.y-18, isFlagFail ? 'FLAG CORE REBOOTED' : 'SYSTEM REBOOTED', C.G);
 
     ui.over.classList.remove('show');
 canvas.style.pointerEvents = 'auto';
@@ -14853,6 +14918,8 @@ Game.state = 'playing';
     Game.state='playing';
     
    
+    Game.failReason = '';
+    Game.failSnapshot = null;
     Music.duck(0.30, 0.08);
   }
 
@@ -16021,6 +16088,7 @@ function refreshForgePreview(){
   if (typeof applyBodyOverrides === 'function') applyBodyOverrides(body, ForgeState.bodyOpt);
   
   const kind = (kindSel === 'AUTO') ? (body.kind || 'poly') : kindSel;
+  body.kind = kind;
   // 如果手动选择了这几种，覆盖 body 参数以匹配几何逻辑
   if (kind === 'spiral') body.spokes = body.spokes || 3;
   if (kind === 'lotus') body.innerN = body.innerN || 6;
@@ -16379,11 +16447,11 @@ function initMenuUI(){
 
 
 const BODY_KINDS = [
-  'poly','star','gear','ringRect','diamondRing','arcSeg','crescent','cross','chevron','shard',
+  'poly','star','gear','ringRect','diamondRing','arcSeg','crescent','cross','chevron',
   'insect', 'wing', 'crystal',
-  'cube', 'pyramid', 'octa', 'tetra', 'prism',
+  'cube', 'pyramid', 'octa', 'prism', 'dodeca',
   // 新增壮美外观
-  'spiral', 'lotus', 'dragon', 'phoenix', 'nebula'
+  'spiral', 'lotus', 'dragon', 'phoenix', 'nebula', 'cone'
 ];
 
 
