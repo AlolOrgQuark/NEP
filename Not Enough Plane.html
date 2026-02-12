@@ -4691,65 +4691,63 @@ function _doCrossSplit(b){
         b._orbOwner = ctx.owner;
         // 初始角度：相对于发射者的角度
         b._orbA = Math.atan2(b.y - ctx.owner.y, b.x - ctx.owner.x);
-        b._orbR = 40; // 护身半径
-        b._orbT = 1.0; // 护身持续时间 (1秒)
-        b._orbSp = Math.hypot(b.vx, b.vy) || 300; // 记录原始速度用于发射
-        
+        b._orbR = 40;
+        b._orbSpin = 5.0;
+        b._orbTurn = 0;        // 已累计旋转角（绝对值）
+        b._orbNeedTurn = Math.PI * 2; // 至少先转一整圈
+        b._orbSp = Math.hypot(b.vx, b.vy) || 300;
+
         // 立即停止物理移动，由 onUpdate 接管位置
         b.vx = 0; b.vy = 0;
-        b.life += 1.0; // 延长寿命，补偿护身时间
+        b.life += 1.0;
       },
       onUpdate(b, dt, ctx){
-        // 阶段1：护身
-        if (b._orbT > 0) {
-          b._orbT -= dt;
-          b._orbA += dt * 5.0; // 快速旋转
-          
-          // 缓慢扩大半径，增加视觉张力
-          b._orbR += dt * 5; 
+        if (b.vx || b.vy) return; // 已发射后交给物理系统
 
-          if (b._orbOwner && b._orbOwner.alive) {
-            // 紧跟主人
-            b.x = b._orbOwner.x + Math.cos(b._orbA) * b._orbR;
-            b.y = b._orbOwner.y + Math.sin(b._orbA) * b._orbR;
-          } else {
-            // 主人死了，立即发射
-            b._orbT = 0;
-          }
+        // 持续环绕（不设置超时）
+        b._orbA += dt * b._orbSpin;
+        b._orbTurn += Math.abs(dt * b._orbSpin);
+        b._orbR = Math.min(64, b._orbR + dt * 5);
 
-          // 阶段2：发射 (时间到)
-          if (b._orbT <= 0) {
-            let targetX, targetY;
-            
-            // 寻找目标
-            if (b.team === 'E') {
-              // 敌人瞄准玩家
-              const t = findEnemyFocus(b.x,b.y);
-              if (t) { targetX = t.x; targetY = t.y; }
-            } else {
-              // 玩家瞄准最近敌人
-              const t = findNearestEnemy(b.x, b.y);
-              if (t) { targetX = t.x; targetY = t.y; }
-            }
-
-            // 计算发射角度
-            let launchA;
-            if (targetX != null) {
-              launchA = Math.atan2(targetY - b.y, targetX - b.x);
-            } else {
-              // 没目标，沿当前旋转切线飞出
-              launchA = b._orbA + Math.PI/2; 
-            }
-
-            // 发射！
-            b.vx = Math.cos(launchA) * b._orbSp;
-            b.vy = Math.sin(launchA) * b._orbSp;
-            
-            // 视觉特效：发射瞬间产生推力火花
-            sparks(b.x, b.y, b.spr, 3, 100);
-          }
+        if (b._orbOwner && b._orbOwner.alive) {
+          b.x = b._orbOwner.x + Math.cos(b._orbA) * b._orbR;
+          b.y = b._orbOwner.y + Math.sin(b._orbA) * b._orbR;
         }
-        // 阶段3：正常飞行 (b._orbT <= 0 且 vx/vy 已设置)，由物理引擎接管
+
+        // 先至少旋转一整圈
+        if (b._orbTurn < b._orbNeedTurn) return;
+
+        let target = null;
+        if (b.team === 'E') {
+          target = findEnemyFocus(b.x,b.y);
+        } else {
+          target = findNearestEnemy(b.x, b.y);
+        }
+
+        // 没有目标：允许按当前切向发射，避免永久悬停
+        if (!target || !target.alive){
+          const launchA = b._orbA + Math.PI * 0.5;
+          b.vx = Math.cos(launchA) * b._orbSp;
+          b.vy = Math.sin(launchA) * b._orbSp;
+          sparks(b.x, b.y, b.spr, 3, 100);
+          return;
+        }
+
+        // 有目标时：持续旋转，直到当前切向有命中几率再发射
+        const launchA = b._orbA + Math.PI * 0.5;
+        const dirX = Math.cos(launchA), dirY = Math.sin(launchA);
+        const toX = target.x - b.x, toY = target.y - b.y;
+        const ahead = toX*dirX + toY*dirY;
+        if (ahead <= 0) return;
+
+        const lineDist = Math.abs(dirX*toY - dirY*toX);
+        const hitR = (target.r || 16) + Math.max(10, (b.r || 3) * 2.2);
+        const maxReach = Math.max(160, b._orbSp * Math.max(0.9, b.life || 1.6));
+        if (lineDist <= hitR && ahead <= maxReach){
+          b.vx = dirX * b._orbSp;
+          b.vy = dirY * b._orbSp;
+          sparks(b.x, b.y, b.spr, 3, 100);
+        }
       }
     },
     
