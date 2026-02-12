@@ -3133,7 +3133,8 @@ const addShake = (m, t=0.16) => {
     update(dt){
       if (Game.mode!=='fortress') return;
       if (this.phase==='assault'){
-        if (this.spawnLeft<=0 && !Game.bossAlive){
+        const needBoss = (Game.wave>0 && Game.wave%5===0 && !this.bossSpawned);
+        if (this.spawnLeft<=0 && !Game.bossAlive && !needBoss){
           let aliveCount = 0;
           for (const e of enemies) if (e.alive) aliveCount++;
           if (aliveCount===0) this.beginFortify();
@@ -9226,75 +9227,74 @@ if (chance(0.75)){
         }
       };
     },
-
-    // 天穹冠冕：多重圆冠扫射，子弹带轻微摆动，视觉更壮美
+    // 星穹礼赞：超大角域多重分层弹幕，附带延时二次展开
     CELESTIAL_CROWN(baseFactory, cfg={}){
-      const petals = cfg.petals ?? 5;
-      const spin = cfg.spinSpeed ?? 1.6;
-      const swing = cfg.swing ?? 0.22;
+      const petals = cfg.petals ?? 8;
+      const spin = cfg.spinSpeed ?? 2.2;
       const baseEm = baseFactory(cfg.baseCfg || cfg);
       let phase = 0;
       return {
         type:`CELESTIAL_CROWN<${baseEm.type||'?'},${petals}>`, _baseType:baseEm.type,
         _composite:'CELESTIAL_CROWN', _base:baseEm,
-        cd: baseEm.cd * 1.45,
-        nextCd(o,dt){
-          phase += (dt||0.016) * spin;
-          return (baseEm.nextCd?.(o,dt) ?? 1) * 1.45;
-        },
+        cd: baseEm.cd * 1.7,
+        nextCd(o,dt){ phase += (dt||0.016) * spin; return (baseEm.nextCd?.(o,dt) ?? 1) * 1.7; },
         fire(owner){
-          const beforeP = bulletsP.length;
-          const beforeE = bulletsE.length;
-          for (let i=0;i<petals;i++){
-            owner._emitAngleOffset = phase + i * (Math.PI*2/petals);
-            baseEm.fire(owner);
+          const beforeP = bulletsP.length, beforeE = bulletsE.length;
+          for (let ring=0; ring<2; ring++){
+            const off = ring===0 ? 0 : Math.PI/petals;
+            for (let i=0;i<petals;i++){
+              owner._emitAngleOffset = phase + off + i * (Math.PI*2/petals);
+              baseEm.fire(owner);
+            }
           }
           owner._emitAngleOffset = 0;
           for(const arr of [bulletsP, bulletsE]){
-            const before = (arr === bulletsP) ? beforeP : beforeE;
+            const before = (arr===bulletsP)?beforeP:beforeE;
             for(let i=before;i<arr.length;i++){
-              const b = arr[i];
-              if (!b?.alive) continue;
-              b.waveA = Math.max(b.waveA||0, 20 + petals*2);
-              b.waveF = Math.max(b.waveF||0, 4.8 + spin*1.2);
-              b.waveP = phase + i*0.15;
-              b.life = Math.max(b.life||1.8, 2.2);
+              const b = arr[i]; if(!b?.alive) continue;
+              b.waveA = Math.max(b.waveA||0, 34);
+              b.waveF = Math.max(b.waveF||0, 6.2);
+              b.pauseT = Math.max(b.pauseT||0, 0.08);
+              b.accel = (b.accel||0) + 140;
+              b.life = Math.max(b.life||1.8, 2.6);
             }
           }
         }
       };
     },
 
-    // 潮汐长枪：先聚束后展开，兼具压制和封位
+    // 天罚长矛：先齐射封路，再加速突刺，极具压迫感
     TIDAL_LANCE(baseFactory, cfg={}){
-      const lanes = cfg.lanes ?? 3;
-      const arc = cfg.arc ?? 0.52;
-      const accel = cfg.accel ?? 210;
+      const lanes = cfg.lanes ?? 5;
+      const arc = cfg.arc ?? 0.92;
+      const accel = cfg.accel ?? 280;
       const baseEm = baseFactory(cfg.baseCfg || cfg);
       let tick = 0;
       return {
         type:`TIDAL_LANCE<${baseEm.type||'?'},${lanes}>`, _baseType:baseEm.type,
         _composite:'TIDAL_LANCE', _base:baseEm,
-        cd: baseEm.cd * 1.1,
-        nextCd(o,dt){ return (baseEm.nextCd?.(o,dt) ?? 1) * 1.1; },
+        cd: baseEm.cd * 1.35,
+        nextCd(o,dt){ return (baseEm.nextCd?.(o,dt) ?? 1) * 1.35; },
         fire(owner){
-          const beforeP = bulletsP.length;
-          const beforeE = bulletsE.length;
-          for (let i=0;i<lanes;i++){
-            const t = lanes<=1 ? 0 : (i/(lanes-1)-0.5);
-            owner._emitAngleOffset = t * arc + Math.sin(tick*0.6) * 0.08;
-            baseEm.fire(owner);
+          const beforeP = bulletsP.length, beforeE = bulletsE.length;
+          for (let wave=0; wave<2; wave++){
+            for (let i=0;i<lanes;i++){
+              const t = lanes<=1 ? 0 : (i/(lanes-1)-0.5);
+              owner._emitAngleOffset = t * arc + (wave?0.11:-0.11) + Math.sin(tick*0.8)*0.06;
+              baseEm.fire(owner);
+            }
           }
           owner._emitAngleOffset = 0;
           tick++;
           for(const arr of [bulletsP, bulletsE]){
-            const before = (arr === bulletsP) ? beforeP : beforeE;
+            const before = (arr===bulletsP)?beforeP:beforeE;
             for(let i=before;i<arr.length;i++){
-              const b = arr[i];
-              if (!b?.alive) continue;
-              b.pauseT = Math.max(b.pauseT||0, 0.06);
+              const b = arr[i]; if(!b?.alive) continue;
+              b.pauseT = Math.max(b.pauseT||0, 0.12);
               b.accel = (b.accel||0) + accel;
-              b.life = Math.max(b.life||1.8, 2.4);
+              b.waveA = Math.max(b.waveA||0, 22);
+              b.waveF = Math.max(b.waveF||0, 5.4);
+              b.life = Math.max(b.life||1.8, 2.8);
             }
           }
         }
@@ -9933,22 +9933,17 @@ for (const em of e.emitters){
         const timeSlope = (t < BAL.diffSwitchT) ? BAL.diffTimeEarly : BAL.diffTimeLate;
         Game.difficulty = 1 + t*timeSlope + Game.score*BAL.diffScore;
 
-        if (!Game.bossAlive && !Fortress.bossSpawned && Game.wave>0 && Game.wave%5===0){
-          Game.lastBossAt = t;
-          Fortress.bossSpawned = true;
-          spawnBoss(Game.difficulty);
-        }
-
         const d = Game.difficulty;
         const k = clamp((d-1)/9, 0, 1);
         const baseRate = lerp(BAL.spawnRateEarly, BAL.spawnRateLate, k);
 
-        const strictCap = Math.max(4, Math.floor(3 + d*1.15 + Game.wave*0.08));
+        // fortress: 与 survival 同一套节奏，但额外受本波预算 spawnLeft 控制
         this.cd -= dt;
         if (this.cd<=0 && Fortress.spawnLeft>0){
           this.cd = Math.max(0.09, baseRate * DiffConfig.spawnRateMul);
 
-          if (enemies.length >= strictCap) return;
+          if (Game.bossAlive && chance(0.55)) return;
+          if (enemies.length >= 7 && !Game.bossAlive) return;
 
           const proto = WaveDirector.pick();
           const e = EnemyFactory.spawnFromProto(proto, d);
@@ -9968,6 +9963,13 @@ for (const em of e.emitters){
           resolveSpawnOverlap(e, 12);
           enemies.push(e);
           Fortress.spawnLeft -= 1;
+        }
+
+        // 每 5 波固定出 Boss，一次且仅一次
+        if (!Game.bossAlive && !Fortress.bossSpawned && Fortress.spawnLeft<=0 && Game.wave>0 && Game.wave%5===0){
+          Game.lastBossAt = t;
+          Fortress.bossSpawned = true;
+          spawnBoss(Game.difficulty);
         }
         return;
       }
@@ -13189,14 +13191,31 @@ const AutoPilot = {
     const rows = [baseY, baseY - 58, baseY - 108];
     const slots = [0.18,0.32,0.46,0.54,0.68,0.82].map(k=>W*k);
 
+    // 先用低成本墙体封住空档，避免因高价钢壁导致漏防
+    const laneOpen = slots.map(x => !Fortress.structures.some(st=>st.hp>0 && Math.abs(st.x-x) < (st.w*0.55 + 10) && st.y > H*0.48));
+    const openIdx = laneOpen.findIndex(v=>v);
+    if (openIdx>=0){
+      const low = Fortress.catalog.barricade;
+      const mid = Fortress.catalog.wall;
+      const pick = (Fortress.stock >= (mid?.cost||999)) ? 'wall' : ((Fortress.stock >= (low?.cost||999)) ? 'barricade' : null);
+      if (pick){
+        Fortress.selected = pick;
+        if (Fortress.placeAt(slots[openIdx], baseY+6)){
+          this._fortBuildCd = 0.12;
+          return;
+        }
+      }
+    }
+
     const plan = [
-      {type:'wall', max:6, y:rows[0]},
-      {type:'heavywall', max:4, y:rows[1]},
-      {type:'bunker', max:2, y:rows[2]},
+      {type:'barricade', max:8, y:rows[0]},
+      {type:'wall', max:4, y:rows[0]},
+      {type:'heavywall', max:2, y:rows[1]},
       {type:'turret', max:4, y:rows[1]},
       {type:'gatling', max:3, y:rows[0]},
       {type:'sniper', max:2, y:rows[2]},
       {type:'repairfield', max:1, y:rows[2]},
+      {type:'bunker', max:1, y:rows[2]},
     ];
 
     for (const step of plan){
@@ -13225,6 +13244,20 @@ const AutoPilot = {
     }
   },
 
+  _fortressGuardPoint(){
+    if (Game.mode!=='fortress' || Game.state!=='playing' || !Player.alive) return null;
+    const danger = bulletsE.filter(b=>b.alive && b.y>H*0.45 && b.vy>0 && Math.abs(b.x-W*0.5)<170);
+    const flood = danger.length;
+    const brave = (Player.invuln>0 || Player.shield>0);
+    const th = brave ? 4 : 8;
+    if (flood < th) return null;
+    const avgX = danger.reduce((a,b)=>a+b.x,0)/Math.max(1,flood);
+    return {
+      x: clamp(avgX, W*0.5-120, W*0.5+120),
+      y: clamp(H-168, 80, H-40)
+    };
+  },
+
   /**
    * 返回 true 表示 AI 已经接管并写入 Player.x/y，外部应跳过正常输入移动。
    */
@@ -13235,11 +13268,18 @@ const AutoPilot = {
 
     const C = this.CONFIG;
 
-    // 限频思考
-    this._thinkCd -= dt;
-    if (this._thinkCd <= 0){
-      this._thinkCd = 1 / C.THINK_HZ;
-      this._decideGoal();
+    const fortGuard = this._fortressGuardPoint();
+    if (fortGuard){
+      this.goalX = fortGuard.x;
+      this.goalY = fortGuard.y;
+      this._thinkCd = Math.max(this._thinkCd, 1 / C.THINK_HZ);
+    } else {
+      // 限频思考
+      this._thinkCd -= dt;
+      if (this._thinkCd <= 0){
+        this._thinkCd = 1 / C.THINK_HZ;
+        this._decideGoal();
+      }
     }
 
     // 直接强制设定 Player 坐标（带一个安全的最大步长钳制）
@@ -15296,7 +15336,7 @@ function togglePause(){
       Player.invuln = Math.max(snap.invuln ?? 0, 1.2);
       Player.x = snap.x ?? Player.x;
       Player.y = snap.y ?? Player.y;
-      Fortress.flagHp = Math.max(Fortress.flagMaxHp*0.55, 1);
+      Fortress.flagHp = Fortress.flagMaxHp;
       Fortress.updatePanel();
     } else {
       Player.hp = Math.max(1, Math.floor(Player.maxHp*BAL.continueHP));
