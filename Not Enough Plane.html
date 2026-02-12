@@ -13388,6 +13388,17 @@ const AutoPilot = {
     const need = cfg.cost - Fortress.stock;
     if (need <= 0) return false;
 
+    // 早期严禁卖建筑，避免“第一轮建了拆、拆了建”
+    if ((Game.wave||1) <= 3) return false;
+    if ((Game.time||0) - (this._fortLastSellT||-999) < 2.6) return false;
+
+    const minKeep = { wall:2, heavywall:1, turret:1, repairplayer:1 };
+    const liveCountByType = Fortress.structures.reduce((m, st)=>{
+      if (st?.hp>0) m[st.type] = (m[st.type]||0) + 1;
+      return m;
+    }, Object.create(null));
+
+    const targetPower = this._fortItemPower(itemType);
     const sacSet = new Set(preferredSacrifice);
     const candidates = Fortress.structures
       .filter(st => st.hp>0)
@@ -13397,7 +13408,7 @@ const AutoPilot = {
         const hpPct = clamp(st.hp / Math.max(1, st.maxHp||1), 0, 1);
         const builtAge = (Game.time||0) - (st._builtAt||0);
         const builtWaveAge = (Game.wave||1) - (st._builtWave||1);
-        const keepMin = (countByType[st.type]||0) <= (minKeep[st.type]||0);
+        const keepMin = (liveCountByType[st.type]||0) <= (minKeep[st.type]||0);
         const sellable = !keepMin && (builtAge >= 18 || builtWaveAge >= 2);
         const oldPower = this._fortItemPower(st.type);
         const powerGain = targetPower - oldPower;
@@ -13763,13 +13774,57 @@ const AutoPilot = {
     };
   },
 
+  _autoFortressUseUtilities(dt){
+    if (Game.mode!=='fortress' || Game.state!=='playing' || Fortress.phase!=='assault') return;
+    this._fortUtilCd = Math.max(0, (this._fortUtilCd||0) - dt);
+    if (this._fortUtilCd > 0) return;
+
+    const threat = enemies
+      .filter(e=>e.alive)
+      .sort((a,b)=> (Math.abs(a.x-W*0.5)*0.45 + Math.abs((H-62)-a.y)) - (Math.abs(b.x-W*0.5)*0.45 + Math.abs((H-62)-b.y)))[0] || null;
+
+    for (const st of Fortress.structures){
+      if (st.hp<=0) continue;
+      if (st.type==='spinner'){
+        const near = enemies.find(e=>e.alive && dist2(st.x,st.y,e.x,e.y) < 220*220);
+        if (near){
+          st.spinBoost = Math.max(st.spinBoost||0, 1.1);
+          st.rot = Math.atan2(near.y-st.y, near.x-st.x);
+        }
+      } else if (st.type==='ram'){
+        if ((st.dashT||0) > 0 || (st._aiRamCd||0) > 0) { st._aiRamCd = Math.max(0,(st._aiRamCd||0)-dt); continue; }
+        const t = enemies.find(e=>e.alive && dist2(st.x,st.y,e.x,e.y) < 260*260);
+        if (t){
+          st.rot = Math.atan2(t.y-st.y, t.x-st.x);
+          st.baseX = st.x; st.baseY = st.y;
+          st.dashT = 0.40;
+          st._aiRamCd = 2.2;
+          spawnShockwave(st.x, st.y, '#ffcb66', 90, 0.16);
+        }
+      } else if (st.type==='beacon'){
+        const danger = enemies.filter(e=>e.alive && e.y>H*0.38 && Math.abs(e.x-W*0.5)<220).length;
+        const wantMode = (Fortress.flagHp < Fortress.flagMaxHp*0.55 || danger>=5) ? 1 : (Fortress.stock < 10 ? 2 : 0);
+        st.mode = wantMode;
+        if (threat){
+          const tx = clamp(threat.x, W*0.5-170, W*0.5+170);
+          const ty = clamp(threat.y + 40, H*0.42, H-70);
+          st.x = clamp(lerp(st.x, tx, 0.55), 24, W-24);
+          st.y = clamp(lerp(st.y, ty, 0.55), H*0.36, H-54);
+          st.rot = (st.rot||0) + 0.35;
+        }
+      }
+    }
+
+    this._fortUtilCd = 0.22;
+  },
+
   /**
    * 返回 true 表示 AI 已经接管并写入 Player.x/y，外部应跳过正常输入移动。
    */
   update(dt){
     if (!this.active || !Player.alive || Game.state !== 'playing') return false;
 
-    if (Game.mode==='fortress') this._autoFortressBuild(dt);
+    if (Game.mode==='fortress') { this._autoFortressBuild(dt); this._autoFortressUseUtilities(dt); }
 
     const C = this.CONFIG;
 
