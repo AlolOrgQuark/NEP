@@ -7638,6 +7638,7 @@ if (b.kind === 'crescent'){
   g.lineTo(e.x + R0*0.4, e.y + R0*0.4);
   g.stroke();
 } else if (b.kind === 'cone') {
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
   const yaw = Math.sin(time*1.8 + (e.bodySeed||0)*0.00002) * 0.95; // 伪3D自旋
   const dir = rot - Math.PI*0.5;
   const ux = Math.cos(dir), uy = Math.sin(dir);
@@ -7647,22 +7648,41 @@ if (b.kind === 'crescent'){
   const baseCy = e.y - uy * R0 * 0.42;
   const bw = R0 * (0.48 + 0.36*(0.5+0.5*Math.cos(yaw)));
   const bh = R0 * (0.22 + 0.36*(0.5+0.5*Math.sin(yaw*0.8)));
+=======
+  const dir = rot - Math.PI*0.5;
+  const ux = Math.cos(dir), uy = Math.sin(dir);
+  const tipX = e.x + ux * R0 * 1.25;
+  const tipY = e.y + uy * R0 * 1.25;
+  const baseCx = e.x - ux * R0 * 0.42;
+  const baseCy = e.y - uy * R0 * 0.42;
+  const bw = R0 * 0.76, bh = R0 * 0.40;
+>>>>>>> main
 
   g.save();
   g.translate(baseCx, baseCy);
   g.rotate(dir + Math.PI*0.5);
 
   const grd = g.createLinearGradient(0, -bh, 0, -bh - R0*1.8);
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
   grd.addColorStop(0.0, rgbToRgba(col, 0.22 + 0.18*(0.5+0.5*Math.cos(yaw))));
   grd.addColorStop(0.65, rgbToRgba(col, 0.14));
   grd.addColorStop(1.0, 'rgba(255,255,255,0.02)');
 
   g.beginPath();
   g.moveTo(0, -R0*(1.45 + 0.25*Math.cos(yaw)));
+=======
+  grd.addColorStop(0.0, rgbToRgba(col, 0.34));
+  grd.addColorStop(0.70, rgbToRgba(col, 0.18));
+  grd.addColorStop(1.0, 'rgba(255,255,255,0.03)');
+
+  g.beginPath();
+  g.moveTo(0, -R0*1.75);
+>>>>>>> main
   g.lineTo(-bw, 0);
   g.lineTo(bw, 0);
   g.closePath();
   g.fillStyle = grd;
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
   g.fill();
 
   g.strokeStyle = rgbToRgba(col, 0.88);
@@ -7698,11 +7718,45 @@ if (b.kind === 'crescent'){
   g.restore();
 
   g.beginPath();
+=======
+  g.fill();
+
+  g.strokeStyle = rgbToRgba(col, 0.88);
+  g.lineWidth = 2;
+  g.stroke();
+
+  g.beginPath();
+  g.moveTo(0, -R0*1.75);
+  g.lineTo(0, 0);
+  g.moveTo(-bw*0.56, 0);
+  g.lineTo(0, -R0*1.1);
+  g.moveTo(bw*0.56, 0);
+  g.lineTo(0, -R0*1.1);
+  g.lineWidth = 1.25;
+  g.strokeStyle = rgbToRgba(col, 0.46);
+  g.stroke();
+
+  g.beginPath();
+  g.ellipse(0, 0, bw, bh, 0, 0, Math.PI*2);
+  g.fillStyle = rgbToRgba(col, 0.20);
+  g.fill();
+  g.strokeStyle = rgbToRgba(col, 0.78);
+  g.lineWidth = 1.4;
+  g.stroke();
+
+  g.restore();
+
+  g.beginPath();
+>>>>>>> main
   g.moveTo(tipX, tipY);
   g.lineTo(baseCx - bw*Math.cos(rot), baseCy - bw*Math.sin(rot));
   g.lineTo(baseCx + bw*Math.cos(rot), baseCy + bw*Math.sin(rot));
   g.closePath();
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
   tronStrokeG(col, 1.1, 0.28);
+=======
+  tronStrokeG(col, 1.1, 0.35);
+>>>>>>> main
   g.stroke();
 } else if (b.kind === 'dragon') {
       // 龙形：蛇形身体+翼
@@ -9241,15 +9295,23 @@ if (chance(0.75)){
         }
       };
     },
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
     // 星穹礼赞：显著多层旋涡花冠（强烈旋转+摆动+二段加速）
     CELESTIAL_CROWN(baseFactory, cfg={}){
       const petals = cfg.petals ?? 10;
       const spin = cfg.spinSpeed ?? 2.8;
+=======
+    // 星穹礼赞：超大角域多重分层弹幕，附带延时二次展开
+    CELESTIAL_CROWN(baseFactory, cfg={}){
+      const petals = cfg.petals ?? 8;
+      const spin = cfg.spinSpeed ?? 2.2;
+>>>>>>> main
       const baseEm = baseFactory(cfg.baseCfg || cfg);
       let phase = 0;
       return {
         type:`CELESTIAL_CROWN<${baseEm.type||'?'},${petals}>`, _baseType:baseEm.type,
         _composite:'CELESTIAL_CROWN', _base:baseEm,
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
         cd: baseEm.cd * 1.9,
         nextCd(o,dt){ phase += (dt||0.016) * spin; return (baseEm.nextCd?.(o,dt) ?? 1) * 1.9; },
         fire(owner){
@@ -9259,6 +9321,16 @@ if (chance(0.75)){
             const per = petals - ring;
             for (let i=0;i<per;i++){
               owner._emitAngleOffset = phase + off + i * (Math.PI*2/per);
+=======
+        cd: baseEm.cd * 1.7,
+        nextCd(o,dt){ phase += (dt||0.016) * spin; return (baseEm.nextCd?.(o,dt) ?? 1) * 1.7; },
+        fire(owner){
+          const beforeP = bulletsP.length, beforeE = bulletsE.length;
+          for (let ring=0; ring<2; ring++){
+            const off = ring===0 ? 0 : Math.PI/petals;
+            for (let i=0;i<petals;i++){
+              owner._emitAngleOffset = phase + off + i * (Math.PI*2/petals);
+>>>>>>> main
               baseEm.fire(owner);
             }
           }
@@ -9267,6 +9339,7 @@ if (chance(0.75)){
             const before = (arr===bulletsP)?beforeP:beforeE;
             for(let i=before;i<arr.length;i++){
               const b = arr[i]; if(!b?.alive) continue;
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
               const side = (i-before)%2===0 ? 1 : -1;
               b.angVel = (b.angVel||0) + side*(1.8 + Math.random()*0.8);
               b.waveA = Math.max(b.waveA||0, 42);
@@ -9285,19 +9358,46 @@ if (chance(0.75)){
       const lanes = cfg.lanes ?? 7;
       const arc = cfg.arc ?? 1.15;
       const accel = cfg.accel ?? 360;
+=======
+              b.waveA = Math.max(b.waveA||0, 34);
+              b.waveF = Math.max(b.waveF||0, 6.2);
+              b.pauseT = Math.max(b.pauseT||0, 0.08);
+              b.accel = (b.accel||0) + 140;
+              b.life = Math.max(b.life||1.8, 2.6);
+            }
+          }
+        }
+      };
+    },
+
+    // 天罚长矛：先齐射封路，再加速突刺，极具压迫感
+    TIDAL_LANCE(baseFactory, cfg={}){
+      const lanes = cfg.lanes ?? 5;
+      const arc = cfg.arc ?? 0.92;
+      const accel = cfg.accel ?? 280;
+>>>>>>> main
       const baseEm = baseFactory(cfg.baseCfg || cfg);
       let tick = 0;
       return {
         type:`TIDAL_LANCE<${baseEm.type||'?'},${lanes}>`, _baseType:baseEm.type,
         _composite:'TIDAL_LANCE', _base:baseEm,
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
         cd: baseEm.cd * 1.55,
         nextCd(o,dt){ return (baseEm.nextCd?.(o,dt) ?? 1) * 1.55; },
+=======
+        cd: baseEm.cd * 1.35,
+        nextCd(o,dt){ return (baseEm.nextCd?.(o,dt) ?? 1) * 1.35; },
+>>>>>>> main
         fire(owner){
           const beforeP = bulletsP.length, beforeE = bulletsE.length;
           for (let wave=0; wave<2; wave++){
             for (let i=0;i<lanes;i++){
               const t = lanes<=1 ? 0 : (i/(lanes-1)-0.5);
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
               owner._emitAngleOffset = t * arc + (wave?0.14:-0.14) + Math.sin(tick*0.9)*0.08;
+=======
+              owner._emitAngleOffset = t * arc + (wave?0.11:-0.11) + Math.sin(tick*0.8)*0.06;
+>>>>>>> main
               baseEm.fire(owner);
             }
           }
@@ -9307,12 +9407,20 @@ if (chance(0.75)){
             const before = (arr===bulletsP)?beforeP:beforeE;
             for(let i=before;i<arr.length;i++){
               const b = arr[i]; if(!b?.alive) continue;
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
               b.pauseT = Math.max(b.pauseT||0, 0.18);
               b.accel = (b.accel||0) + accel;
               b.waveA = Math.max(b.waveA||0, 28);
               b.waveF = Math.max(b.waveF||0, 6.2);
               b.angVel = (b.angVel||0) + (((i-before)%3)-1)*0.7;
               b.life = Math.max(b.life||1.8, 3.0);
+=======
+              b.pauseT = Math.max(b.pauseT||0, 0.12);
+              b.accel = (b.accel||0) + accel;
+              b.waveA = Math.max(b.waveA||0, 22);
+              b.waveF = Math.max(b.waveF||0, 5.4);
+              b.life = Math.max(b.life||1.8, 2.8);
+>>>>>>> main
             }
           }
         }
@@ -9958,7 +10066,7 @@ for (const em of e.emitters){
         // fortress: 与 survival 同一套节奏，但额外受本波预算 spawnLeft 控制
         this.cd -= dt;
         if (this.cd<=0 && Fortress.spawnLeft>0){
-          this.cd = baseRate * DiffConfig.spawnRateMul * rand(0.72, 1.26);
+          this.cd = Math.max(0.09, baseRate * DiffConfig.spawnRateMul);
 
           if (Game.bossAlive && chance(0.55)) return;
           if (enemies.length >= 7 && !Game.bossAlive) return;
@@ -13188,6 +13296,7 @@ const AutoPilot = {
       this._thinkCd = 0;
       this._safeT = 0;
       this._fortBuildCd = 0;
+<<<<<<< codex/enhance-fortress-mode-visual-elements-1u2791
     }
   },
 
@@ -13278,6 +13387,93 @@ const AutoPilot = {
         Fortress.selected = firstAtk;
         if (Fortress.placeAt(W*0.5, rows[1])){ this._fortBuildCd = 0.2; return; }
       }
+=======
+>>>>>>> main
+    }
+
+    if (Fortress.stock < 6 || Fortress.structures.length >= 18){
+      Fortress.beginAssault();
+      this._fortBuildCd = 0.25;
+    }
+  },
+
+  _fortressGuardPoint(){
+    if (Game.mode!=='fortress' || Game.state!=='playing' || !Player.alive) return null;
+    const danger = bulletsE.filter(b=>b.alive && b.y>H*0.45 && b.vy>0 && Math.abs(b.x-W*0.5)<170);
+    const flood = danger.length;
+    const brave = (Player.invuln>0 || Player.shield>0);
+    const th = brave ? 4 : 8;
+    if (flood < th) return null;
+    const avgX = danger.reduce((a,b)=>a+b.x,0)/Math.max(1,flood);
+    return {
+      x: clamp(avgX, W*0.5-120, W*0.5+120),
+      y: clamp(H-168, 80, H-40)
+    };
+  },
+
+  toggle(){
+    this.setActive(!this.active);
+  },
+
+  _autoFortressBuild(dt){
+    if (Game.mode!=='fortress' || Fortress.phase!=='fortify' || !Fortress.canBuild()) return;
+    this._fortBuildCd = Math.max(0, (this._fortBuildCd||0) - dt);
+    if (this._fortBuildCd > 0) return;
+
+    const byType = {};
+    for (const st of Fortress.structures){
+      byType[st.type] = (byType[st.type]||0) + 1;
+    }
+
+    const baseY = H - 132;
+    const rows = [baseY, baseY - 58, baseY - 108];
+    const slots = [0.18,0.32,0.46,0.54,0.68,0.82].map(k=>W*k);
+
+    // 先用低成本墙体封住空档，避免因高价钢壁导致漏防
+    const laneOpen = slots.map(x => !Fortress.structures.some(st=>st.hp>0 && Math.abs(st.x-x) < (st.w*0.55 + 10) && st.y > H*0.48));
+    const openIdx = laneOpen.findIndex(v=>v);
+    if (openIdx>=0){
+      const low = Fortress.catalog.barricade;
+      const mid = Fortress.catalog.wall;
+      const pick = (Fortress.stock >= (mid?.cost||999)) ? 'wall' : ((Fortress.stock >= (low?.cost||999)) ? 'barricade' : null);
+      if (pick){
+        Fortress.selected = pick;
+        if (Fortress.placeAt(slots[openIdx], baseY+6)){
+          this._fortBuildCd = 0.12;
+          return;
+        }
+      }
+    }
+
+    const plan = [
+      {type:'barricade', max:8, y:rows[0]},
+      {type:'wall', max:4, y:rows[0]},
+      {type:'heavywall', max:2, y:rows[1]},
+      {type:'turret', max:4, y:rows[1]},
+      {type:'gatling', max:3, y:rows[0]},
+      {type:'sniper', max:2, y:rows[2]},
+      {type:'repairfield', max:1, y:rows[2]},
+      {type:'bunker', max:1, y:rows[2]},
+    ];
+
+    for (const step of plan){
+      const have = byType[step.type] || 0;
+      if (have >= step.max) continue;
+      const cfg = Fortress.catalog[step.type];
+      if (!cfg || Fortress.stock < cfg.cost) continue;
+      Fortress.selected = step.type;
+      const x = slots[(have + (step.type.length%slots.length)) % slots.length];
+      const y = step.y + ((have%2) ? 12 : -8);
+      if (Fortress.placeAt(x, y)){
+        this._fortBuildCd = 0.18;
+        return;
+      }
+    }
+
+    if (Fortress.flagHp < Fortress.flagMaxHp*0.72 && Fortress.stock >= 6){
+      Fortress.repairFlag(6, 180);
+      this._fortBuildCd = 0.15;
+      return;
     }
 
     if (Fortress.stock < 6 || Fortress.structures.length >= 18){
