@@ -1663,6 +1663,7 @@ input[type="checkbox"] {
                 <button id="btnForgeExtraAdd" class="mini-btn">ADD BASE</button>
                 <button id="btnForgeExtraAddFrom1" class="mini-btn">COPY SLOT1</button>
                 <button id="btnForgeExtraAddFrom2" class="mini-btn">COPY SLOT2</button>
+                <button id="btnForgeExtraMode" class="mini-btn">VIEW: UI</button>
               </div>
               <div class="muted" style="margin:6px 0 8px">每个条目支持完整 emitter/wrapper JSON，可无限追加、修改、删除。</div>
               <div id="forgeExtraEmittersList" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -16525,6 +16526,7 @@ function initForgeExtendedUI() {
 
 function ensureForgeExtraEmitters(){
   if (!Array.isArray(ForgeState.extraEmitters)) ForgeState.extraEmitters = [];
+  if (!ForgeState.extraEmittersViewMode) ForgeState.extraEmittersViewMode = 'ui';
 }
 
 function summarizeSerializedEmitter(node){
@@ -16548,7 +16550,7 @@ function normalizeSerializedEmitter(node){
     return {
       isWrapper:false,
       type: node.type || 'AIM',
-      mods: Array.isArray(node.mods) ? node.mods.slice(0, 12) : [],
+      mods: Array.isArray(node.mods) ? node.mods.slice(0, 24) : [],
       speed: Number.isFinite(+node.speed) ? +node.speed : 220,
       cd: Number.isFinite(+node.cd) ? +node.cd : 1.2
     };
@@ -16583,10 +16585,225 @@ function getSerializedFromSlot(slotNum){
   });
 }
 
+function emitterToUiModel(node){
+  const n = normalizeSerializedEmitter(node) || {isWrapper:false,type:'AIM',mods:[],speed:220,cd:1.2};
+  const wrappers = [];
+  let cur = n;
+  while (cur && cur.isWrapper){
+    wrappers.push({
+      wrapperType: cur.wrapperType || '',
+      compCfg: deepClone(cur.compCfg || {}),
+      _warnInterleave: (cur.wrapperType === 'INTERLEAVE')
+    });
+    cur = cur.inner || cur.innerA || cur.innerB;
+  }
+  return {
+    base: {
+      type: cur?.type || 'AIM',
+      cd: Number.isFinite(+cur?.cd) ? +cur.cd : 1.2,
+      speed: Number.isFinite(+cur?.speed) ? +cur.speed : 220,
+      mods: Array.isArray(cur?.mods) ? cur.mods.slice() : []
+    },
+    wrappers: wrappers.reverse() // inner -> outer
+  };
+}
+
+function uiModelToEmitter(model){
+  const base = {
+    isWrapper:false,
+    type: model?.base?.type || 'AIM',
+    cd: Number.isFinite(+model?.base?.cd) ? +model.base.cd : 1.2,
+    speed: Number.isFinite(+model?.base?.speed) ? +model.base.speed : 220,
+    mods: Array.isArray(model?.base?.mods) ? model.base.mods.slice(0,24) : []
+  };
+  const ws = Array.isArray(model?.wrappers) ? model.wrappers : [];
+  let cur = base;
+  for (const w of ws){
+    const wt = w?.wrapperType || '';
+    if (!wt) continue;
+    if (wt === 'INTERLEAVE'){
+      cur = {
+        isWrapper:true,
+        wrapperType: wt,
+        compCfg: deepClone(w?.compCfg || {}),
+        innerA: cur,
+        innerB: normalizeSerializedEmitter(w?.innerB) || deepClone(cur)
+      };
+    } else {
+      cur = {
+        isWrapper:true,
+        wrapperType: wt,
+        compCfg: deepClone(w?.compCfg || {}),
+        inner: cur
+      };
+    }
+  }
+  return cur;
+}
+
+function renderWrapperCfgFieldsUI(container, item, wrapIdx){
+  const key = item.wrapperType || '';
+  const defs = WrapperFieldDefs[key] || [];
+  container.innerHTML = '';
+  if (!key){
+    const m = document.createElement('div');
+    m.className = 'muted';
+    m.textContent = '先选择 wrapper 类型';
+    container.appendChild(m);
+    return;
+  }
+  if (key==='INTERLEAVE'){
+    const w = document.createElement('div');
+    w.className = 'muted';
+    w.textContent = 'INTERLEAVE 包含双分支，UI 模式仅编辑主分支。需要完整双分支请切到 JSON 模式。';
+    container.appendChild(w);
+  }
+  if (!defs.length){
+    const m = document.createElement('div');
+    m.className = 'muted';
+    m.textContent = '该 wrapper 无公开配置字段。';
+    container.appendChild(m);
+    return;
+  }
+  for (const def of defs){
+    const row = document.createElement('div');
+    row.className = 'field';
+    row.style.marginBottom = '4px';
+    const lb = document.createElement('label');
+    lb.textContent = def.id;
+    const ip = document.createElement('input');
+    ip.type = (def.type==='int' || def.type==='num') ? 'number' : 'text';
+    if (def.type==='num' && def.step!=null) ip.step = String(def.step);
+    if (def.type==='int') ip.step = '1';
+    let v = item.compCfg?.[def.id];
+    if (v==null) v = def.def;
+    ip.value = String(v ?? '');
+    ip.addEventListener('input', ()=>{
+      if (!item.compCfg) item.compCfg = {};
+      if (def.type==='int') item.compCfg[def.id] = (ip.value==='' ? null : (parseInt(ip.value,10)||0));
+      else if (def.type==='num') item.compCfg[def.id] = (ip.value==='' ? null : (+ip.value||0));
+      else item.compCfg[def.id] = ip.value;
+    });
+    row.appendChild(lb);
+    row.appendChild(ip);
+    container.appendChild(row);
+  }
+}
+
+function renderEmitterUiEditor(card, item, idx){
+  const model = emitterToUiModel(item);
+
+  const baseWrap = document.createElement('div');
+  baseWrap.style.cssText = 'border:1px dashed rgba(255,255,255,0.2);padding:6px;margin-bottom:6px';
+  baseWrap.innerHTML = '<div class="muted" style="margin-bottom:4px">BASE EMITTER</div>';
+
+  const typeRow = document.createElement('div');
+  typeRow.className = 'field';
+  const typeLb = document.createElement('label');
+  typeLb.textContent = 'TYPE';
+  const typeSel = document.createElement('select');
+  Object.keys(EmitterCatalog).forEach(k=>{
+    const op=document.createElement('option'); op.value=k; op.textContent=k; typeSel.appendChild(op);
+  });
+  typeSel.value = model.base.type;
+  typeSel.addEventListener('change', ()=>{ model.base.type = typeSel.value; });
+  typeRow.appendChild(typeLb); typeRow.appendChild(typeSel);
+
+  const cdSp = document.createElement('div');
+  cdSp.className = 'slider-row';
+  const mkNum=(label,v,step,cb)=>{
+    const f=document.createElement('div');f.className='field';
+    const l=document.createElement('label');l.textContent=label;
+    const i=document.createElement('input');i.type='number';i.step=step;i.value=String(v);
+    i.addEventListener('input',()=>cb(+i.value||0));
+    f.appendChild(l);f.appendChild(i);return f;
+  };
+  cdSp.appendChild(mkNum('CD', model.base.cd, '0.01', v=>model.base.cd=v));
+  cdSp.appendChild(mkNum('SPEED', model.base.speed, '1', v=>model.base.speed=v));
+
+  const modsRow = document.createElement('div');
+  modsRow.className = 'field';
+  const modsLb = document.createElement('label'); modsLb.textContent = 'BASE MODS (comma separated)';
+  const modsInput = document.createElement('input');
+  modsInput.value = (model.base.mods||[]).join(', ');
+  modsInput.placeholder = 'FIREWORK, PIERCE, ...';
+  modsInput.addEventListener('change', ()=>{
+    model.base.mods = modsInput.value.split(',').map(x=>x.trim()).filter(Boolean);
+  });
+  modsRow.appendChild(modsLb); modsRow.appendChild(modsInput);
+
+  baseWrap.appendChild(typeRow);
+  baseWrap.appendChild(cdSp);
+  baseWrap.appendChild(modsRow);
+  card.appendChild(baseWrap);
+
+  const wrappersWrap = document.createElement('div');
+  wrappersWrap.style.cssText = 'border:1px dashed rgba(179,108,255,0.35);padding:6px;margin-bottom:6px';
+  wrappersWrap.innerHTML = '<div class="muted" style="margin-bottom:4px">WRAPPERS (INNER -> OUTER)</div>';
+  const list = document.createElement('div');
+  list.style.display='flex'; list.style.flexDirection='column'; list.style.gap='6px';
+
+  const rerender = ()=>{
+    list.innerHTML='';
+    model.wrappers.forEach((w, wi)=>{
+      const row = document.createElement('div');
+      row.style.cssText='border:1px solid rgba(179,108,255,0.25);padding:6px;background:rgba(179,108,255,0.08)';
+
+      const top = document.createElement('div');
+      top.style.cssText='display:flex;gap:6px;align-items:center';
+      const sel = document.createElement('select');
+      const empty = document.createElement('option'); empty.value=''; empty.textContent='(NONE)'; sel.appendChild(empty);
+      Object.keys(CompositeWrappers).forEach(k=>{ const op=document.createElement('option'); op.value=k; op.textContent=k; sel.appendChild(op); });
+      sel.value = w.wrapperType || '';
+      sel.addEventListener('change', ()=>{ w.wrapperType = sel.value; if(!w.compCfg) w.compCfg={}; rerender(); });
+
+      const up = document.createElement('button'); up.className='mini-btn'; up.textContent='↑';
+      up.addEventListener('click', ()=>{ if (wi<=0) return; [model.wrappers[wi-1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi-1]]; rerender(); });
+      const dn = document.createElement('button'); dn.className='mini-btn'; dn.textContent='↓';
+      dn.addEventListener('click', ()=>{ if (wi>=model.wrappers.length-1) return; [model.wrappers[wi+1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi+1]]; rerender(); });
+      const del = document.createElement('button'); del.className='mini-btn'; del.textContent='REMOVE';
+      del.addEventListener('click', ()=>{ model.wrappers.splice(wi,1); rerender(); });
+      top.appendChild(sel); top.appendChild(up); top.appendChild(dn); top.appendChild(del);
+
+      const cfgBox = document.createElement('div');
+      cfgBox.style.marginTop='6px';
+      renderWrapperCfgFieldsUI(cfgBox, w, wi);
+
+      row.appendChild(top);
+      row.appendChild(cfgBox);
+      list.appendChild(row);
+    });
+  };
+
+  rerender();
+  const addW = document.createElement('button');
+  addW.className='mini-btn'; addW.textContent='ADD WRAPPER';
+  addW.addEventListener('click', ()=>{ model.wrappers.push({wrapperType:'', compCfg:{}}); rerender(); });
+
+  wrappersWrap.appendChild(list);
+  wrappersWrap.appendChild(addW);
+  card.appendChild(wrappersWrap);
+
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'mini-btn';
+  applyBtn.textContent = 'APPLY UI CHANGES';
+  applyBtn.addEventListener('click', ()=>{
+    ForgeState.extraEmitters[idx] = uiModelToEmitter(model);
+    saveForge();
+    syncForgeUIFromState();
+    textPop(W*0.5, 90, `EXTRA #${idx+1} UPDATED`, C.P1);
+  });
+  card.appendChild(applyBtn);
+}
+
 function renderForgeExtraEmittersUI(){
   ensureForgeExtraEmitters();
   const root = document.getElementById('forgeExtraEmittersList');
+  const modeBtn = document.getElementById('btnForgeExtraMode');
   if (!root) return;
+  if (modeBtn){
+    modeBtn.textContent = `VIEW: ${ForgeState.extraEmittersViewMode==='json' ? 'JSON' : 'UI'}`;
+  }
   root.innerHTML = '';
 
   if (!ForgeState.extraEmitters.length){
@@ -16607,33 +16824,11 @@ function renderForgeExtraEmittersUI(){
 
     const btns = document.createElement('div');
     btns.style.cssText = 'display:flex;gap:6px';
-    const btnSave = document.createElement('button');
-    btnSave.className = 'mini-btn';
-    btnSave.textContent = 'APPLY';
     const btnDel = document.createElement('button');
     btnDel.className = 'mini-btn';
     btnDel.textContent = 'REMOVE';
-    btns.appendChild(btnSave);
     btns.appendChild(btnDel);
     title.appendChild(btns);
-
-    const ta = document.createElement('textarea');
-    ta.style.cssText = 'width:100%;min-height:120px;background:rgba(0,0,0,0.4);color:#9deeff;border:1px solid rgba(157,238,255,0.35);font-family:monospace;font-size:11px';
-    ta.value = JSON.stringify(item, null, 2);
-
-    btnSave.addEventListener('click', ()=>{
-      try{
-        const parsed = JSON.parse(ta.value || '{}');
-        const norm = normalizeSerializedEmitter(parsed);
-        if (!norm) throw new Error('invalid emitter json');
-        ForgeState.extraEmitters[idx] = norm;
-        saveForge();
-        syncForgeUIFromState();
-        textPop(W*0.5, 90, `EXTRA #${idx+1} UPDATED`, C.P1);
-      }catch(err){
-        alert('Emitter JSON 无效：' + (err?.message || err));
-      }
-    });
 
     btnDel.addEventListener('click', ()=>{
       ForgeState.extraEmitters.splice(idx,1);
@@ -16642,7 +16837,34 @@ function renderForgeExtraEmittersUI(){
     });
 
     card.appendChild(title);
-    card.appendChild(ta);
+
+    if (ForgeState.extraEmittersViewMode === 'json'){
+      const ta = document.createElement('textarea');
+      ta.style.cssText = 'width:100%;min-height:120px;background:rgba(0,0,0,0.4);color:#9deeff;border:1px solid rgba(157,238,255,0.35);font-family:monospace;font-size:11px';
+      ta.value = JSON.stringify(item, null, 2);
+      const btnSave = document.createElement('button');
+      btnSave.className = 'mini-btn';
+      btnSave.textContent = 'APPLY JSON';
+      btnSave.style.marginTop = '6px';
+      btnSave.addEventListener('click', ()=>{
+        try{
+          const parsed = JSON.parse(ta.value || '{}');
+          const norm = normalizeSerializedEmitter(parsed);
+          if (!norm) throw new Error('invalid emitter json');
+          ForgeState.extraEmitters[idx] = norm;
+          saveForge();
+          syncForgeUIFromState();
+          textPop(W*0.5, 90, `EXTRA #${idx+1} UPDATED`, C.P1);
+        }catch(err){
+          alert('Emitter JSON 无效：' + (err?.message || err));
+        }
+      });
+      card.appendChild(ta);
+      card.appendChild(btnSave);
+    } else {
+      renderEmitterUiEditor(card, item, idx);
+    }
+
     root.appendChild(card);
   });
 }
@@ -16651,6 +16873,7 @@ function wireForgeExtraEmitterButtons(){
   const addBase = document.getElementById('btnForgeExtraAdd');
   const add1 = document.getElementById('btnForgeExtraAddFrom1');
   const add2 = document.getElementById('btnForgeExtraAddFrom2');
+  const mode = document.getElementById('btnForgeExtraMode');
   const push = (data)=>{
     ensureForgeExtraEmitters();
     const norm = normalizeSerializedEmitter(data || {isWrapper:false,type:'AIM',mods:[],speed:220,cd:1.2});
@@ -16662,6 +16885,12 @@ function wireForgeExtraEmitterButtons(){
   addBase?.addEventListener('click', ()=>push({isWrapper:false,type:'AIM',mods:[...(ForgeState.mods||[])],speed:220,cd:1.2}));
   add1?.addEventListener('click', ()=>push(getSerializedFromSlot(1)));
   add2?.addEventListener('click', ()=>push(getSerializedFromSlot(2)));
+  mode?.addEventListener('click', ()=>{
+    ensureForgeExtraEmitters();
+    ForgeState.extraEmittersViewMode = ForgeState.extraEmittersViewMode === 'json' ? 'ui' : 'json';
+    saveForge();
+    syncForgeUIFromState();
+  });
 }
 
 function restoreWrapperUI(slot, layer) {
