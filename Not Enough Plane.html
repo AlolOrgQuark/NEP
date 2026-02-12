@@ -1237,16 +1237,21 @@ input[type="checkbox"] {
           <button id="btnFortBarricade" data-item="barricade" class="mini-btn on">木障 3</button>
           <button id="btnFortWall" data-item="wall" class="mini-btn">钢壁 6</button>
           <button id="btnFortHeavyWall" data-item="heavywall" class="mini-btn">合金墙 11</button>
+          <button id="btnFortBunker" data-item="bunker" class="mini-btn">堡垒墙 18</button>
           <button id="btnFortShield" data-item="shield" class="mini-btn" style="border-color:var(--c-magenta);color:var(--c-magenta)">棱镜盾 9</button>
           <button id="btnFortTurret" data-item="turret" class="mini-btn" style="border-color:var(--c-danger);color:var(--c-danger)">炮塔+ 10</button>
           <button id="btnFortGatling" data-item="gatling" class="mini-btn" style="border-color:#ff8f8f;color:#ff8f8f">加特林 12</button>
           <button id="btnFortSniper" data-item="sniper" class="mini-btn">狙击塔 14</button>
           <button id="btnFortMissile" data-item="missile" class="mini-btn" style="border-color:#ffd28a;color:#ffd28a">导弹井 16</button>
           <button id="btnFortTesla" data-item="tesla" class="mini-btn" style="border-color:#9dd7ff;color:#9dd7ff">特斯拉塔 15</button>
+          <button id="btnFortFlame" data-item="flame" class="mini-btn" style="border-color:#ffb56b;color:#ffb56b">喷火塔 13</button>
+          <button id="btnFortMortar" data-item="mortar" class="mini-btn" style="border-color:#d7d7ff;color:#d7d7ff">迫击炮 17</button>
+          <button id="btnFortDrone" data-item="dronepad" class="mini-btn" style="border-color:#8bf7ff;color:#8bf7ff">无人机坪 16</button>
           <button id="btnFortPulse" data-item="pulse" class="mini-btn" style="border-color:var(--c-yellow);color:var(--c-yellow)">脉冲器 12</button>
           <button id="btnFortMine" data-item="mine" class="mini-btn">地雷 8</button>
           <button id="btnFortSlow" data-item="slow" class="mini-btn">减速塔 11</button>
           <button id="btnFortRepair" data-item="repair" class="mini-btn">维修机 13</button>
+          <button id="btnFortFactory" data-item="factory" class="mini-btn" style="border-color:#9dffad;color:#9dffad">补给站 12</button>
         </div>
         <div class="row" style="margin-top:4px">
           <button id="btnFortStartWave" class="mini-btn" style="border-color:var(--c-danger);color:var(--c-danger)">开始敌袭</button>
@@ -1880,6 +1885,11 @@ input[type="checkbox"] {
     btnFortGatling: $('btnFortGatling'),
     btnFortMissile: $('btnFortMissile'),
     btnFortTesla: $('btnFortTesla'),
+    btnFortBunker: $('btnFortBunker'),
+    btnFortFlame: $('btnFortFlame'),
+    btnFortMortar: $('btnFortMortar'),
+    btnFortDrone: $('btnFortDrone'),
+    btnFortFactory: $('btnFortFactory'),
     btnFortMine: $('btnFortMine'),
     btnFortSlow: $('btnFortSlow'),
     btnFortRepair: $('btnFortRepair'),
@@ -2685,20 +2695,26 @@ const addShake = (m, t=0.16) => {
     sid:1,
     undoStack:[],
     sellMode:false,
+    bossSpawned:false,
     catalog:{
       barricade:{cost:3,w:46,h:16,hp:110,col:'#b8d28a',type:'barricade'},
       wall:{cost:6,w:56,h:20,hp:260,col:'#7ef9c0',type:'wall'},
       heavywall:{cost:11,w:74,h:24,hp:520,col:'#89f5dd',type:'heavywall'},
+      bunker:{cost:18,w:92,h:28,hp:960,col:'#76ffd7',type:'bunker'},
       shield:{cost:9,w:74,h:18,hp:360,col:'#b36cff',type:'shield'},
       turret:{cost:10,w:44,h:24,hp:220,col:'#ff5577',type:'turret',cd:0.42},
       gatling:{cost:12,w:40,h:22,hp:190,col:'#ff8f8f',type:'gatling',cd:0.16},
       sniper:{cost:14,w:36,h:24,hp:150,col:'#ffa5ff',type:'sniper',cd:0.85},
       missile:{cost:16,w:42,h:26,hp:180,col:'#ffd28a',type:'missile',cd:1.75},
       tesla:{cost:15,w:40,h:28,hp:210,col:'#9dd7ff',type:'tesla',cd:1.05},
+      flame:{cost:13,w:38,h:24,hp:220,col:'#ffb56b',type:'flame',cd:0.22},
+      mortar:{cost:17,w:44,h:28,hp:220,col:'#d7d7ff',type:'mortar',cd:1.9},
+      dronepad:{cost:16,w:42,h:26,hp:230,col:'#8bf7ff',type:'dronepad',cd:1.35},
       pulse:{cost:12,w:36,h:36,hp:170,col:'#ffd56d',type:'pulse',cd:3.6},
       mine:{cost:8,w:24,h:24,hp:90,col:'#f2ff80',type:'mine'},
       slow:{cost:11,w:34,h:30,hp:190,col:'#8ee7ff',type:'slow'},
       repair:{cost:13,w:40,h:28,hp:190,col:'#9dffad',type:'repair',cd:4.2},
+      factory:{cost:12,w:48,h:26,hp:240,col:'#9dffad',type:'factory',cd:6.0},
     },
     reset(){
       this.phase='idle'; this.timer=0; this.stock=0; this.structures.length=0;
@@ -2708,6 +2724,7 @@ const addShake = (m, t=0.16) => {
       this.spawnCd=0; this.spawnLeft=0; this.sid=1;
       this.undoStack.length=0;
       this.sellMode=false;
+      this.bossSpawned=false;
     },
     start(){
       this.reset();
@@ -2729,7 +2746,7 @@ const addShake = (m, t=0.16) => {
       if (ui.btnFortStartWave) ui.btnFortStartWave.style.display = this.phase==='fortify' ? 'inline-block' : 'none';
     },
     syncSelectionUI(){
-      const map = ['barricade','wall','heavywall','shield','turret','gatling','sniper','missile','tesla','pulse','mine','slow','repair'];
+      const map = ['barricade','wall','heavywall','bunker','shield','turret','gatling','sniper','missile','tesla','flame','mortar','dronepad','pulse','mine','slow','repair','factory'];
       for (const k of map){
         const el = document.querySelector(`#fortressBuildScroller [data-item="${k}"]`);
         if (el) el.classList.toggle('on', !this.sellMode && this.selected===k);
@@ -2744,7 +2761,9 @@ const addShake = (m, t=0.16) => {
     beginAssault(){
       if (this.phase!=='fortify') return;
       this.phase='assault';
-      this.spawnLeft = 8 + Math.floor(Game.wave*2.4);
+      this.spawnLeft = 12 + Math.floor(Game.wave*2.6);
+      this.bossSpawned = false;
+      WaveDirector.onWave(Game.wave);
       this.spawnCd = 0.25;
       textPop(W*0.5, H*0.16, `敌袭 WAVE ${Game.wave}`, C.E1);
       spawnShockwave(W*0.5, H*0.16, C.E1, 240, 0.45);
@@ -2826,21 +2845,7 @@ const addShake = (m, t=0.16) => {
     update(dt){
       if (Game.mode!=='fortress') return;
       if (this.phase==='assault'){
-        this.spawnCd -= dt;
-        if (this.spawnLeft>0 && this.spawnCd<=0){
-          const proto = WaveDirector.pick();
-          const d = Game.difficulty;
-          const e = EnemyFactory.spawnFromProto(proto, d);
-          e.maxHp = Math.round(e.maxHp * proto.hpMul * DiffConfig.enemyHpMul * (1 + Game.wave*0.06));
-          e.hp = e.maxHp;
-          e.emCdMul = (e.emCdMul||1) * DiffConfig.fireCdMul;
-          e.score = Math.round(e.score * proto.scoreMul);
-          resolveSpawnOverlap(e, 12);
-          enemies.push(e);
-          this.spawnLeft -= 1;
-          this.spawnCd = rand(0.32, 0.78) * Math.max(0.45, 1 - Game.wave*0.02);
-        }
-        if (this.spawnLeft<=0){
+        if (this.spawnLeft<=0 && !Game.bossAlive){
           let aliveCount = 0;
           for (const e of enemies) if (e.alive) aliveCount++;
           if (aliveCount===0) this.beginFortify();
@@ -2894,6 +2899,41 @@ const addShake = (m, t=0.16) => {
               st.cd = 0.95;
             }
           }
+        } else if (st.type==='flame'){
+          st.cd -= dt;
+          if (st.cd<=0){
+            for (const e of enemies){
+              if (!e.alive) continue;
+              const d2 = dist2(st.x,st.y,e.x,e.y);
+              if (d2 < 170*170) e.onHit?.(10 + Game.wave*0.65);
+            }
+            spawnShockwave(st.x, st.y, '#ffb56b', 95, 0.18);
+            st.cd = 0.22;
+          }
+        } else if (st.type==='mortar'){
+          st.cd -= dt;
+          if (st.cd<=0){
+            const t = findNearestEnemy(st.x, st.y, 800);
+            if (t){
+              const a = Math.atan2(t.y-st.y, t.x-st.x);
+              const b = spawnBullet('P', st.x, st.y-8, Math.cos(a)*300, Math.sin(a)*300, {r:3.6,dmg:24+Game.wave*1.2,col:'#d7d7ff',spr:'glowP2',life:2.0,mods:['MINE'],mineT:0.35,style:1});
+              if (b) b.noHitT = 0.06;
+              st.cd = 1.8;
+            }
+          }
+        } else if (st.type==='dronepad'){
+          st.cd -= dt;
+          if (st.cd<=0){
+            const t = findNearestEnemy(st.x, st.y, 680);
+            if (t){
+              for (let i=0;i<2;i++){
+                const a = Math.atan2(t.y-st.y, t.x-st.x) + (i?0.12:-0.12);
+                const b = spawnBullet('P', st.x, st.y-8, Math.cos(a)*340, Math.sin(a)*340, {r:2.8,dmg:18+Game.wave*0.9,col:'#8bf7ff',spr:'glowP',life:1.8,mods:['HOMING'],homing:1,style:1});
+                if (b) b.turnAfter = 0.08;
+              }
+              st.cd = 1.25;
+            }
+          }
         } else if (st.type==='sniper'){
           st.cd -= dt;
           if (st.cd<=0){
@@ -2923,6 +2963,13 @@ const addShake = (m, t=0.16) => {
             this.flagHp = Math.min(this.flagMaxHp, this.flagHp + 35);
             spawnShockwave(st.x,st.y,'#9dffad',90,0.25);
             st.cd = 5.0;
+          }
+        } else if (st.type==='factory'){
+          st.cd -= dt;
+          if (st.cd<=0){
+            this.stock += 2;
+            sparks(st.x,st.y,'glowG', 5, 120);
+            st.cd = 6.0;
           }
         } else if (st.type==='slow'){
           for (const e of enemies){
@@ -9398,6 +9445,40 @@ for (const em of e.emitters){
       
       if (Game.mode === 'fortress') {
         Fortress.update(dt);
+        if (Fortress.phase !== 'assault') return;
+
+        const timeSlope = (t < BAL.diffSwitchT) ? BAL.diffTimeEarly : BAL.diffTimeLate;
+        Game.difficulty = 1 + t*timeSlope + Game.score*BAL.diffScore;
+
+        if (!Game.bossAlive && !Fortress.bossSpawned && Game.wave>0 && Game.wave%5===0){
+          Game.lastBossAt = t;
+          Fortress.bossSpawned = true;
+          spawnBoss(Game.difficulty);
+        }
+
+        const d = Game.difficulty;
+        const k = clamp((d-1)/9, 0, 1);
+        const baseRate = lerp(BAL.spawnRateEarly, BAL.spawnRateLate, k);
+
+        this.cd -= dt;
+        if (this.cd<=0 && Fortress.spawnLeft>0){
+          this.cd = baseRate * DiffConfig.spawnRateMul * rand(0.72, 1.26);
+
+          if (Game.bossAlive && chance(0.55)) return;
+          if (enemies.length >= 8 && !Game.bossAlive) return;
+
+          const proto = WaveDirector.pick();
+          const e = EnemyFactory.spawnFromProto(proto, d);
+
+          e.maxHp = Math.round(e.maxHp * proto.hpMul * DiffConfig.enemyHpMul);
+          e.emCdMul = (e.emCdMul || 1.0) * DiffConfig.fireCdMul;
+          e.hp = e.maxHp;
+          e.score = Math.round(e.score * proto.scoreMul);
+
+          resolveSpawnOverlap(e, 12);
+          enemies.push(e);
+          Fortress.spawnLeft -= 1;
+        }
         return;
       }
 
@@ -16678,20 +16759,24 @@ function toggleCompactHUD(e){
   ui.btnCompactUI.textContent = root.classList.contains('compact') ? 'HUD' : 'UI';
 }
 ui.btnCompactUI?.addEventListener('click', toggleCompactHUD, {passive:false});
-ui.btnCompactUI?.addEventListener('pointerdown', toggleCompactHUD, {passive:false});
 
 ui.btnFortBarricade?.addEventListener('click', ()=>Fortress.select('barricade'));
 ui.btnFortWall?.addEventListener('click', ()=>Fortress.select('wall'));
 ui.btnFortHeavyWall?.addEventListener('click', ()=>Fortress.select('heavywall'));
+ui.btnFortBunker?.addEventListener('click', ()=>Fortress.select('bunker'));
 ui.btnFortTurret?.addEventListener('click', ()=>Fortress.select('turret'));
 ui.btnFortGatling?.addEventListener('click', ()=>Fortress.select('gatling'));
 ui.btnFortMissile?.addEventListener('click', ()=>Fortress.select('missile'));
 ui.btnFortTesla?.addEventListener('click', ()=>Fortress.select('tesla'));
+ui.btnFortFlame?.addEventListener('click', ()=>Fortress.select('flame'));
+ui.btnFortMortar?.addEventListener('click', ()=>Fortress.select('mortar'));
+ui.btnFortDrone?.addEventListener('click', ()=>Fortress.select('dronepad'));
 ui.btnFortShield?.addEventListener('click', ()=>Fortress.select('shield'));
 ui.btnFortPulse?.addEventListener('click', ()=>Fortress.select('pulse'));
 ui.btnFortMine?.addEventListener('click', ()=>Fortress.select('mine'));
 ui.btnFortSlow?.addEventListener('click', ()=>Fortress.select('slow'));
 ui.btnFortRepair?.addEventListener('click', ()=>Fortress.select('repair'));
+ui.btnFortFactory?.addEventListener('click', ()=>Fortress.select('factory'));
 ui.btnFortSniper?.addEventListener('click', ()=>Fortress.select('sniper'));
 ui.btnFortSell?.addEventListener('click', ()=>Fortress.select(Fortress.sellMode ? Fortress.selected : 'sell'));
 ui.btnFortUndo?.addEventListener('click', ()=>Fortress.undo());
