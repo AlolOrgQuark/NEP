@@ -298,24 +298,36 @@ button:disabled{ opacity:0.5; cursor:not-allowed; filter:grayscale(1); }
   display:none;
 }
 
-#fortressPanel{ pointer-events:auto; }
+#fortressPanel,
+#fortressPanel *{ pointer-events:auto !important; }
 #fortressPanel .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
-#fortressPanel .mini-btn{ font-size:11px; padding:5px 8px; white-space:nowrap; }
-#fortressBuildScroller{ display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; touch-action:pan-x; }
+#fortressPanel .mini-btn{ font-size:11px; padding:5px 8px; white-space:nowrap; flex:0 0 auto; }
+#fortressBuildScroller{ display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; padding-bottom:4px; touch-action:pan-x; -webkit-overflow-scrolling:touch; }
 #fortressBuildScroller::-webkit-scrollbar{ height:6px; }
 #fortressBuildScroller::-webkit-scrollbar-thumb{ background:rgba(82,230,255,0.35); border-radius:6px; }
 #fortressBuildScroller .mini-btn.on{ background:rgba(82,230,255,0.22); color:#fff; border-color:var(--c-cyan); }
 
 .ui-fab{
+  appearance:none;
   position:fixed;
   right:max(10px, env(safe-area-inset-right));
   bottom:max(14px, env(safe-area-inset-bottom));
-  width:44px; height:44px; border-radius:50%;
+  width:48px !important;
+  height:48px !important;
+  min-width:48px;
+  min-height:48px;
+  padding:0 !important;
+  border-radius:50% !important;
+  clip-path:none !important;
+  transform:none !important;
   border:1px solid rgba(82,230,255,0.55);
   background:rgba(8,18,42,0.58);
   color:var(--c-cyan);
   z-index:30;
   pointer-events:auto;
+  display:flex;
+  align-items:center;
+  justify-content:center;
   font-family:var(--font-mono);
   font-size:11px;
   backdrop-filter:blur(6px);
