@@ -3244,7 +3244,7 @@ const addShake = (m, t=0.16) => {
       return Player.alive ? Player : null;
     },
     handlePointerDown(screenX, screenY, pointerId=null){
-      if (Game.mode!=='fortress' || Game.state!=='playing') return false;
+      if ((Game.mode!=='fortress' && Game.mode!=='lab' && Game.mode!=='fortress_duel') || Game.state!=='playing') return false;
       const pt = this.toWorld(screenX, screenY);
       if (this.preview){
         const pv = this.preview;
@@ -13065,27 +13065,38 @@ BG_Effect.init();
 
     projectedPeer(peer){
       if (!peer) return null;
-      const workshopMirror = (Game.mode === 'workshop' || Game.mode === 'fortress_duel');
+      const srcW = Math.max(1, peer.vw || W), srcH = Math.max(1, peer.vh || H);
+      const px = (peer.nx != null) ? (peer.nx * W) : ((peer.x ?? W*0.5) * (W/srcW));
+      const py = (peer.ny != null) ? (peer.ny * H) : ((peer.y ?? H*0.75) * (H/srcH));
+      const workshopMirror = (Game.mode === 'workshop');
+      const duelMirror = (Game.mode === 'fortress_duel');
       return {
         ...peer,
-        x: workshopMirror ? (W - (peer.x ?? W*0.5)) : (peer.x ?? W*0.5),
-        y: workshopMirror ? (H - (peer.y ?? H*0.75)) : (peer.y ?? H*0.75),
-        bullets: (peer.smoothBullets || []).map((b, i)=>({
-          ...b,
-          id: `${peer.id}:${i}:${(b.t||0).toFixed(2)}`,
-          x: workshopMirror ? (W - (b.x ?? 0)) : (b.x ?? 0),
-          y: workshopMirror ? (H - (b.y ?? 0)) : (b.y ?? 0),
-          vx: workshopMirror ? -(b.vx ?? 0) : (b.vx ?? 0),
-          vy: workshopMirror ? -(b.vy ?? 0) : (b.vy ?? 0),
-        })),
+        x: workshopMirror ? (W - px) : px,
+        y: (workshopMirror || duelMirror) ? (H - py) : py,
+        bullets: (peer.smoothBullets || []).map((b, i)=>{
+          const bx = (b.nx != null) ? (b.nx * W) : ((b.x ?? 0) * (W/srcW));
+          const by = (b.ny != null) ? (b.ny * H) : ((b.y ?? 0) * (H/srcH));
+          const bvx = (b.nvx != null) ? (b.nvx * W) : ((b.vx ?? 0) * (W/srcW));
+          const bvy = (b.nvy != null) ? (b.nvy * H) : ((b.vy ?? 0) * (H/srcH));
+          return {
+            ...b,
+            id: `${peer.id}:${i}:${(b.t||0).toFixed(2)}`,
+            x: workshopMirror ? (W - bx) : bx,
+            y: (workshopMirror || duelMirror) ? (H - by) : by,
+            vx: workshopMirror ? -bvx : bvx,
+            vy: (workshopMirror || duelMirror) ? -bvy : bvy,
+          };
+        }),
       };
     },
 
     collectLocalBulletState(){
       const out = [];
+      const vw = Math.max(1, W|0), vh = Math.max(1, H|0);
       for (const b of bulletsP){
         if (!b.alive) continue;
-        out.push({x:b.x, y:b.y, vx:b.vx, vy:b.vy, r:b.r, col:b.col, dmg:b.dmg, t:b.t, spr:b.spr, style:b.style, _phaseAlpha:b._phaseAlpha, _phaseVisible:b._phaseVisible});
+        out.push({x:b.x, y:b.y, nx:b.x/vw, ny:b.y/vh, vx:b.vx, vy:b.vy, nvx:b.vx/vw, nvy:b.vy/vh, r:b.r, col:b.col, dmg:b.dmg, t:b.t, spr:b.spr, style:b.style, _phaseAlpha:b._phaseAlpha, _phaseVisible:b._phaseVisible});
         if (out.length >= 90) break;
       }
       return out;
@@ -13179,7 +13190,7 @@ BG_Effect.init();
         this.sendServer({
           type:'input_state',
           nick:this.nick,
-          state:{ x: Player.x, y: Player.y, hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState(), fortress: (Game.mode==='fortress_duel') ? {flagHp:Fortress.flagHp, flagMaxHp:Fortress.flagMaxHp, structures:Fortress.structures.map(st=>({id:st.id,x:st.x,y:st.y,w:st.w,h:st.h,hp:st.hp,maxHp:st.maxHp,col:st.col,type:st.type}))} : null }
+          state:{ x: Player.x, y: Player.y, nx: Player.x/Math.max(1,W), ny: Player.y/Math.max(1,H), vw:Math.max(1,W|0), vh:Math.max(1,H|0), hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState(), fortress: (Game.mode==='fortress_duel') ? {flagHp:Fortress.flagHp, flagMaxHp:Fortress.flagMaxHp, structures:Fortress.structures.map(st=>({id:st.id,x:st.x,y:st.y,nx:st.x/Math.max(1,W),ny:st.y/Math.max(1,H),w:st.w,h:st.h,nw:st.w/Math.max(1,W),nh:st.h/Math.max(1,H),hp:st.hp,maxHp:st.maxHp,col:st.col,type:st.type}))} : null }
         });
       }
       // Server-authoritative world simulation: clients no longer relay world snapshots.
@@ -13266,11 +13277,14 @@ BG_Effect.init();
       const pp = this.projectedPeer(peer);
       const f = peer?.netFortress;
       if (!pp || !f) return null;
-      const structures = (f.structures||[]).map(st=>({
-        ...st,
-        x: W - (st.x ?? W*0.5),
-        y: H - (st.y ?? H*0.75),
-      }));
+      const srcW = Math.max(1, peer?.vw || W), srcH = Math.max(1, peer?.vh || H);
+      const structures = (f.structures||[]).map(st=>{
+        const sx = (st.nx != null) ? (st.nx * W) : ((st.x ?? W*0.5) * (W/srcW));
+        const sy = (st.ny != null) ? (st.ny * H) : ((st.y ?? H*0.75) * (H/srcH));
+        const sw = (st.nw != null) ? (st.nw * W) : ((st.w ?? 28) * (W/srcW));
+        const sh = (st.nh != null) ? (st.nh * H) : ((st.h ?? 18) * (H/srcH));
+        return { ...st, x: sx, y: H - sy, w: sw, h: sh };
+      });
       return {
         flagHp: f.flagHp || 1,
         flagMaxHp: f.flagMaxHp || 1,
@@ -13415,7 +13429,7 @@ BG_Effect.init();
     firePlayer(dt);
     updatePlayerEmitters(dt);
     const isNetAuthoritative = !!(Game.lastStart && Game.lastStart.net);
-    if (!isNetAuthoritative && (Game.mode === 'survival' || Game.mode === 'challenge' || Game.mode === 'fortress')) Spawner.update(dt);
+    if ((Game.mode === 'fortress_duel' || Game.mode === 'lab') || (!isNetAuthoritative && (Game.mode === 'survival' || Game.mode === 'challenge' || Game.mode === 'fortress'))) Spawner.update(dt);
 
     updateBullets(dt, bulletsP);
     updateBullets(dt, bulletsE);
