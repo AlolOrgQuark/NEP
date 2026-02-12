@@ -1352,7 +1352,7 @@ input[type="checkbox"] {
   </select>
 </div>
 <details class="acc" style="margin-top:10px;">
-  <summary>联机 MULTIPLAYER <span class="muted">SURVIVAL / CHALLENGE / LAB / WORKSHOP</span></summary>
+  <summary>联机 MULTIPLAYER <span class="muted">WIP(RIP)</span></summary>
   <div class="acc-body" style="padding-top:8px;">
     <div class="field"><label>SERVER</label><input id="inpMpServer" type="text" maxlength="120" placeholder="ws://127.0.0.1:8787"></div>
     <div class="field"><label>ROOM</label><input id="inpMpRoom" type="text" maxlength="20" placeholder="房间号（大写字母/数字）"></div>
@@ -10263,6 +10263,9 @@ function spawnAt(o, a, sp, opt={}){
     o = o || ctx._cur; 
     if (!o) return null;
 
+    // 统一把 owner 偏移角叠加到所有 spawnAt 发射路径，保证 wrapper 可组合
+    a += (o._emitAngleOffset || 0);
+
     // 1. 优先获取本次发射指定的 mods (例如分形爆炸产生的内部词条)
     // 2. 加上 Context 提供的全局词条 (Bullet Affix)
     // 3. mergeMods 会自动处理数组合并与去重
@@ -10443,7 +10446,7 @@ function spawnAt(o, a, sp, opt={}){
         const beamCol = C.Y; // 激光固定黄色视觉
         
         // 计算最终角度：基础瞄准 + Owner偏移（支持复合包装器如旋转/镜像）
-        const finalA = aimA(o) + (o._emitAngleOffset || 0);
+        const finalA = aimA(o);
 
         // 计算射线终点 (长度1200足以穿透屏幕)
         const tx = o.x + Math.cos(finalA) * 1200;
