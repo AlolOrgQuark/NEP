@@ -2713,30 +2713,30 @@ const addShake = (m, t=0.16) => {
     bossSpawned:false,
     activeDrag:null,
     catalog:{
-      barricade:{cost:3,w:46,h:16,hp:110,col:'#b8d28a',type:'barricade'},
-      wall:{cost:6,w:56,h:20,hp:260,col:'#7ef9c0',type:'wall'},
-      heavywall:{cost:11,w:74,h:24,hp:520,col:'#89f5dd',type:'heavywall'},
-      bunker:{cost:18,w:92,h:28,hp:960,col:'#76ffd7',type:'bunker'},
-      shield:{cost:9,w:74,h:18,hp:360,col:'#b36cff',type:'shield'},
-      turret:{cost:10,w:44,h:24,hp:220,col:'#ff5577',type:'turret',cd:0.42},
-      gatling:{cost:12,w:40,h:22,hp:190,col:'#ff8f8f',type:'gatling',cd:0.16},
-      sniper:{cost:14,w:36,h:24,hp:150,col:'#ffa5ff',type:'sniper',cd:0.58},
-      missile:{cost:16,w:42,h:26,hp:180,col:'#ffd28a',type:'missile',cd:1.75},
-      tesla:{cost:15,w:40,h:28,hp:210,col:'#9dd7ff',type:'tesla',cd:1.05},
-      flame:{cost:13,w:38,h:24,hp:220,col:'#ffb56b',type:'flame',cd:0.22},
-      mortar:{cost:17,w:44,h:28,hp:220,col:'#d7d7ff',type:'mortar',cd:1.3},
-      dronepad:{cost:16,w:42,h:26,hp:230,col:'#8bf7ff',type:'dronepad',cd:1.35},
-      pulse:{cost:12,w:36,h:36,hp:170,col:'#ffd56d',type:'pulse',cd:2.2},
-      mine:{cost:8,w:24,h:24,hp:90,col:'#f2ff80',type:'mine'},
-      slow:{cost:11,w:34,h:30,hp:190,col:'#8ee7ff',type:'slow'},
-      repair:{cost:13,w:40,h:28,hp:190,col:'#9dffad',type:'repair',cd:4.2},
-      repairplayer:{cost:12,w:38,h:26,hp:170,col:'#9deeff',type:'repairplayer',cd:2.8},
-      repairfield:{cost:14,w:44,h:28,hp:260,col:'#9dffad',type:'repairfield',cd:3.2},
-      factory:{cost:12,w:48,h:26,hp:240,col:'#9dffad',type:'factory',cd:6.0},
-      spinner:{cost:15,w:42,h:24,hp:210,col:'#92c7ff',type:'spinner',cd:0.14,rot:0},
-      ram:{cost:14,w:52,h:22,hp:260,col:'#ffcb66',type:'ram',cd:3.4,rot:0},
-      beacon:{cost:10,w:32,h:32,hp:140,col:'#b8a6ff',type:'beacon',cd:2.8,rot:0},
-      taunt:{cost:16,w:58,h:38,hp:1300,col:'#ff9b72',type:'taunt',cd:0},
+      barricade:{cost:3,w:46,h:16,hp:220,col:'#b8d28a',type:'barricade'},
+      wall:{cost:6,w:56,h:20,hp:520,col:'#7ef9c0',type:'wall'},
+      heavywall:{cost:11,w:74,h:24,hp:980,col:'#89f5dd',type:'heavywall'},
+      bunker:{cost:18,w:92,h:28,hp:1800,col:'#76ffd7',type:'bunker'},
+      shield:{cost:9,w:74,h:18,hp:720,col:'#b36cff',type:'shield'},
+      turret:{cost:10,w:44,h:24,hp:460,col:'#ff5577',type:'turret',cd:0.42},
+      gatling:{cost:12,w:40,h:22,hp:400,col:'#ff8f8f',type:'gatling',cd:0.16},
+      sniper:{cost:14,w:36,h:24,hp:360,col:'#ffa5ff',type:'sniper',cd:0.58},
+      missile:{cost:16,w:42,h:26,hp:430,col:'#ffd28a',type:'missile',cd:1.75},
+      tesla:{cost:15,w:40,h:28,hp:460,col:'#9dd7ff',type:'tesla',cd:1.05},
+      flame:{cost:13,w:38,h:24,hp:430,col:'#ffb56b',type:'flame',cd:0.22},
+      mortar:{cost:17,w:44,h:28,hp:520,col:'#d7d7ff',type:'mortar',cd:1.3},
+      dronepad:{cost:16,w:42,h:26,hp:480,col:'#8bf7ff',type:'dronepad',cd:1.35},
+      pulse:{cost:12,w:36,h:36,hp:380,col:'#ffd56d',type:'pulse',cd:2.2},
+      mine:{cost:8,w:24,h:24,hp:170,col:'#f2ff80',type:'mine'},
+      slow:{cost:11,w:34,h:30,hp:380,col:'#8ee7ff',type:'slow'},
+      repair:{cost:13,w:40,h:28,hp:390,col:'#9dffad',type:'repair',cd:4.2},
+      repairplayer:{cost:12,w:38,h:26,hp:360,col:'#9deeff',type:'repairplayer',cd:2.8},
+      repairfield:{cost:14,w:44,h:28,hp:520,col:'#9dffad',type:'repairfield',cd:3.2},
+      factory:{cost:12,w:48,h:26,hp:500,col:'#9dffad',type:'factory',cd:6.0},
+      spinner:{cost:15,w:42,h:24,hp:440,col:'#92c7ff',type:'spinner',cd:0.14,rot:0},
+      ram:{cost:14,w:52,h:22,hp:560,col:'#ffcb66',type:'ram',cd:3.4,rot:0},
+      beacon:{cost:10,w:32,h:32,hp:320,col:'#b8a6ff',type:'beacon',cd:2.8,rot:0},
+      taunt:{cost:16,w:58,h:38,hp:2200,col:'#ff9b72',type:'taunt',cd:0},
     },
     itemBehaviors:{
       spinner:{
@@ -5333,6 +5333,7 @@ if (col===C.E7) return 'glowE7';
     b.pauseT = opts.pauseT ?? 0;
 
     b.depth = opts.depth ?? 0;
+    b.fortressSafe = !!opts.fortressSafe || (Game.mode==='fortress' && team==='P');
 
     // assign mods (affixes)
     if (opts.mods && opts.mods.length){
@@ -7188,7 +7189,7 @@ function getPoly3DDef(kind){
   return {verts, edges};
 }
 
-function drawPoly3DWire(kind, cx, cy, size, time, col, drawNodes=false){
+function drawPoly3DWire(kind, cx, cy, size, time, col, drawNodes=false, drawCtx=ctx){
   const {verts, edges} = getPoly3DDef(kind);
   if (!verts.length) return;
   const rot3D = (x, y, z, angX, angY) => {
@@ -7203,25 +7204,27 @@ function drawPoly3DWire(kind, cx, cy, size, time, col, drawNodes=false){
     const r = rot3D(v.x*size, v.y*size, v.z*size, time*0.7, time);
     p2d.push({x:cx+r.x, y:cy+r.y, z:r.z});
   }
-  ctx.save();
-  tronFill(col, 0.14);
-  ctx.beginPath();
-  for (const p of p2d) ctx.lineTo(p.x,p.y);
-  ctx.closePath();
-  ctx.fill();
+  const g = drawCtx;
+  g.save();
+  g.fillStyle = rgbToRgba(col, 0.14);
+  g.beginPath();
+  for (const p of p2d) g.lineTo(p.x,p.y);
+  g.closePath();
+  g.fill();
   for (const [i,j] of edges){
     const p1 = p2d[i], p2 = p2d[j];
     const avgZ = (p1.z + p2.z) / 2;
     const zNorm = clamp((avgZ + size) / (size*2), 0, 1);
-    tronStroke(col, 1.0 + 1.8*zNorm, 0.30 + 0.70*zNorm);
-    ctx.beginPath();
-    ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+    g.strokeStyle = rgbToRgba(col, 0.30 + 0.70*zNorm);
+    g.lineWidth = 1.0 + 1.8*zNorm;
+    g.beginPath();
+    g.moveTo(p1.x,p1.y); g.lineTo(p2.x,p2.y); g.stroke();
     if (drawNodes){
-      ctx.fillStyle = rgbToRgba(col, 0.45 + 0.45*zNorm);
-      ctx.fillRect(p1.x-1.1,p1.y-1.1,2.2,2.2);
+      g.fillStyle = rgbToRgba(col, 0.45 + 0.45*zNorm);
+      g.fillRect(p1.x-1.1,p1.y-1.1,2.2,2.2);
     }
   }
-  ctx.restore();
+  g.restore();
 }
 
 function crossPath(x,y,r,rot=0, t=0.25){
@@ -7277,17 +7280,18 @@ function chevronPath(x,y,r,rot=0, t=0.18){
     ctx.fillStyle = rgbToRgba(col, a);
   }
 
-  function drawEnemyGeneric(e){
-    const col = e.tint || e.baseCol;
-    const b = e.body || genEnemyBody(e.bodySeed || hash32(((e.x*997)|0) ^ ((e.y*313)|0) ^ ((e.r*31)|0) ^ 0x51a23));
-    if (!e.body) e.body = b;
-    ctx.save();
-    if (PERF.additive) ctx.globalCompositeOperation='lighter';
 
-    // outer shape
-    // outer shape (cyber body variants incl. concave crescent via even-odd)
-const R0 = (e.r+10)*b.scale1;
-const rot = Game.time*b.rot1;
+  function drawEnemyGenericBody(g, e, b, col, R0, rot, time){
+    const tronStrokeG = (cc, w=2, a=0.9)=>{ g.strokeStyle = rgbToRgba(cc, a); g.lineWidth = w; };
+    const tronFillG = (cc, a=0.10)=>{ g.fillStyle = rgbToRgba(cc, a); };
+    const polyPathG = (x,y,r,n,rt=0,sx=1,sy=1)=>{ g.beginPath(); for(let i=0;i<n;i++){ const a=rt+i*(Math.PI*2/n); const px=x+Math.cos(a)*r*sx; const py=y+Math.sin(a)*r*sy; if(i===0) g.moveTo(px,py); else g.lineTo(px,py);} g.closePath(); };
+    const starPathG = (x,y,r,n,rt=0,inner=0.5)=>{ const m=n*2; g.beginPath(); for(let i=0;i<m;i++){ const a=rt+i*(Math.PI*2/m); const rr=(i%2===0)?r:r*inner; const px=x+Math.cos(a)*rr; const py=y+Math.sin(a)*rr; if(i===0) g.moveTo(px,py); else g.lineTo(px,py);} g.closePath(); };
+    const gearPathG = (x,y,r,teeth=8,rt=0,depth=0.28)=>{ const m=Math.max(6,teeth*2); g.beginPath(); for(let i=0;i<m;i++){ const a=rt+i*(Math.PI*2/m); const rr=(i%2===0)?r:r*(1-depth); const px=x+Math.cos(a)*rr; const py=y+Math.sin(a)*rr; if(i===0) g.moveTo(px,py); else g.lineTo(px,py);} g.closePath(); };
+    const roundedRectPathG = (x,y,w,h,rr=8)=>{ rr=Math.max(0,Math.min(rr,Math.min(w,h)*0.5)); g.beginPath(); g.moveTo(x+rr,y); g.arcTo(x+w,y,x+w,y+h,rr); g.arcTo(x+w,y+h,x,y+h,rr); g.arcTo(x,y+h,x,y,rr); g.arcTo(x,y,x+w,y,rr); g.closePath(); };
+    const shardPathG = (x,y,r,pts,rt=0)=>{ g.beginPath(); for(let i=0;i<pts.length;i++){ const a=rt+pts[i].a; const rr=r*pts[i].r; const px=x+Math.cos(a)*rr; const py=y+Math.sin(a)*rr; if(i===0) g.moveTo(px,py); else g.lineTo(px,py);} g.closePath(); };
+    const diamondPathG = (x,y,r,rt=0,skew=1)=>{ const a=rt; g.beginPath(); g.moveTo(x+Math.cos(a)*r,y+Math.sin(a)*r); g.lineTo(x+Math.cos(a+Math.PI/2)*r*skew,y+Math.sin(a+Math.PI/2)*r*skew); g.lineTo(x+Math.cos(a+Math.PI)*r,y+Math.sin(a+Math.PI)*r); g.lineTo(x+Math.cos(a+Math.PI*1.5)*r*skew,y+Math.sin(a+Math.PI*1.5)*r*skew); g.closePath(); };
+    const crossPathG = (x,y,r,rt=0,t=0.25)=>{ const w=r,th=r*t,c=Math.cos(rt),s=Math.sin(rt); const P=[[-th,-w],[th,-w],[th,-th],[w,-th],[w,th],[th,th],[th,w],[-th,w],[-th,th],[-w,th],[-w,-th],[-th,-th]]; g.beginPath(); for(let i=0;i<P.length;i++){ const px=P[i][0],py=P[i][1]; const xx=x+px*c-py*s,yy=y+px*s+py*c; if(i===0) g.moveTo(xx,yy); else g.lineTo(xx,yy);} g.closePath(); };
+    const chevronPathG = (x,y,r,rt=0,t=0.18)=>{ const w=r,th=r*t,c=Math.cos(rt),s=Math.sin(rt); const P=[[-w,-th],[-th,-th],[0,th],[th,-th],[w,-th],[th,th],[0,w*0.55],[-th,th]]; g.beginPath(); for(let i=0;i<P.length;i++){ const px=P[i][0],py=P[i][1]; const xx=x+px*c-py*s,yy=y+px*s+py*c; if(i===0) g.moveTo(xx,yy); else g.lineTo(xx,yy);} g.closePath(); };
 
 if (b.kind === 'crescent'){
   const cx1 = e.x, cy1 = e.y, r1 = R0;
@@ -7311,160 +7315,160 @@ if (b.kind === 'crescent'){
     // 但我们要的是外圆上"不被内圆遮挡"的弧，即绕过内圆对面那一侧
 
     // 填充
-    tronFill(col, 0.08);
-    ctx.beginPath();
+    tronFillG(col, 0.08);
+    g.beginPath();
     // 外圆：从上交点逆时针绕到下交点（经过远离内圆的一侧 = 大弧）
-    ctx.arc(cx1, cy1, r1, baseA + halfA1, baseA - halfA1, false);
+    g.arc(cx1, cy1, r1, baseA + halfA1, baseA - halfA1, false);
     // 内圆：从下交点顺时针绕到上交点（短弧，连接月牙闭合）
-    ctx.arc(cx2, cy2, r2, baseA2 + halfA2, baseA2 - halfA2, true);
-    ctx.closePath();
-    ctx.fill();
+    g.arc(cx2, cy2, r2, baseA2 + halfA2, baseA2 - halfA2, true);
+    g.closePath();
+    g.fill();
 
     // 描边
-    tronStroke(col, 2.5, 0.90);
-    ctx.beginPath();
-    ctx.arc(cx1, cy1, r1, baseA + halfA1, baseA - halfA1, false);
-    ctx.arc(cx2, cy2, r2, baseA2 + halfA2, baseA2 - halfA2, true);
-    ctx.closePath();
-    ctx.stroke();
+    tronStrokeG(col, 2.5, 0.90);
+    g.beginPath();
+    g.arc(cx1, cy1, r1, baseA + halfA1, baseA - halfA1, false);
+    g.arc(cx2, cy2, r2, baseA2 + halfA2, baseA2 - halfA2, true);
+    g.closePath();
+    g.stroke();
   } else {
-    tronFill(col, 0.08);
-    ctx.beginPath(); ctx.arc(e.x, e.y, R0, 0, Math.PI*2); ctx.fill();
-    tronStroke(col, 2, 0.85);
-    ctx.beginPath(); ctx.arc(e.x, e.y, R0, 0, Math.PI*2); ctx.stroke();
+    tronFillG(col, 0.08);
+    g.beginPath(); g.arc(e.x, e.y, R0, 0, Math.PI*2); g.fill();
+    tronStrokeG(col, 2, 0.85);
+    g.beginPath(); g.arc(e.x, e.y, R0, 0, Math.PI*2); g.stroke();
   }
 
 }else if (b.kind === 'star'){
-  tronFill(col, 0.10);
-  starPath(e.x, e.y, R0, Math.max(4, b.baseN), rot, b.starInner);
-  ctx.fill();
-  tronStroke(col, 2, 0.85);
-  ctx.stroke();
+  tronFillG(col, 0.10);
+  starPathG(e.x, e.y, R0, Math.max(4, b.baseN), rot, b.starInner);
+  g.fill();
+  tronStrokeG(col, 2, 0.85);
+  g.stroke();
 
 } else if (b.kind === 'gear'){
-  tronFill(col, 0.10);
-  gearPath(e.x, e.y, R0, b.teeth, rot, b.toothDepth);
-  ctx.fill();
-  tronStroke(col, 2, 0.85);
-  ctx.stroke();
+  tronFillG(col, 0.10);
+  gearPathG(e.x, e.y, R0, b.teeth, rot, b.toothDepth);
+  g.fill();
+  tronStrokeG(col, 2, 0.85);
+  g.stroke();
 
 } else if (b.kind === 'ringRect'){
   const ww = (e.r+22)*b.scale1;
   const hh = (e.r+14)*b.scale1;
-  tronFill(col, 0.10);
-  roundedRectPath(e.x-ww/2, e.y-hh/2, ww, hh, Math.min(16, Math.max(5, b.rr*22)));
-  ctx.fill();
-  tronStroke(col, 2, 0.85);
-  ctx.stroke();
+  tronFillG(col, 0.10);
+  roundedRectPathG(e.x-ww/2, e.y-hh/2, ww, hh, Math.min(16, Math.max(5, b.rr*22)));
+  g.fill();
+  tronStrokeG(col, 2, 0.85);
+  g.stroke();
 
 } else if (b.kind === 'shard' && b.pts){
-  tronFill(col, 0.10);
-  shardPath(e.x, e.y, R0, b.pts, rot);
-  ctx.fill();
-  tronStroke(col, 2, 0.85);
-  ctx.stroke();
+  tronFillG(col, 0.10);
+  shardPathG(e.x, e.y, R0, b.pts, rot);
+  g.fill();
+  tronStrokeG(col, 2, 0.85);
+  g.stroke();
 
 } else if (b.kind === 'cross'){
-  tronFill(col, 0.10);
-  crossPath(e.x, e.y, R0, rot, b.crossT);
-  ctx.fill();
-  tronStroke(col, 2, 0.85);
-  ctx.stroke();
+  tronFillG(col, 0.10);
+  crossPathG(e.x, e.y, R0, rot, b.crossT);
+  g.fill();
+  tronStrokeG(col, 2, 0.85);
+  g.stroke();
 
 } else if (b.kind === 'chevron'){
-  tronFill(col, 0.10);
-  chevronPath(e.x, e.y, R0, rot, b.chevT);
-  ctx.fill();
-  tronStroke(col, 2, 0.85);
-  ctx.stroke();
+  tronFillG(col, 0.10);
+  chevronPathG(e.x, e.y, R0, rot, b.chevT);
+  g.fill();
+  tronStrokeG(col, 2, 0.85);
+  g.stroke();
 
 } else if (b.kind === 'diamondRing'){
-  tronFill(col, 0.10);
-  diamondPath(e.x, e.y, R0, rot, b.diaSkew);
-  ctx.fill();
-  tronStroke(col, 2, 0.85);
-  ctx.stroke();
+  tronFillG(col, 0.10);
+  diamondPathG(e.x, e.y, R0, rot, b.diaSkew);
+  g.fill();
+  tronStrokeG(col, 2, 0.85);
+  g.stroke();
   // inner diamond ring
-  tronStroke(col, 1, 0.55);
-  diamondPath(e.x, e.y, (e.r+4)*b.scale2, -rot*0.9, 1/b.diaSkew);
-  ctx.stroke();
+  tronStrokeG(col, 1, 0.55);
+  diamondPathG(e.x, e.y, (e.r+4)*b.scale2, -rot*0.9, 1/b.diaSkew);
+  g.stroke();
 
 } else if (b.kind === 'arcSeg'){
   // cyber arc segments: draw a faint disc + segmented ring strokes
-  tronFill(col, 0.08);
-  ctx.beginPath();
-  ctx.arc(e.x,e.y,R0*0.72,0,Math.PI*2);
-  ctx.fill();
+  tronFillG(col, 0.08);
+  g.beginPath();
+  g.arc(e.x,e.y,R0*0.72,0,Math.PI*2);
+  g.fill();
 
-  tronStroke(col, 2, 0.85);
+  tronStrokeG(col, 2, 0.85);
   for(let i=0;i<b.arcSegs;i++){
     const a0 = rot + i*(Math.PI*2/b.arcSegs) + b.arcGap;
     const a1 = a0 + b.arcSpan;
-    ctx.beginPath();
-    ctx.arc(e.x,e.y,R0, a0, a1);
-    ctx.stroke();
+    g.beginPath();
+    g.arc(e.x,e.y,R0, a0, a1);
+    g.stroke();
   }
 
 } else if (b.kind === 'insect') {
       // 甲虫型：中间长条，两边大颚
       const w = R0*0.5, h = R0*1.2;
-      tronFill(col, 0.12);
-      ctx.beginPath();
-      ctx.ellipse(e.x, e.y, w, h, rot, 0, Math.PI*2);
-      ctx.fill();
-      tronStroke(col, 2, 0.9);
-      ctx.stroke();
+      tronFillG(col, 0.12);
+      g.beginPath();
+      g.ellipse(e.x, e.y, w, h, rot, 0, Math.PI*2);
+      g.fill();
+      tronStrokeG(col, 2, 0.9);
+      g.stroke();
       // 大颚
-      ctx.beginPath();
-      ctx.moveTo(e.x + Math.cos(rot-0.5)*w, e.y + Math.sin(rot-0.5)*h);
-      ctx.lineTo(e.x + Math.cos(rot-0.8)*w*2.5, e.y + Math.sin(rot-0.8)*h*1.5);
-      ctx.moveTo(e.x + Math.cos(rot+Math.PI+0.5)*w, e.y + Math.sin(rot+Math.PI+0.5)*h);
-      ctx.lineTo(e.x + Math.cos(rot+Math.PI+0.8)*w*2.5, e.y + Math.sin(rot+Math.PI+0.8)*h*1.5);
-      ctx.stroke();
+      g.beginPath();
+      g.moveTo(e.x + Math.cos(rot-0.5)*w, e.y + Math.sin(rot-0.5)*h);
+      g.lineTo(e.x + Math.cos(rot-0.8)*w*2.5, e.y + Math.sin(rot-0.8)*h*1.5);
+      g.moveTo(e.x + Math.cos(rot+Math.PI+0.5)*w, e.y + Math.sin(rot+Math.PI+0.5)*h);
+      g.lineTo(e.x + Math.cos(rot+Math.PI+0.8)*w*2.5, e.y + Math.sin(rot+Math.PI+0.8)*h*1.5);
+      g.stroke();
     }
     else if (b.kind === 'wing') {
       // 掠翼型：类似隐形战机
-      tronFill(col, 0.1);
-      ctx.beginPath();
+      tronFillG(col, 0.1);
+      g.beginPath();
       const front = rot - Math.PI/2; 
       // 鼻锥
-      ctx.moveTo(e.x + Math.cos(front)*R0*1.2, e.y + Math.sin(front)*R0*1.2);
+      g.moveTo(e.x + Math.cos(front)*R0*1.2, e.y + Math.sin(front)*R0*1.2);
       // 左翼
-      ctx.lineTo(e.x + Math.cos(front + 2.4)*R0*1.5, e.y + Math.sin(front + 2.4)*R0*1.5);
+      g.lineTo(e.x + Math.cos(front + 2.4)*R0*1.5, e.y + Math.sin(front + 2.4)*R0*1.5);
       // 尾部凹陷
-      ctx.lineTo(e.x + Math.cos(front + 3.14)*R0*0.5, e.y + Math.sin(front + 3.14)*R0*0.5);
+      g.lineTo(e.x + Math.cos(front + 3.14)*R0*0.5, e.y + Math.sin(front + 3.14)*R0*0.5);
       // 右翼
-      ctx.lineTo(e.x + Math.cos(front - 2.4)*R0*1.5, e.y + Math.sin(front - 2.4)*R0*1.5);
-      ctx.closePath();
-      ctx.fill();
-      tronStroke(col, 2, 0.85);
-      ctx.stroke();
+      g.lineTo(e.x + Math.cos(front - 2.4)*R0*1.5, e.y + Math.sin(front - 2.4)*R0*1.5);
+      g.closePath();
+      g.fill();
+      tronStrokeG(col, 2, 0.85);
+      g.stroke();
     }
     else if (b.kind === 'crystal') {
       // 晶体型：不规则的多边形碎片
       const seedLocal = (e.bodySeed || 0); // 确保有一致的随机性
       const rng = makeRng(seedLocal);
-      tronFill(col, 0.15);
-      ctx.beginPath();
+      tronFillG(col, 0.15);
+      g.beginPath();
       const points = 5 + (rng()*3|0);
       for(let i=0; i<points; i++){
         const a = (i/points)*Math.PI*2 + rng()*0.5;
         const r = R0 * (0.6 + rng()*0.8);
         const px = e.x + Math.cos(rot + a)*r;
         const py = e.y + Math.sin(rot + a)*r;
-        if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+        if(i===0) g.moveTo(px,py); else g.lineTo(px,py);
       }
-      ctx.closePath();
-      ctx.fill();
-      tronStroke(col, 1.5, 0.9);
-      ctx.stroke();
+      g.closePath();
+      g.fill();
+      tronStrokeG(col, 1.5, 0.9);
+      g.stroke();
       // 内部核心
-      ctx.beginPath(); ctx.arc(e.x, e.y, R0*0.3, 0, Math.PI*2); ctx.stroke();
+      g.beginPath(); g.arc(e.x, e.y, R0*0.3, 0, Math.PI*2); g.stroke();
     }
     else if (['cube', 'pyramid', 'octa', 'tetra', 'prism'].includes(b.kind)) {
-      const t = Game.time * (b.rot1 || 1);
+      const t = time * (b.rot1 || 1);
       const size = R0 * 0.7;
-      drawPoly3DWire(b.kind, e.x, e.y, size, t, col, (b.kind==='octa' || b.kind==='cube' || b.kind==='tetra'));
+      drawPoly3DWire(b.kind, e.x, e.y, size, t, col, (b.kind==='octa' || b.kind==='cube' || b.kind==='tetra'), g);
 
 } else if (b.kind === 'spiral') {
   // 游戏内渲染：几何螺旋
@@ -7472,19 +7476,19 @@ if (b.kind === 'crescent'){
   const r1 = R0*0.4, r2 = R0*1.0;
   for(let i=0; i<arms; i++){
     const a = rot + i*(Math.PI*2/arms);
-    ctx.beginPath();
+    g.beginPath();
     const pts = [{r:R0*0.2, da:0}, {r:r1, da:0.4}, {r:r2, da:0.8}, {r:r1, da:0.6}];
     pts.forEach((p, idx) => {
       const px = e.x + Math.cos(a + p.da)*p.r;
       const py = e.y + Math.sin(a + p.da)*p.r;
-      if(idx===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      if(idx===0) g.moveTo(px, py); else g.lineTo(px, py);
     });
-    ctx.closePath();
-    tronFill(col, 0.2); tronStroke(col, 2, 0.9);
-    ctx.fill(); ctx.stroke();
+    g.closePath();
+    tronFillG(col, 0.2); tronStrokeG(col, 2, 0.9);
+    g.fill(); g.stroke();
   }
   // 核心
-  ctx.beginPath(); ctx.arc(e.x, e.y, R0*0.25, 0, Math.PI*2); ctx.stroke();
+  g.beginPath(); g.arc(e.x, e.y, R0*0.25, 0, Math.PI*2); g.stroke();
 
 } else if (b.kind === 'lotus') {
   // 游戏内渲染：4层动态曼陀罗
@@ -7492,7 +7496,7 @@ if (b.kind === 'crescent'){
   const layers = 4;
   
   // 呼吸效果：整体轻微缩放
-  const pulse = 1.0 + 0.05 * Math.sin(Game.time * 3);
+  const pulse = 1.0 + 0.05 * Math.sin(time * 3);
 
   for(let i=0; i<layers; i++){
     const t = i / (layers - 1);
@@ -7506,55 +7510,55 @@ if (b.kind === 'crescent'){
     // 每一层的样式配置
     if (i === 0) {
       // 外层
-      tronStroke(col, 2, 0.95);
-      polyPath(e.x, e.y, rLayer, n, rotLayer);
-      ctx.stroke();
+      tronStrokeG(col, 2, 0.95);
+      polyPathG(e.x, e.y, rLayer, n, rotLayer);
+      g.stroke();
     } else if (i === layers - 1) {
       // 核心
-      tronFill(col, 0.5); // 核心亮
-      tronStroke(col, 2, 1.0);
-      polyPath(e.x, e.y, rLayer, b.innerN || 4, rotLayer);
-      ctx.fill(); ctx.stroke();
+      tronFillG(col, 0.5); // 核心亮
+      tronStrokeG(col, 2, 1.0);
+      polyPathG(e.x, e.y, rLayer, b.innerN || 4, rotLayer);
+      g.fill(); g.stroke();
     } else {
       // 中间层
-      tronFill(col, 0.1); 
-      tronStroke(col, 1.5, 0.6);
-      polyPath(e.x, e.y, rLayer, n, rotLayer);
-      ctx.fill(); ctx.stroke();
+      tronFillG(col, 0.1); 
+      tronStrokeG(col, 1.5, 0.6);
+      polyPathG(e.x, e.y, rLayer, n, rotLayer);
+      g.fill(); g.stroke();
     }
   }
   }else if (b.kind === 'phoenix') {
   // 游戏内渲染：矢量战机
   const wingSpan = R0 * 1.4;
-  tronFill(col, 0.2); tronStroke(col, 2, 0.9);
+  tronFillG(col, 0.2); tronStrokeG(col, 2, 0.9);
   
   // 机身
-  ctx.beginPath();
-  ctx.moveTo(e.x, e.y - R0*0.8);
-  ctx.lineTo(e.x - R0*0.3, e.y + R0*0.5);
-  ctx.lineTo(e.x, e.y + R0*0.3);
-  ctx.lineTo(e.x + R0*0.3, e.y + R0*0.5);
-  ctx.closePath();
-  ctx.fill(); ctx.stroke();
+  g.beginPath();
+  g.moveTo(e.x, e.y - R0*0.8);
+  g.lineTo(e.x - R0*0.3, e.y + R0*0.5);
+  g.lineTo(e.x, e.y + R0*0.3);
+  g.lineTo(e.x + R0*0.3, e.y + R0*0.5);
+  g.closePath();
+  g.fill(); g.stroke();
   
   // 机翼
-  ctx.beginPath();
-  ctx.moveTo(e.x - R0*0.2, e.y - R0*0.2);
-  ctx.lineTo(e.x - wingSpan, e.y + R0*0.2);
-  ctx.lineTo(e.x - R0*0.4, e.y + R0*0.4);
+  g.beginPath();
+  g.moveTo(e.x - R0*0.2, e.y - R0*0.2);
+  g.lineTo(e.x - wingSpan, e.y + R0*0.2);
+  g.lineTo(e.x - R0*0.4, e.y + R0*0.4);
   
-  ctx.moveTo(e.x + R0*0.2, e.y - R0*0.2);
-  ctx.lineTo(e.x + wingSpan, e.y + R0*0.2);
-  ctx.lineTo(e.x + R0*0.4, e.y + R0*0.4);
-  ctx.stroke();
+  g.moveTo(e.x + R0*0.2, e.y - R0*0.2);
+  g.lineTo(e.x + wingSpan, e.y + R0*0.2);
+  g.lineTo(e.x + R0*0.4, e.y + R0*0.4);
+  g.stroke();
 } else if (b.kind === 'dragon') {
       // 龙形：蛇形身体+翼
       const segments = 4;
-      const snakeTime = Game.time * b.rot1;
+      const snakeTime = time * b.rot1;
       
       // 身体
-      tronFill(col, 0.15);
-      ctx.beginPath();
+      tronFillG(col, 0.15);
+      g.beginPath();
       
       for(let i=0; i<segments; i++){
         const t = i / segments;
@@ -7563,9 +7567,9 @@ if (b.kind === 'crescent'){
         const x = e.x + wave;
         const r = R0 * (0.8 - t*0.4);
         
-        if(i===0) ctx.moveTo(x-r, y);
-        ctx.lineTo(x-r, y);
-        if(i===segments-1) ctx.lineTo(x+r, y);
+        if(i===0) g.moveTo(x-r, y);
+        g.lineTo(x-r, y);
+        if(i===segments-1) g.lineTo(x+r, y);
       }
       
       for(let i=segments-1; i>=0; i--){
@@ -7574,33 +7578,33 @@ if (b.kind === 'crescent'){
         const y = e.y + (t-0.5)*R0*2;
         const x = e.x + wave;
         const r = R0 * (0.8 - t*0.4);
-        ctx.lineTo(x+r, y);
+        g.lineTo(x+r, y);
       }
       
-      ctx.closePath();
-      ctx.fill();
-      tronStroke(col, 2, 0.85);
-      ctx.stroke();
+      g.closePath();
+      g.fill();
+      tronStrokeG(col, 2, 0.85);
+      g.stroke();
       
       // 龙翼
       for(const side of [-1, 1]){
-        tronFill(col, 0.10);
-        ctx.beginPath();
+        tronFillG(col, 0.10);
+        g.beginPath();
         const wingBase = e.y - R0*0.3;
-        ctx.moveTo(e.x, wingBase);
-        ctx.lineTo(e.x + side*R0*1.2, wingBase - R0*0.5);
-        ctx.lineTo(e.x + side*R0*0.8, wingBase + R0*0.8);
-        ctx.closePath();
-        ctx.fill();
-        tronStroke(col, 1.5, 0.75);
-        ctx.stroke();
+        g.moveTo(e.x, wingBase);
+        g.lineTo(e.x + side*R0*1.2, wingBase - R0*0.5);
+        g.lineTo(e.x + side*R0*0.8, wingBase + R0*0.8);
+        g.closePath();
+        g.fill();
+        tronStrokeG(col, 1.5, 0.75);
+        g.stroke();
       }
 
     
     } else if (b.kind === 'nebula') {
       // 星云形：多层半透明云状结构
       const layers = 4;
-      const nebulaTime = Game.time * b.rot1 * 0.5;
+      const nebulaTime = time * b.rot1 * 0.5;
       
       for(let layer=0; layer<layers; layer++){
         const phase = nebulaTime + layer*0.8;
@@ -7609,40 +7613,40 @@ if (b.kind === 'crescent'){
         
         for(let i=0; i<cloudCount; i++){
           const a = phase + (i/cloudCount)*Math.PI*2;
-          const r = layerRadius * (0.85 + Math.sin(Game.time*4 + i)*0.15);
+          const r = layerRadius * (0.85 + Math.sin(time*4 + i)*0.15);
           const cloudSize = R0 * (0.3 - layer*0.05);
           
           // 星云气泡
           const cloudAlpha = 0.05 + (layers-layer)*0.03;
-          tronFill(col, cloudAlpha);
-          ctx.beginPath();
-          ctx.arc(
+          tronFillG(col, cloudAlpha);
+          g.beginPath();
+          g.arc(
             e.x + Math.cos(a)*r,
             e.y + Math.sin(a)*r,
             cloudSize,
             0, Math.PI*2
           );
-          ctx.fill();
+          g.fill();
         }
       }
       
       // 星云中心明亮核心
-      tronFill(col, 0.25);
-      ctx.beginPath();
-      ctx.arc(e.x, e.y, R0*0.4, 0, Math.PI*2);
-      ctx.fill();
+      tronFillG(col, 0.25);
+      g.beginPath();
+      g.arc(e.x, e.y, R0*0.4, 0, Math.PI*2);
+      g.fill();
       
-      tronStroke(col, 2, 0.9);
-      ctx.beginPath();
-      ctx.arc(e.x, e.y, R0*0.4, 0, Math.PI*2);
-      ctx.stroke();
+      tronStrokeG(col, 2, 0.9);
+      g.beginPath();
+      g.arc(e.x, e.y, R0*0.4, 0, Math.PI*2);
+      g.stroke();
       
       // 星云粒子点缀
       for(let i=0; i<8; i++){
-        const a = Game.time*2 + i;
-        const r = R0 * (0.5 + Math.sin(Game.time*3 + i)*0.3);
-        ctx.fillStyle = rgbToRgba(col, 0.6);
-        ctx.fillRect(
+        const a = time*2 + i;
+        const r = R0 * (0.5 + Math.sin(time*3 + i)*0.3);
+        g.fillStyle = rgbToRgba(col, 0.6);
+        g.fillRect(
           e.x + Math.cos(a)*r - 1,
           e.y + Math.sin(a)*r - 1,
           2, 2
@@ -7651,12 +7655,27 @@ if (b.kind === 'crescent'){
 
     } else {
   // default convex poly
-  tronFill(col, 0.10);
-  polyPath(e.x,e.y,R0, b.baseN, rot);
-  ctx.fill();
-  tronStroke(col, 2, 0.85);
-  ctx.stroke();
+  tronFillG(col, 0.10);
+  polyPathG(e.x,e.y,R0, b.baseN, rot);
+  g.fill();
+  tronStrokeG(col, 2, 0.85);
+  g.stroke();
 }
+  }
+
+  function drawEnemyGeneric(e){
+    const col = e.tint || e.baseCol;
+    const b = e.body || genEnemyBody(e.bodySeed || hash32(((e.x*997)|0) ^ ((e.y*313)|0) ^ ((e.r*31)|0) ^ 0x51a23));
+    if (!e.body) e.body = b;
+    ctx.save();
+    if (PERF.additive) ctx.globalCompositeOperation='lighter';
+
+    // outer shape
+    // outer shape (cyber body variants incl. concave crescent via even-odd)
+const R0 = (e.r+10)*b.scale1;
+const rot = Game.time*b.rot1;
+
+drawEnemyGenericBody(ctx, e, b, col, R0, rot, Game.time);
 
     // inner
     tronStroke(col, 1, 0.55);
@@ -11280,7 +11299,7 @@ if (b.homing > 0){
         b.y += py * b.waveA * s * dt;
       }
 
-      if (Game.mode==='fortress' && b.team==='E'){
+      if (Game.mode==='fortress' && b.team==='E' && !b.fortressSafe){
         let blocked = false;
         for (const fs of Fortress.structures){
           if (fs.hp<=0) continue;
@@ -13650,13 +13669,13 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
       const hpPct = clamp(fs.hp / Math.max(1, fs.maxHp), 0, 1);
       ctx.fillStyle = 'rgba(0,0,0,0.62)';
       ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w, fs.h);
-      ctx.strokeStyle = fs.col;
+      ctx.strokeStyle = 'rgba(255,255,255,0.72)';
       ctx.lineWidth = 1.5;
       ctx.strokeRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w, fs.h);
       ctx.fillStyle = 'rgba(255,255,255,0.24)';
       ctx.globalAlpha = 0.98;
       ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5-6, fs.w, 4);
-      ctx.fillStyle = fs.col;
+      ctx.fillStyle = 'rgba(255,255,255,0.78)';
       ctx.globalAlpha = 0.92;
       ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5-6, fs.w*hpPct, 4);
       ctx.globalAlpha = 0.96;
@@ -13689,8 +13708,7 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
         ctx.stroke();
         ctx.restore();
       } else if (fs.type==='beacon'){
-        const modeCol = ['#8bf7ff','#9de4ff','#b8a6ff'][fs.mode||0] || '#b8a6ff';
-        ctx.strokeStyle = modeCol;
+        ctx.strokeStyle = 'rgba(255,255,255,0.72)';
         ctx.beginPath();
         ctx.arc(fs.x, fs.y, 6 + Math.sin(Game.time*7 + (fs.rot||0))*1.6, 0, Math.PI*2);
         ctx.stroke();
@@ -15987,8 +16005,8 @@ function refreshForgePreview(){
   // 1. 背景 (调亮，增加科技感蓝调)
   ctx.clearRect(0,0,Wp,Hp);
   const g = ctx.createRadialGradient(Wp*0.5, Hp*0.55, 0, Wp*0.5, Hp*0.55, Hp);
-  g.addColorStop(0,'rgba(82,230,255,0.15)');  // 中心更亮
-  g.addColorStop(1,'rgba(10,14,30,0.95)');    // 边缘保持深邃
+  g.addColorStop(0,'rgba(255,255,255,0.08)');
+  g.addColorStop(1,'rgba(12,16,24,0.88)');
   ctx.fillStyle=g; ctx.fillRect(0,0,Wp,Hp);
 
   // 2. 读取参数
@@ -16011,403 +16029,11 @@ function refreshForgePreview(){
   const cx = Wp*0.5, cy = Hp*0.52; // 稍微上移一点视觉中心
   const R  = 44 * scale * (body.scale1 || 1);
   const rot = (performance.now()/1000) * (body.rot1 || 1);
-  const rgba = (rgb,a)=>String(rgb).replace('rgb(', 'rgba(').replace(')', `,${a})`);
 
-  // local helpers
-  function poly(n, rr, r0, sx=1, sy=1){
-    ctx.beginPath();
-    for(let i=0;i<n;i++){
-      const a = r0 + i*(Math.PI*2/n);
-      const x = cx + Math.cos(a)*rr*sx;
-      const y = cy + Math.sin(a)*rr*sy;
-      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.closePath();
-  }
-  function star(n, rr, r0, inner){
-    const m=n*2;
-    ctx.beginPath();
-    for(let i=0;i<m;i++){
-      const a = r0 + i*(Math.PI*2/m);
-      const r = (i%2===0)?rr:rr*inner;
-      const x = cx + Math.cos(a)*r;
-      const y = cy + Math.sin(a)*r;
-      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.closePath();
-  }
-  function gear(teeth, rr, r0, depth){
-    const m=teeth*2;
-    ctx.beginPath();
-    for(let i=0;i<m;i++){
-      const a = r0 + i*(Math.PI*2/m);
-      const r = (i%2===0)?rr:rr*(1-depth);
-      const x = cx + Math.cos(a)*r;
-      const y = cy + Math.sin(a)*r;
-      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.closePath();
-  }
-  function roundedRect(x,y,w,h,rad){
-    const r = Math.min(rad, w*0.5, h*0.5);
-    ctx.beginPath();
-    ctx.moveTo(x+r, y);
-    ctx.arcTo(x+w, y,   x+w, y+h, r);
-    ctx.arcTo(x+w, y+h, x,   y+h, r);
-    ctx.arcTo(x,   y+h, x,   y,   r);
-    ctx.arcTo(x,   y,   x+w, y,   r);
-    ctx.closePath();
-  }
-  function shard(pts, rr, r0){
-    if (!pts?.length){ poly(7, rr, r0); return; }
-    ctx.beginPath();
-    for(let i=0;i<pts.length;i++){
-      const a = r0 + pts[i].a;
-      const r = rr * pts[i].r;
-      const x = cx + Math.cos(a)*r;
-      const y = cy + Math.sin(a)*r;
-      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.closePath();
-  }
-  function diamond(rr, r0, skew=1){
-    ctx.beginPath();
-    ctx.moveTo(cx + Math.cos(r0)*rr,                  cy + Math.sin(r0)*rr);
-    ctx.lineTo(cx + Math.cos(r0+Math.PI/2)*rr*skew,   cy + Math.sin(r0+Math.PI/2)*rr*skew);
-    ctx.lineTo(cx + Math.cos(r0+Math.PI)*rr,          cy + Math.sin(r0+Math.PI)*rr);
-    ctx.lineTo(cx + Math.cos(r0+Math.PI*1.5)*rr*skew, cy + Math.sin(r0+Math.PI*1.5)*rr*skew);
-    ctx.closePath();
-  }
-
-    ctx.save();
+  ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-
-  // 增强发光效果
-  ctx.shadowColor = rgba(col, 0.9);
-  ctx.shadowBlur  = 20;
-  ctx.fillStyle   = rgba(col, 0.25); // 填充更亮
-  ctx.strokeStyle = rgba(col, 1.0);  // 线条不透明
-  ctx.lineWidth   = 2.5;
-
-  switch(kind){
-    case 'spiral': {
-      // 几何螺旋：机械旋臂
-      const arms = Math.max(2, body.spokes);
-      for(let i=0; i<arms; i++){
-        const a = rot + i*(Math.PI*2/arms);
-        ctx.beginPath();
-        // 绘制折线臂，而非曲线
-        const r1 = R*0.4, r2 = R*1.0;
-        const pts = [
-          {r: R*0.2, da: 0},
-          {r: r1, da: 0.4},
-          {r: r2, da: 0.8},
-          {r: r1, da: 0.6} // 回勾
-        ];
-        pts.forEach((p, idx) => {
-          const px = cx + Math.cos(a + p.da)*p.r;
-          const py = cy + Math.sin(a + p.da)*p.r;
-          if(idx===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-        });
-        ctx.closePath();
-        ctx.fill(); ctx.stroke();
-      }
-      // 中心核心
-      ctx.beginPath(); ctx.arc(cx, cy, R*0.25, 0, Math.PI*2); ctx.stroke();
-      break;
-    }
-    case 'lotus': {
-      // 几何莲花：4层动态曼陀罗
-      const n = Math.max(5, body.baseN);
-      const layers = 4;
-      
-      for(let i=0; i<layers; i++){
-        // 计算当前层的参数
-        // t: 0(外) -> 1(内)
-        const t = i / (layers - 1);
-        
-        // 半径：从大到小
-        const rLayer = R * (1.0 - t * 0.75);
-        
-        // 旋转：每层速度递增且方向交替
-        // 层0: 1x, 层1: -1.5x, 层2: 2.5x, 层3: -4.0x
-        const speedMult = 1.0 + i * 0.8;
-        const dir = (i % 2 === 0) ? 1 : -1;
-        const rotLayer = rot * speedMult * dir + (i * Math.PI/4);
-        
-        // 样式：外层细线，内层填充
-        if (i === 0) {
-          // 最外层：强轮廓
-          ctx.lineWidth = 2.5;
-          ctx.strokeStyle = rgba(col, 0.95);
-          ctx.fillStyle = "transparent";
-        } else if (i === layers - 1) {
-          // 最内层（核心）：高亮填充
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = rgba(col, 1.0);
-          ctx.fillStyle = rgba(col, 0.6);
-        } else {
-          // 中间层：半透明，细线
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = rgba(col, 0.7);
-          ctx.fillStyle = rgba(col, 0.15);
-        }
-
-        // 绘制多边形
-        // 偶数层用 baseN，奇数层稍微错开或减少边数让图形更丰富
-        const sides = (i === layers - 1) ? body.innerN : n;
-        
-        ctx.beginPath();
-        // 简单的多边形绘制逻辑内联
-        for(let j=0; j<sides; j++){
-          const a = rotLayer + j*(Math.PI*2/sides);
-          const px = cx + Math.cos(a)*rLayer;
-          const py = cy + Math.sin(a)*rLayer;
-          if(j===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
-        }
-        ctx.closePath();
-        
-        if (ctx.fillStyle !== "transparent") ctx.fill();
-        ctx.stroke();
-      }
-      break;
-    }
-    case 'phoenix': {
-      // 几何凤凰：矢量战机形态 (Vector Bird)
-      const wingSpan = R * 1.4;
-      // 机身
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - R*0.8); // 头
-      ctx.lineTo(cx - R*0.3, cy + R*0.5); // 左尾
-      ctx.lineTo(cx, cy + R*0.3); // 尾凹
-      ctx.lineTo(cx + R*0.3, cy + R*0.5); // 右尾
-      ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      
-      // 几何双翼 (分离式)
-      ctx.beginPath();
-      // 左翼
-      ctx.moveTo(cx - R*0.2, cy - R*0.2);
-      ctx.lineTo(cx - wingSpan, cy + R*0.2);
-      ctx.lineTo(cx - R*0.4, cy + R*0.4);
-      // 右翼
-      ctx.moveTo(cx + R*0.2, cy - R*0.2);
-      ctx.lineTo(cx + wingSpan, cy + R*0.2);
-      ctx.lineTo(cx + R*0.4, cy + R*0.4);
-      ctx.stroke();
-      break;
-    }
-    
-    // === 保持原样的外观 ===
-    case 'dragon': {
-      // 龙形（保留原逻辑，但适配 Canvas 坐标）
-      const segs = 5;
-      ctx.beginPath();
-      for(let i=0; i<segs; i++){
-        const t = i/segs;
-        const wave = Math.sin(rot*3 + t*Math.PI)*R*0.3;
-        const y = cy + (t-0.5)*R*2.2;
-        const x = cx + wave;
-        const r = R*(0.8 - t*0.5);
-        // 简单的圆串联模拟蛇形
-        ctx.moveTo(x+r, y); ctx.arc(x,y,r,0,Math.PI*2);
-      }
-      ctx.fill(); ctx.stroke();
-      break;
-    }
-    case 'nebula': {
-      // 星云（保留原逻辑，稍微增强可见性）
-      const layers = 3;
-      for(let i=0; i<layers; i++){
-        const r = R * (0.5 + i*0.25);
-        const aOffset = rot * (1 - i*0.5);
-        ctx.strokeStyle = rgba(col, 0.4 + i*0.2); // 外层更亮
-        ctx.beginPath();
-        // 画三个交错的椭圆轨道
-        ctx.ellipse(cx, cy, r, r*0.4, aOffset, 0, Math.PI*2);
-        ctx.stroke();
-      }
-      // 核心粒子群
-      for(let j=0; j<6; j++){
-        const pr = R*0.6 * Math.random();
-        const pa = Math.random() * Math.PI*2;
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(cx+Math.cos(pa)*pr, cy+Math.sin(pa)*pr, 2, 2);
-      }
-      break;
-    }
-    case 'insect': {
-      const w = R * 0.5, h = R * 1.2;
-      ctx.fillStyle = rgba(col, 0.12);
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, w, h, rot, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = rgba(col, 0.9);
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      // Mandibles (大颚)
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(rot - 0.5) * w, cy + Math.sin(rot - 0.5) * h);
-      ctx.lineTo(cx + Math.cos(rot - 0.8) * w * 2.5, cy + Math.sin(rot - 0.8) * h * 1.5);
-      ctx.moveTo(cx + Math.cos(rot + Math.PI + 0.5) * w, cy + Math.sin(rot + Math.PI + 0.5) * h);
-      ctx.lineTo(cx + Math.cos(rot + Math.PI + 0.8) * w * 2.5, cy + Math.sin(rot + Math.PI + 0.8) * h * 1.5);
-      ctx.stroke();
-      break;
-    }
-    case 'wing': {
-      ctx.fillStyle = rgba(col, 0.1);
-      ctx.beginPath();
-      const front = rot - Math.PI / 2;
-      // 鼻锥
-      ctx.moveTo(cx + Math.cos(front) * R * 1.2, cy + Math.sin(front) * R * 1.2);
-      // 左翼
-      ctx.lineTo(cx + Math.cos(front + 2.4) * R * 1.5, cy + Math.sin(front + 2.4) * R * 1.5);
-      // 尾部
-      ctx.lineTo(cx + Math.cos(front + 3.14) * R * 0.5, cy + Math.sin(front + 3.14) * R * 0.5);
-      // 右翼
-      ctx.lineTo(cx + Math.cos(front - 2.4) * R * 1.5, cy + Math.sin(front - 2.4) * R * 1.5);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = rgba(col, 0.85);
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      break;
-    }
-    case 'crystal': {
-      // 使用 seed 确保预览图形状稳定
-      const rng = makeRng(seed);
-      ctx.fillStyle = rgba(col, 0.15);
-      ctx.beginPath();
-      const points = 5 + (rng() * 3 | 0);
-      for (let i = 0; i < points; i++) {
-        const a = (i / points) * Math.PI * 2 + rng() * 0.5;
-        const r = R * (0.6 + rng() * 0.8);
-        const px = cx + Math.cos(rot + a) * r;
-        const py = cy + Math.sin(rot + a) * r;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = rgba(col, 0.9);
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      // 核心
-      ctx.beginPath(); ctx.arc(cx, cy, R * 0.3, 0, Math.PI * 2); ctx.stroke();
-      break;
-    }
-  case 'cube':
-    case 'pyramid':
-    case 'octa':
-    case 'tetra':
-    case 'prism': {
-      drawPoly3DWire(kind, cx, cy, R*0.7, rot, col, true);
-      break;
-    }
-            case 'crescent': {
-      const cx1 = cx, cy1 = cy, r1 = R;
-      const cx2 = cx + R*0.48, cy2 = cy - R*0.08, r2 = R*0.74;
-      const dx = cx2-cx1, dy = cy2-cy1;
-      const d = Math.hypot(dx, dy);
-
-      if (d < r1+r2 && d > Math.abs(r1-r2)){
-        const bA = Math.atan2(dy, dx);
-        const hA1 = Math.acos(Math.max(-1, Math.min(1, (r1*r1+d*d-r2*r2)/(2*r1*d))));
-        const hA2 = Math.acos(Math.max(-1, Math.min(1, (r2*r2+d*d-r1*r1)/(2*r2*d))));
-        const bA2 = bA + Math.PI;
-
-        ctx.fillStyle = rgba(col, 0.10);
-        ctx.beginPath();
-        ctx.arc(cx1, cy1, r1, bA+hA1, bA-hA1, false);
-        ctx.arc(cx2, cy2, r2, bA2+hA2, bA2-hA2, true);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.lineWidth = 2.8;
-        ctx.beginPath();
-        ctx.arc(cx1, cy1, r1, bA+hA1, bA-hA1, false);
-        ctx.arc(cx2, cy2, r2, bA2+hA2, bA2-hA2, true);
-        ctx.closePath();
-        ctx.stroke();
-      } else {
-        ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2);
-        ctx.fill(); ctx.stroke();
-      }
-      break;
-    }
-    case 'star': {
-      star(Math.max(4, body.baseN||6), R, rot, body.starInner||0.55);
-      ctx.fill(); ctx.stroke();
-      break;
-    }
-    case 'gear': {
-      gear(body.teeth||12, R, rot, body.toothDepth||0.22);
-      ctx.fill(); ctx.stroke();
-      break;
-    }
-    case 'ringRect': {
-      const w = R*2.0, h = R*1.35;
-      roundedRect(cx-w/2, cy-h/2, w, h, Math.max(6, (body.rr||0.3)*22));
-      ctx.fill(); ctx.stroke();
-      break;
-    }
-    case 'diamondRing': {
-      const skew = body.diaSkew || 1;
-      diamond(R, rot, skew);
-      ctx.fill(); ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = rgba(col,0.70);
-      ctx.lineWidth = 1.3;
-      diamond(R*0.62, -rot*0.9, 1/Math.max(0.2,skew));
-      ctx.stroke();
-      break;
-    }
-    case 'arcSeg': {
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = rgba(col,0.10);
-      ctx.beginPath(); ctx.arc(cx,cy,R*0.72,0,Math.PI*2); ctx.fill();
-      ctx.shadowBlur = 22;
-      const segs = body.arcSegs||5, span = body.arcSpan||0.8, gap = body.arcGap||0.2;
-      for(let i=0;i<segs;i++){
-        const a0 = rot + i*(Math.PI*2/segs) + gap;
-        const a1 = a0 + span;
-        ctx.beginPath(); ctx.arc(cx,cy,R,a0,a1); ctx.stroke();
-      }
-      break;
-    }
-    case 'shard': {
-      shard(body.pts, R, rot);
-      ctx.fill(); ctx.stroke();
-      break;
-    }
-    case 'cross': {
-      poly(12, R, rot);
-      ctx.fill(); ctx.stroke();
-      break;
-    }
-    case 'chevron': {
-      poly(8, R, rot);
-      ctx.fill(); ctx.stroke();
-      break;
-    }
-    default: {
-      poly(Math.max(3, body.baseN||6), R, rot);
-      ctx.fill(); ctx.stroke();
-      break;
-    }
-  }
-
-  // inner ring (brighter)
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = rgba(col,0.75);
-  ctx.lineWidth = 1.3;
-  poly(Math.max(3, body.innerN||5), R*(body.scale2||0.65), -rot*0.9);
-  ctx.stroke();
-
-const cg = ctx.createRadialGradient(cx,cy, 0, cx,cy, R*0.4);
-  cg.addColorStop(0, 'rgba(255,255,255,0.9)');
-  cg.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = cg;
-  ctx.beginPath(); ctx.arc(cx,cy,R*0.2,0,Math.PI*2); ctx.fill();
+  const previewEnemy = {x:cx, y:cy, r:Math.max(8, R-10), body, bodySeed:seed, tint:col, baseCol:col, hit:0, shieldHP:0};
+  drawEnemyGenericBody(ctx, previewEnemy, body, col, R, rot, performance.now()/1000);
 
   ctx.restore();
 }
