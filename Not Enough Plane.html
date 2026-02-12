@@ -731,7 +731,25 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   align-items:center;
 }
 .acc > summary::-webkit-details-marker{ display:none; }
+.acc > summary::after{
+  content:'▸';
+  opacity:.8;
+  transition:transform .22s ease;
+}
+.acc[open] > summary::after{ transform:rotate(90deg); }
 .acc .acc-body{
+  max-height:0;
+  overflow:hidden;
+  opacity:0;
+  transform:translateY(-4px);
+  padding:0 12px;
+  border-top:1px solid rgba(255,255,255,0.00);
+  transition:max-height .28s ease, opacity .24s ease, transform .24s ease, padding .24s ease, border-color .24s ease;
+}
+.acc[open] .acc-body{
+  max-height:960px;
+  opacity:1;
+  transform:translateY(0);
   padding:10px 12px 12px;
   border-top:1px solid rgba(255,255,255,0.10);
 }
@@ -1363,6 +1381,7 @@ input[type="checkbox"] {
         <option value="challenge">CHALLENGE</option>
         <option value="lab">LAB</option>
         <option value="workshop">WORKSHOP 1V1 (A vs A)</option>
+        <option value="fortress_duel">FORTRESS DUEL 1V1</option>
       </select>
     </div>
     <div class="menu-actions" style="margin-top:8px;gap:8px;flex-wrap:wrap;justify-content:flex-start;">
@@ -1404,7 +1423,7 @@ input[type="checkbox"] {
             </div>
           </div>
 
-          <details class="acc" open>
+          <details class="acc">
             <summary>CORE <span class="muted">HP / FIRE / DMG / CRIT</span></summary>
             <div class="acc-body">
               <div class="field"><label>NAME</label><input id="ws_name"></div>
@@ -1472,7 +1491,7 @@ input[type="checkbox"] {
             </div>
           </details>
 
-          <details class="acc" open>
+          <details class="acc">
             <summary>AFFIX <span class="muted">CHIPS</span></summary>
             <div class="acc-body">
               <div class="field"><label>SEARCH</label>
@@ -1482,7 +1501,7 @@ input[type="checkbox"] {
               <div class="muted" style="margin-top:8px">建议保持 0~4 个词条；分裂/烟花类会显著提高弹幕量。</div>
             </div>
           </details>
-          <details class="acc" open>
+          <details class="acc">
   <summary>PLAYER EMITTERS <span class="muted">START LOADOUT · 0~3</span></summary>
   <div class="acc-body">
     <div class="field">
@@ -1509,7 +1528,7 @@ input[type="checkbox"] {
             <div class="menu-intro">同样低密度：基础参数用 select/input，词条/traits 用芯片选择。</div>
           </div>
 
-          <details class="acc" open>
+          <details class="acc">
             <summary>FORGE CORE</summary>
             <div class="acc-body">
               <div class="field"><label>IS BOSS</label>
@@ -1551,7 +1570,7 @@ input[type="checkbox"] {
             </div>
           </details>
           
-          <details class="acc" open>
+          <details class="acc">
   <summary>APPEARANCE <span class="muted">BODY PARAMS</span></summary>
   <div class="acc-body">
 
@@ -1610,7 +1629,7 @@ input[type="checkbox"] {
   </div>
 </details>
 
-<details class="acc" open>
+<details class="acc">
   <summary>WEAPONS</summary>
   <div class="acc-body">
     
@@ -1685,7 +1704,7 @@ input[type="checkbox"] {
   </div>
 </details>
 
-          <details class="acc" open>
+          <details class="acc">
             <summary>EXTRA EMITTERS <span class="muted">UNLIMITED</span></summary>
             <div class="acc-body">
               <div class="menu-actions" style="justify-content:flex-start;gap:6px">
@@ -1699,7 +1718,7 @@ input[type="checkbox"] {
             </div>
           </details>
 
-          <details class="acc" open>
+          <details class="acc">
             <summary>FORGE MODS / TRAITS</summary>
             <div class="acc-body">
               <div class="field"><label>BULLET AFFIX (BOTH EMITTERS)</label>
@@ -1804,6 +1823,8 @@ input[type="checkbox"] {
     additive: true,
     particlesMax: 1100,
     gridSpacing: 46,
+    dynamicFX: true,
+    fxFrameMod: 0,
   };
 
   const BAL = {
@@ -2674,13 +2695,46 @@ glowE7: makeGlowSprite(C.E7, 7),
   };
 
   function drawGlow(sprite, x,y, scale=1, alpha=1){
+    const tier = PERF.dynamicFX ? FXState.tier : 0;
+    const a = alpha * (PERF.dynamicFX ? FXState.glowBudget : 1.0);
+
+    if (tier >= 2 && scale < 0.38){
+      ctx.globalAlpha = a * (tier >= 3 ? 0.55 : 0.72);
+      ctx.fillStyle = '#ffffff';
+      const sz = tier >= 3 ? 1.5 : 2.0;
+      ctx.fillRect(x - sz*0.5, y - sz*0.5, sz, sz);
+      return;
+    }
+
+    if (tier >= 3 && PERF.fxFrameMod % 2 === 0 && scale < 0.65) return;
+
     const w = sprite.width*scale, h=sprite.height*scale;
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = a;
     ctx.drawImage(sprite, x-w/2, y-h/2, w, h);
   }
 
   // ================= Lists =================
   const bulletsP=[], bulletsE=[], enemies=[], particles=[], supplies=[], texts=[], shockwaves=[], beams=[];
+  const FXState = { tier:0, glowBudget:1.0, additiveOn:true, maxShockwaves:180 };
+
+  function updateFXState(){
+    const bulletN = bulletsP.length + bulletsE.length;
+    const particleN = particles.length;
+    const waveN = shockwaves.length;
+    const stress = bulletN + particleN*0.4 + waveN*3;
+
+    let tier = 0;
+    if (stress > 920 || bulletN > 460) tier = 3;
+    else if (stress > 700 || bulletN > 340) tier = 2;
+    else if (stress > 500 || bulletN > 240) tier = 1;
+
+    FXState.tier = tier;
+    FXState.glowBudget = [1.0, 0.82, 0.62, 0.45][tier];
+    FXState.additiveOn = PERF.additive && tier < 3;
+    FXState.maxShockwaves = [180, 140, 100, 70][tier];
+    PERF.fxFrameMod = (PERF.fxFrameMod + 1) & 31;
+  }
+
   let shakeT=0, shakeMag=0;
 const addShake = (m, t=0.16) => {
   // 防护1：如果传入非数字(NaN/Infinity)，直接忽略，防止污染 shakeMag
@@ -2713,7 +2767,7 @@ const addShake = (m, t=0.16) => {
     killerData: null,
     failReason: '',
     failSnapshot: null,
-    mode: 'survival',      // 'survival' | 'duel' | 'lab' | 'fortress'
+    mode: 'survival',      // 'survival' | 'duel' | 'lab' | 'fortress' | 'fortress_duel'
     lastStart: { mode:'survival', wave:1 },
     mute(){
       audioOn = !audioOn;
@@ -2912,23 +2966,30 @@ const addShake = (m, t=0.16) => {
       this.reset();
       this.stock = 28;
       this.phase='fortify';
+      this.labForgeSpec = null;
+      this.labForgeSpawned = false;
+      this.labLockedAssault = false;
+      this.duelRound = 1;
+      this.duelTimer = 0;
       this.clearPreview();
       this.updatePanel();
       this.syncSelectionUI();
     },
-    canBuild(){ return Game.mode==='fortress' && this.phase==='fortify' && Game.state==='playing'; },
+    canBuild(){ return (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && this.phase==='fortify' && Game.state==='playing'; },
     updatePanel(){
       if (!ui.fortressPanel) return;
-      const on = Game.mode==='fortress' && Game.state==='playing';
-      ui.fortressPanel.style.display = (on && this.phase==='fortify') ? 'block' : 'none';
+      const on = (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Game.state==='playing';
+      ui.fortressPanel.style.display = (on && (this.phase==='fortify' || Game.mode==='lab' || Game.mode==='fortress_duel')) ? 'block' : 'none';
       if (!on) return;
-      const phaseText = this.phase==='fortify' ? '准备阶段：选择物品后点画布放置' : `守城阶段 余敌:${this.spawnLeft}`;
+      const phaseText = (Game.mode==='fortress_duel')
+        ? (this.phase==='fortify' ? `对战准备 ${Math.ceil(this.duelTimer||0)}s` : `对战敌袭 ${Math.ceil(this.duelTimer||0)}s`)
+        : (this.phase==='fortify' ? '准备阶段：选择物品后点画布放置' : `守城阶段 余敌:${this.spawnLeft}`);
       ui.fortressPhase.textContent = phaseText;
       ui.fortressMat.textContent = `材料 ${Math.floor(this.stock)}`;
-      ui.fortressCore.textContent = `旗帜 ${(this.flagHp/this.flagMaxHp*100).toFixed(0)}%`;
-      if (ui.btnFortStartWave) ui.btnFortStartWave.style.display = this.phase==='fortify' ? 'inline-block' : 'none';
+      ui.fortressCore.textContent = (Game.mode==='lab') ? 'LAB: 无旗帜 / 无限材料' : ((Game.mode==='fortress_duel') ? `我方旗帜 ${(this.flagHp/this.flagMaxHp*100).toFixed(0)}%` : `旗帜 ${(this.flagHp/this.flagMaxHp*100).toFixed(0)}%`); 
+      if (ui.btnFortStartWave) ui.btnFortStartWave.style.display = (Game.mode==='fortress_duel') ? 'none' : (this.phase==='fortify' ? 'inline-block' : 'none');
       if (ui.btnFortRepairFlag){
-        ui.btnFortRepairFlag.style.display = this.phase==='fortify' ? 'inline-block' : 'none';
+        ui.btnFortRepairFlag.style.display = (Game.mode!=='lab' && this.phase==='fortify') ? 'inline-block' : 'none';
         ui.btnFortRepairFlag.disabled = this.stock < 6 || this.flagHp >= this.flagMaxHp;
       }
     },
@@ -2950,6 +3011,32 @@ const addShake = (m, t=0.16) => {
       if (this.phase!=='fortify') return;
       this.phase='assault';
       this.clearPreview();
+
+      if (Game.mode==='fortress_duel'){
+        this.phase='assault';
+        this.duelTimer = 60;
+        this.spawnLeft = 0;
+        this.bossSpawned = false;
+        textPop(W*0.5, H*0.16, `DUEL 敌袭 ${Math.ceil(this.duelTimer)}s`, C.E1);
+        spawnShockwave(W*0.5, H*0.16, C.E1, 220, 0.42);
+        this.updatePanel();
+        return;
+      }
+
+      if (Game.mode==='lab'){
+        this.labLockedAssault = true;
+        this.spawnLeft = 0;
+        this.bossSpawned = false;
+        if (!this.labForgeSpawned && this.labForgeSpec){
+          spawnForgeEnemy(this.labForgeSpec);
+          this.labForgeSpawned = true;
+        }
+        textPop(W*0.5, H*0.16, 'LAB 敌袭开始', C.E1);
+        spawnShockwave(W*0.5, H*0.16, C.E1, 240, 0.45);
+        this.updatePanel();
+        return;
+      }
+
       this.spawnLeft = 14 + Math.floor(Game.wave*3.1);
       this.bossSpawned = false;
       WaveDirector.onWave(Game.wave);
@@ -2959,6 +3046,16 @@ const addShake = (m, t=0.16) => {
       this.updatePanel();
     },
     beginFortify(){
+      if (Game.mode==='lab') return;
+      if (Game.mode==='fortress_duel'){
+        this.phase='fortify';
+        this.duelRound = (this.duelRound||1) + 1;
+        this.duelTimer = 35;
+        this.stock += 28;
+        textPop(W*0.5, H*0.16, `DUEL 准备 ${Math.ceil(this.duelTimer)}s`, C.P1);
+        this.updatePanel();
+        return;
+      }
       this.phase='fortify';
       const gain = 10 + Math.floor(Game.wave*2.6);
       this.stock += gain;
@@ -2968,7 +3065,8 @@ const addShake = (m, t=0.16) => {
       this.updatePanel();
     },
     repairFlag(cost=6, heal=180){
-      if (Game.mode!=='fortress' || Game.state!=='playing' || this.phase!=='fortify') return false;
+      if ((Game.mode!=='fortress' && Game.mode!=='lab') || Game.state!=='playing' || this.phase!=='fortify') return false;
+      if (Game.mode==='lab') return false;
       if (this.stock < cost || this.flagHp >= this.flagMaxHp) return false;
       this.stock -= cost;
       this.flagHp = Math.min(this.flagMaxHp, this.flagHp + heal);
@@ -2985,7 +3083,8 @@ const addShake = (m, t=0.16) => {
     },
     resolvePlacementPoint(screenX, screenY){
       const pt = this.toWorld(screenX, screenY);
-      return {x:clamp(pt.x, 30, W-30), y:clamp(pt.y, H*0.40, H-70)};
+      const minY = (Game.mode==='fortress_duel') ? (H*0.50) : (H*0.40);
+      return {x:clamp(pt.x, 30, W-30), y:clamp(pt.y, minY, H-70)};
     },
     clearPreview(){
       this.preview = null;
@@ -3012,7 +3111,7 @@ const addShake = (m, t=0.16) => {
       const st = {id,x,y,w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,cd:cfg.cd||0,cost:cfg.cost,_builtAt:Game.time||0,_builtWave:Game.wave||1};
       this.getBehavior(st.type)?.onCreate?.(st, {fortress:this});
       this.structures.push(st);
-      this.stock -= cfg.cost;
+      if (Game.mode!=='lab') this.stock -= cfg.cost;
       this.undoStack.push({type:'place', id, refund:cfg.cost});
       sparks(x,y,'glowP', 8, 180);
       this.clearPreview();
@@ -3039,7 +3138,10 @@ const addShake = (m, t=0.16) => {
     },
     pickStrategicTarget(x,y,maxD=99999){
       const alive = this.structures.filter(s=>s.hp>0);
-      if (!alive.length) return {x:W*0.5,y:H-62,type:'flag'};
+      if (!alive.length){
+        if (Game.mode==='lab') return Player?.alive ? {x:Player.x,y:Player.y,type:'player'} : {x:W*0.5,y:H*0.72,type:'labcore'};
+        return {x:W*0.5,y:H-62,type:'flag'};
+      }
 
       const pressure = clamp((enemies.length / Math.max(3, 2 + Game.difficulty*1.3)), 0, 1);
       const siegePower = clamp((Game.difficulty*0.45 + enemies.length*0.07 + Game.wave*0.025), 0, 3.2);
@@ -3073,7 +3175,7 @@ const addShake = (m, t=0.16) => {
         if (score > bestScore){ bestScore = score; best = fs; }
       }
 
-      const flagBase = {x:W*0.5,y:H-62,type:'flag'};
+      const flagBase = (Game.mode==='lab') ? (Player?.alive ? {x:Player.x,y:Player.y,type:'player'} : {x:W*0.5,y:H*0.72,type:'labcore'}) : {x:W*0.5,y:H-62,type:'flag'};
       if (!best) return flagBase;
 
       // 只有在防线已经打开且敌方总体能力占优时，才集中冲旗
@@ -3105,7 +3207,7 @@ const addShake = (m, t=0.16) => {
     },
     _pickRoleTarget(role, x,y,maxD=99999){
       const alive = this.structures.filter(s=>s.hp>0);
-      const flagBase = {x:W*0.5,y:H-62,type:'flag'};
+      const flagBase = (Game.mode==='lab') ? (Player?.alive ? {x:Player.x,y:Player.y,type:'player'} : {x:W*0.5,y:H*0.72,type:'labcore'}) : {x:W*0.5,y:H-62,type:'flag'};
       if (!alive.length) return flagBase;
 
       const byValue = {
@@ -3131,7 +3233,7 @@ const addShake = (m, t=0.16) => {
       return this.pickStrategicTarget(x,y,maxD);
     },
     getEnemyTarget(x,y,maxD=99999){
-      if (Game.mode==='fortress'){
+      if (Game.mode==='fortress' || Game.mode==='lab'){
         const taunt = this.findTauntTarget(x,y,maxD);
         if (taunt) return taunt;
         const near = enemies.find(e=>e.alive && e.type!=='BOSS' && dist2(e.x,e.y,x,y)<42*42);
@@ -3223,6 +3325,7 @@ const addShake = (m, t=0.16) => {
       this.updatePanel();
     },
     hitFlag(dmg){
+      if (Game.mode==='lab') return;
       this.flagHp = Math.max(0, this.flagHp - dmg);
       if (this.flagHp<=0 && Player.alive){
         if (TimeMachine.enabled && TimeMachine.rewind('flag')) return;
@@ -3233,14 +3336,22 @@ const addShake = (m, t=0.16) => {
       this.updatePanel();
     },
     update(dt){
-      if (Game.mode!=='fortress') return;
+      if (Game.mode!=='fortress' && Game.mode!=='lab' && Game.mode!=='fortress_duel') return;
+      if (Game.mode==='fortress_duel'){
+        this.duelTimer = Math.max(0, (this.duelTimer||0) - dt);
+        if (this.duelTimer<=0){
+          if (this.phase==='fortify') this.beginAssault();
+          else if (this.phase==='assault') this.beginFortify();
+        }
+      }
+
       if (this.phase==='assault'){
         this._updateSquadIntel(dt);
         const needBoss = (Game.wave>0 && Game.wave%5===0 && !this.bossSpawned);
         if (this.spawnLeft<=0 && !Game.bossAlive && !needBoss){
           let aliveCount = 0;
           for (const e of enemies) if (e.alive) aliveCount++;
-          if (aliveCount===0) this.beginFortify();
+          if (aliveCount===0 && Game.mode!=='lab' && Game.mode!=='fortress_duel') this.beginFortify();
         }
       }
 
@@ -3630,7 +3741,7 @@ function recoverLocalControl(){
     ensureAudio();
     checkDoubleTap();
 
-    if (Game.mode==='fortress' && Fortress.handlePointerDown(e.clientX, e.clientY, e.pointerId)){
+    if ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress.handlePointerDown(e.clientX, e.clientY, e.pointerId)){
       e.preventDefault?.();
       return;
     }
@@ -3663,7 +3774,7 @@ function recoverLocalControl(){
   }, {passive: false});
 
   canvas.addEventListener('pointermove', (e) => {
-    if (Game.mode==='fortress' && Fortress.handlePointerMove(e.clientX, e.clientY, e.pointerId)){
+    if ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress.handlePointerMove(e.clientX, e.clientY, e.pointerId)){
       e.preventDefault?.();
       return;
     }
@@ -3688,7 +3799,7 @@ function recoverLocalControl(){
 
   function endPointer(e){
     const pid = e ? e.pointerId : Input.pid;
-    if (e && Game.mode==='fortress' && Fortress.handlePointerUp(e.clientX, e.clientY, e.pointerId)){
+    if (e && (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress.handlePointerUp(e.clientX, e.clientY, e.pointerId)){
       e.preventDefault?.();
     }
     if (pid != null && pid !== Input.pid) return;
@@ -4411,16 +4522,30 @@ function _doCrossSplit(b){
       onUpdate(b, dt, ctx){
         // 只有在暂停期间(pauseT > 0)才开火
         if (b.pauseT > 0 && b.depth < 1) {
+           const perf = bulletPerfTier();
+           const fireCd = [0.14, 0.19, 0.24, 0.30][perf] || 0.30;
            b._turretCd = (b._turretCd || 0) - dt;
            if (b._turretCd <= 0) {
-             b._turretCd = 0.15; // 射速
-             // 向玩家发射
-             let tx=b.x, ty=b.y;
-             if (b.team === 'P') { const e=findNearestEnemy(b.x,b.y); if(e){tx=e.x;ty=e.y;} }
-             else { const t=findEnemyFocus(b.x,b.y); if(t){ tx=t.x; ty=t.y; } }
-             
-             const a = Math.atan2(ty-b.y, tx-b.x);
-             spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y, Math.cos(a)*200, Math.sin(a)*200, {
+             b._turretCd = fireCd;
+             // 向玩家/敌机发射（带简单预判）
+             let t = null;
+             if (b.team === 'P') t = findNearestEnemy(b.x,b.y, 900);
+             else t = findEnemyFocus(b.x,b.y);
+             if (!t) return;
+
+             const sp = 200;
+             const pred = predictInterceptAim(b.x, b.y, t, {
+               speed: sp,
+               shooterVx: b.vx || 0,
+               shooterVy: b.vy || 0,
+               launchDelay: 0,
+               maxTime: 1.5,
+               iterN: perf>=2 ? 1 : 2,
+               simDt: perf>=2 ? 1/30 : 1/48
+             });
+             const a = pred?.angle ?? Math.atan2(t.y-b.y, t.x-b.x);
+
+             spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y, Math.cos(a)*sp, Math.sin(a)*sp, {
                r:2.0, dmg:b.dmg*0.3, col:b.col, spr:b.spr, style:0, life:0.8,
                depth: b.depth+1
              });
@@ -4689,6 +4814,7 @@ ORBIT_SELF: {
       onSpawn(b, ctx){
         if (!ctx || !ctx.owner || !ctx.owner.alive) return;
         b._orbOwner = ctx.owner;
+        b._orbReleased = false;
         // 初始角度
         b._orbA = Math.atan2(b.y - ctx.owner.y, b.x - ctx.owner.x);
         b._orbR = 40;
@@ -4702,8 +4828,9 @@ ORBIT_SELF: {
         b.life = 99; 
       },
       onUpdate(b, dt, ctx){
-        // 1. 如果子弹已经获得速度（被射出了），则不再执行环绕逻辑，恢复物理运动
-        if (Math.abs(b.vx) > 0.1 || Math.abs(b.vy) > 0.1) {
+        // 1. 如果子弹已经射出（兼容 WIGGLE/ACCEL 等会改写速度的词条），不再执行环绕逻辑
+        if (b._orbReleased || Math.abs(b.vx) > 0.1 || Math.abs(b.vy) > 0.1) {
+            b._orbReleased = true;
             // 恢复生命倒计时，防止射出后无限飞行
             if (b.life > 3.0) b.life = 2.0; 
             return;
@@ -4742,21 +4869,30 @@ ORBIT_SELF: {
           }
 
           // [逻辑分支]：场上有敌机，执行射击逻辑
-          const launchA = b._orbA + Math.PI * 0.5; // 切线方向
+          const tangentA = b._orbA + Math.PI * 0.5;
+          const predicted = predictInterceptAim(b.x, b.y, target, {
+            speed: b._orbSp,
+            launchDelay: 0,
+            angVel: b.angVel || 0,
+            maxTime: 2.0
+          });
+          const launchA = predicted?.angle ?? tangentA;
           const dirX = Math.cos(launchA), dirY = Math.sin(launchA);
           const toX = target.x - b.x, toY = target.y - b.y;
-          
-          // 计算瞄准偏差
+
+          // 允许一定切线偏好，但优先采用可命中的预判发射
+          const tangentDot = Math.cos(launchA - tangentA);
           const ahead = toX*dirX + toY*dirY;
-          if (ahead > 0) { // 必须朝向敌人
-            const lineDist = Math.abs(dirX*toY - dirY*toX);
-            // 判定是否瞄准（给予一定的宽容度）
-            if (lineDist <= (target.r || 20) + 20) {
-               b.vx = dirX * b._orbSp;
-               b.vy = dirY * b._orbSp;
-               sparks(b.x, b.y, b.spr, 5, 150);
-               // 子弹射出，逻辑结束，下一帧交由物理引擎接管
+          if (ahead > -24 && tangentDot > -0.65) {
+            b.vx = dirX * b._orbSp;
+            b.vy = dirY * b._orbSp;
+            b._orbReleased = true;
+            if (b.mods?.includes('WIGGLE')){
+              b._baseVx = b.vx;
+              b._baseVy = b.vy;
             }
+            sparks(b.x, b.y, b.spr, 5, 150);
+            // 子弹射出，逻辑结束，下一帧交由物理引擎接管
           }
         }
       }
@@ -5539,7 +5675,7 @@ if (col===C.E7) return 'glowE7';
     b.pauseT = opts.pauseT ?? 0;
 
     b.depth = opts.depth ?? 0;
-    b.fortressSafe = !!opts.fortressSafe || (Game.mode==='fortress' && team==='P');
+    b.fortressSafe = !!opts.fortressSafe || ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && team==='P');
 
     // assign mods (affixes)
     if (opts.mods && opts.mods.length){
@@ -5735,21 +5871,33 @@ function refreshDNAAfterFire(beforeP, beforeE){
   }
 
   function sparks(x,y, spr='glowE', n=10, sp=360){
-    for(let i=0;i<n;i++){
+    const tier = PERF.dynamicFX ? FXState.tier : 0;
+    const keep = [1.0, 0.82, 0.62, 0.42][tier];
+    const count = Math.max(1, Math.round(n * keep));
+
+    for(let i=0;i<count;i++){
       const p = particlePool.get();
       const a = rand(0, Math.PI*2);
       const v = sp * rand(0.25, 1);
       p.alive=true; p.x=x; p.y=y;
       p.vx=Math.cos(a)*v; p.vy=Math.sin(a)*v;
-      p.t=0; p.life=rand(0.18, 0.55);
-      p.a=1; p.spr=spr;
-      p.scale=rand(0.30, 0.95);
+      p.t=0; p.life=rand(0.18, 0.55) * (tier>=2 ? 0.88 : 1.0);
+      p.a=tier>=3 ? 0.85 : 1;
+      p.spr=spr;
+      p.scale=rand(0.30, 0.95) * (tier>=2 ? 0.85 : 1.0);
       pushParticle(p);
     }
   }
 
   function spawnShockwave(x,y, col=C.P1, maxR=260, life=0.55){
-    shockwaves.push({x,y,col,t:0,life,maxR});
+    const tier = PERF.dynamicFX ? FXState.tier : 0;
+    const keep = [1.0, 0.9, 0.72, 0.55][tier];
+    const r = maxR * keep;
+    const l = life * (tier>=2 ? 0.82 : 1.0);
+    if (tier>=3 && r < 70) return;
+    shockwaves.push({x,y,col,t:0,life:l,maxR:r});
+    const cap = PERF.dynamicFX ? FXState.maxShockwaves : 180;
+    if (shockwaves.length > cap) shockwaves.splice(0, shockwaves.length - cap);
   }
 
   function textPop(x,y,s,color=C.W){
@@ -6099,7 +6247,7 @@ STYLE_DOUBLE_OUTLINE:{
     addDrawOverlay(e,(draw)=>{
       draw();
       const col = enemyColor(e);
-      ctx.save(); if (PERF.additive) ctx.globalCompositeOperation='lighter';
+      ctx.save(); if (FXState.additiveOn) ctx.globalCompositeOperation='lighter';
       ctx.globalAlpha = 0.35;
       tronStroke(col, 1, 0.55);
       ctx.beginPath(); ctx.arc(e.x,e.y,e.r+22,0,Math.PI*2); ctx.stroke();
@@ -6119,7 +6267,7 @@ STYLE_SPIN_RING:{
       draw();
       const col = enemyColor(e);
       const r = e.r+18;
-      ctx.save(); if (PERF.additive) ctx.globalCompositeOperation='lighter';
+      ctx.save(); if (FXState.additiveOn) ctx.globalCompositeOperation='lighter';
       ctx.globalAlpha = 0.18 + 0.10*Math.sin(Game.time*8 + e._srP);
       tronStroke(col, 2, 0.85);
       const a0 = Game.time*0.9 + e._srP;
@@ -9855,7 +10003,7 @@ for (const proto of this.deck){
     }
   }
 }
-if (Game.mode==='fortress'){
+if (Game.mode==='fortress' || Game.mode==='lab'){
   for (const proto of this.deck){
     if (!proto.emitters || !proto.emitters.length) continue;
     if (chance(0.45)){
@@ -10138,8 +10286,9 @@ for (const em of e.emitters){
     update(dt){
       const t = Game.time;
       
-      if (Game.mode === 'fortress') {
+      if (Game.mode === 'fortress' || Game.mode === 'fortress_duel' || Game.mode === 'lab') {
         Fortress.update(dt);
+        if (Game.mode !== 'fortress') return;
         if (Fortress.phase !== 'assault') return;
 
         const timeSlope = (t < BAL.diffSwitchT) ? BAL.diffTimeEarly : BAL.diffTimeLate;
@@ -10219,7 +10368,7 @@ for (const em of e.emitters){
         spawnShockwave(W*0.5, 92, C.P1, 240, 0.55);
         SFX.wave();
       }
-      ui.wave.textContent = (Game.mode==='duel') ? 'DUEL' : (Game.mode==='lab' ? 'LAB' : (Game.mode==='workshop' ? 'WORKSHOP' : Game.wave));
+      ui.wave.textContent = (Game.mode==='duel') ? 'DUEL' : (Game.mode==='lab' ? 'LAB' : (Game.mode==='workshop' ? 'WORKSHOP' : (Game.mode==='fortress_duel' ? 'F-DUEL' : Game.wave)));
 
       if (!Game.bossAlive && t > BAL.bossMinTime && t-Game.lastBossAt > BAL.bossInterval){
         Game.lastBossAt = t;
@@ -10264,6 +10413,25 @@ for (const em of e.emitters){
       const d2 = dist2(x,y,e.x,e.y);
       if (d2<bestD){ bestD=d2; best=e; }
     }
+
+    if (Game.mode==='fortress_duel' && Multiplayer?.peers?.size){
+      for (const peer of Multiplayer.peers.values()){
+        if (peer.alive === false) continue;
+        const pp = Multiplayer.projectedPeer(peer);
+        if (pp){
+          const d2p = dist2(x,y,pp.x,pp.y);
+          if (d2p < bestD){ bestD = d2p; best = {x:pp.x,y:pp.y,vx:pp.vx||0,vy:pp.vy||0,alive:true,r:Player.r||16,type:'PEER'}; }
+        }
+        const pf = Multiplayer.projectedPeerFortress?.(peer);
+        if (pf?.structures?.length){
+          for (const st of pf.structures){
+            if ((st.hp||0)<=0) continue;
+            const d2s = dist2(x,y,st.x,st.y);
+            if (d2s < bestD){ bestD = d2s; best = {x:st.x,y:st.y,vx:0,vy:0,alive:true,r:Math.max(st.w||20,st.h||20)*0.35,type:'PEER_STRUCT'}; }
+          }
+        }
+      }
+    }
     return best;
   }
 
@@ -10277,6 +10445,119 @@ for (const em of e.emitters){
     return {x:target.x + tvx*tof, y:target.y + tvy*tof};
   }
 
+  function bulletPerfTier(){
+    const n = (bulletsP?.length || 0) + (bulletsE?.length || 0);
+    if (n >= 440) return 3;
+    if (n >= 320) return 2;
+    if (n >= 220) return 1;
+    return 0;
+  }
+
+  function solveLinearInterceptTime(rx, ry, rvx, rvy, speed){
+    const vv = rvx*rvx + rvy*rvy;
+    const rr = rx*rx + ry*ry;
+    const rv = rx*rvx + ry*rvy;
+    const a = vv - speed*speed;
+    const b = 2*rv;
+    const c = rr;
+
+    if (Math.abs(a) < 1e-6){
+      if (Math.abs(b) < 1e-6) return null;
+      const t = -c / b;
+      return (t > 0) ? t : null;
+    }
+
+    const disc = b*b - 4*a*c;
+    if (disc < 0) return null;
+
+    const sqrtD = Math.sqrt(disc);
+    const t1 = (-b - sqrtD) / (2*a);
+    const t2 = (-b + sqrtD) / (2*a);
+
+    let t = Infinity;
+    if (t1 > 0) t = Math.min(t, t1);
+    if (t2 > 0) t = Math.min(t, t2);
+    return Number.isFinite(t) ? t : null;
+  }
+
+  function predictInterceptAim(srcX, srcY, target, opt={}){
+    if (!target) return null;
+
+    const speed = Math.max(60, Number(opt.speed) || 320);
+    const launchDelay = clamp(Number(opt.launchDelay) || 0, 0, 2.0);
+    const angVel = Number.isFinite(opt.angVel) ? opt.angVel : 0;
+    const maxTime = clamp(Number(opt.maxTime) || 2.8, 0.35, 4.5);
+
+    const perf = bulletPerfTier();
+    const simDt = clamp(Number(opt.simDt) || (perf>=2 ? 1/36 : 1/60), 1/180, 1/20);
+    const iterN = clamp((opt.iterN ?? (perf>=2 ? 2 : 4))|0, 1, 6);
+
+    const svx = Number.isFinite(opt.shooterVx) ? opt.shooterVx : 0;
+    const svy = Number.isFinite(opt.shooterVy) ? opt.shooterVy : 0;
+    const tvx = Number.isFinite(target.vx) ? target.vx : (target.mmx?.vx || 0);
+    const tvy = Number.isFinite(target.vy) ? target.vy : (target.mmx?.vy || 0);
+
+    const launchX = srcX + svx * launchDelay;
+    const launchY = srcY + svy * launchDelay;
+    const tgt0X = (target.x || 0) + tvx * launchDelay;
+    const tgt0Y = (target.y || 0) + tvy * launchDelay;
+
+    const rx = tgt0X - launchX;
+    const ry = tgt0Y - launchY;
+
+    // 无角速度时优先走解析拦截（更快）
+    if (Math.abs(angVel) < 1e-4){
+      const t = solveLinearInterceptTime(rx, ry, tvx - svx, tvy - svy, speed);
+      if (t != null){
+        const tc = clamp(t, 0, maxTime);
+        const aimX = tgt0X + tvx * tc;
+        const aimY = tgt0Y + tvy * tc;
+        return { angle: Math.atan2(aimY - launchY, aimX - launchX), launchX, launchY, targetX:tgt0X, targetY:tgt0Y };
+      }
+    }
+
+    let guessA = Math.atan2(ry, rx);
+    const maxStep = Math.max(1, Math.ceil(maxTime / simDt));
+
+    for (let iter=0; iter<iterN; iter++){
+      let px = launchX, py = launchY;
+      let a = guessA;
+      let bestT = 0;
+      let bestD2 = Infinity;
+
+      for (let i=0; i<=maxStep; i++){
+        const t = i * simDt;
+        const tx = tgt0X + tvx * t;
+        const ty = tgt0Y + tvy * t;
+
+        const dx = tx - px;
+        const dy = ty - py;
+        const d2 = dx*dx + dy*dy;
+        if (d2 < bestD2){
+          bestD2 = d2;
+          bestT = t;
+          if (d2 < 16) break;
+        }
+
+        if (angVel !== 0) a += angVel * simDt;
+        px += Math.cos(a) * speed * simDt;
+        py += Math.sin(a) * speed * simDt;
+      }
+
+      const aimX = tgt0X + tvx * bestT;
+      const aimY = tgt0Y + tvy * bestT;
+      guessA = Math.atan2(aimY - launchY, aimX - launchX);
+    }
+
+    return {
+      angle: guessA,
+      launchX, launchY,
+      targetX: tgt0X,
+      targetY: tgt0Y
+    };
+  }
+
+
   function fortressSpawnBullet(team, x, y, vx, vy, opt){
     const b = spawnBullet(team, x, y, vx, vy, Object.assign({}, opt, {fortressSafe:true}));
     if (b) b.fortressSafe = true;
@@ -10284,33 +10565,60 @@ for (const em of e.emitters){
   }
 
   function findEnemyFocus(x,y, maxD=99999){
-    if (Game.mode==='fortress') return Fortress.getEnemyTarget(x,y,maxD);
+    if (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') return Fortress.getEnemyTarget(x,y,maxD);
     return Player.alive ? Player : null;
   }
 
   function spawnHomingMissile(x,y,target){
   if (!target) return;
-  const a = Math.atan2(target.y-y, target.x-x);
-  const b = spawnBullet('P', x,y, Math.cos(a)*300, Math.sin(a)*300, {
+  const speed = 300;
+  const pred = predictInterceptAim(x, y, target, {
+    speed,
+    shooterVx: Player.vx || 0,
+    shooterVy: Player.vy || 0,
+    launchDelay: 0.03,
+    angVel: 0,
+    maxTime: 2.8
+  });
+  const a = pred?.angle ?? Math.atan2(target.y-y, target.x-x);
+
+  const b = spawnBullet('P', x,y, Math.cos(a)*speed, Math.sin(a)*speed, {
     r:3.2,
     dmg: (14+Math.log2(1+Player.lv)*6.2)*Player.dmgMul,
     col:C.P2, spr:'glowP2', life:2.6, style:1,
     mods: mergeMods(Player.gunMods, ['HOMING']),
     modCtx: {owner:Player, team:'P'}
   });
-  if (b) b.homing = 1;
+  if (b) {
+    b.homing = 1;
+    b._homeCd = 0;
+  }
 }
   
+
   // ================= Unified Emitter Catalog (Player & Rival reuse) =================
 function makeEmitterCatalog(ctx){
   const yOff = (ctx.team==='P') ? -20 : +10;
   const defaultA = (ctx.team==='P') ? -Math.PI/2 : Math.PI/2;
 
-  function aimA(o){
+  function aimA(o, opt={}){
     o = o || ctx.getOwner();
-    const t = ctx.getTarget();
+    const t = opt.target || ctx.getTarget();
     if (!o || !t) return defaultA;
-    return Math.atan2(t.y - o.y, t.x - o.x);
+
+    const shotSpeed = Number(opt.speed);
+    const shouldPredict = Number.isFinite(shotSpeed) && shotSpeed > 0;
+    if (!shouldPredict) return Math.atan2(t.y - o.y, t.x - o.x);
+
+    const pred = predictInterceptAim(o.x, o.y, t, {
+      speed: shotSpeed,
+      shooterVx: o.vx || 0,
+      shooterVy: o.vy || 0,
+      launchDelay: opt.launchDelay || 0,
+      angVel: opt.angVel || 0,
+      maxTime: opt.maxTime || 2.8
+    });
+    return pred?.angle ?? Math.atan2(t.y - o.y, t.x - o.x);
   }
 
 function spawnAt(o, a, sp, opt={}){
@@ -10383,7 +10691,13 @@ function spawnAt(o, a, sp, opt={}){
         // 3. 使用辅助函数发射
         // aimA(o): 计算 o 到 Player 的角度
         // spawnAt: 自动处理坐标偏移(y+8)、颜色映射、全局词条合并
-        spawnAt(o,aimA(o), sp, {
+        const mergedMods = ctx.getMods();
+        const tracking = this.predictive || mergedMods.includes('HOMING') || this.homing === 1;
+        const fireA = tracking
+          ? aimA(o, {speed:sp, launchDelay:this.launchDelay || 0, angVel:this.angVel || 0, maxTime:2.4})
+          : aimA(o);
+
+        spawnAt(o,fireA, sp, {
           dmg: dmg,
           r: this.r ?? 2.9,
           life: this.life ?? 2.2,
@@ -10557,9 +10871,15 @@ function spawnAt(o, a, sp, opt={}){
       fire(o){
         const t = ctx.getTarget();
         if (!o || !t) return;
-        const a = Math.atan2(t.y-o.y, t.x-o.x);
-
         const sp = (ctx.team==='P') ? 420 : 280;
+        const a = aimA(o, {
+          target: t,
+          speed: sp,
+          launchDelay: this.launchDelay || 0,
+          angVel: this.angVel || 0,
+          maxTime: 2.8
+        });
+
         const dmg = (7.5 + Math.log2(1+ctx.getLv())*4.0) * ctx.getDmgMul() * 0.75;
 
         const mods = (typeof mergeMods==='function') ? mergeMods(ctx.getMods(), ['HOMING']) : ['HOMING'];
@@ -10982,15 +11302,14 @@ DANCING_BLADES: () => ({
         setTimeout(() => {
           if(!o || !o.alive) return;
           const phase = rand(0, Math.PI*2);
+          // 不同层使用不同颜色
+          const layerCol = idx===0 ? ctx.getColor() : (idx===1 ? ctx.getAltColor() : C.Y);
+          const layerSpr = idx===0 ? (ctx.team==='P'?'glowP':'glowE') : 
+                          idx===1 ? (ctx.team==='P'?'glowP2':'glowE2') : 'glowY';
           
           for(let i=0; i<layer.count; i++){
             const a = phase + (i/layer.count)*Math.PI*2;
             const sp = (ctx.team==='P' ? layer.speed*1.4 : layer.speed);
-            
-            // 不同层使用不同颜色
-            const layerCol = idx===0 ? ctx.getColor() : (idx===1 ? ctx.getAltColor() : C.Y);
-            const layerSpr = idx===0 ? (ctx.team==='P'?'glowP':'glowE') : 
-                            idx===1 ? (ctx.team==='P'?'glowP2':'glowE2') : 'glowY';
             
             spawnBullet(ctx.team, o.x, o.y+yOff,
               Math.cos(a)*sp, Math.sin(a)*sp, {
@@ -11602,6 +11921,7 @@ function grantPlayerEmitter(){
 }
 
   function firePlayer(dt){
+    if (Game.mode==='fortress_duel' && Fortress.phase!=='assault') return;
     Player.fireCd -= dt;
     if (Player.fireCd>0) return;
 
@@ -11782,11 +12102,18 @@ function grantPlayerEmitter(){
 if (b.homing > 0){
   let tx = null, ty = null;
 
-  if (b.team === 'P'){
-    const t = findNearestEnemy(b.x, b.y, 760);
-    if (t){ tx = t.x; ty = t.y; }
-  } else {
-    { const t = findEnemyFocus(b.x,b.y); if (t){ tx = t.x; ty = t.y; } }
+  b._homeCd = (b._homeCd || 0) - dt;
+  const perf = bulletPerfTier();
+  if (b._homeCd <= 0 || !b._homeTarget || !b._homeTarget.alive){
+    b._homeCd = [0.05, 0.08, 0.12, 0.16][perf] || 0.12;
+    if (b.team === 'P') b._homeTarget = findNearestEnemy(b.x, b.y, 760);
+    else b._homeTarget = findEnemyFocus(b.x,b.y);
+  }
+
+  const t = b._homeTarget;
+  if (t && t.alive){
+    tx = t.x + (t.vx || 0) * b._homeCd;
+    ty = t.y + (t.vy || 0) * b._homeCd;
   }
 
   if (tx != null){
@@ -11825,6 +12152,7 @@ if (b.homing > 0){
   }
 }
 
+
       if (move){
         b.x += b.vx*dt;
         b.y += b.vy*dt;
@@ -11839,7 +12167,7 @@ if (b.homing > 0){
         b.y += py * b.waveA * s * dt;
       }
 
-      if (Game.mode==='fortress' && b.team==='E' && !b.fortressSafe){
+      if ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && b.team==='E' && !b.fortressSafe){
         let blocked = false;
         for (const fs of Fortress.structures){
           if (fs.hp<=0) continue;
@@ -11853,7 +12181,7 @@ if (b.homing > 0){
         }
         if (blocked) continue;
         // 敌方子弹直击旗帜
-        if (b.y > H-72 && Math.abs(b.x - W*0.5) < 52){
+        if (Game.mode!=='lab' && b.y > H-72 && Math.abs(b.x - W*0.5) < 52){
           Fortress.hitFlag(Math.max(6, b.dmg||10));
           killBullet(b, 'flag', {childMods: []});
           continue;
@@ -12282,7 +12610,7 @@ const BG_Effect = {
   },
 
   draw(ctx) {
-    if (PERF.additive) ctx.globalCompositeOperation = 'lighter';
+    if (FXState.additiveOn) ctx.globalCompositeOperation = 'lighter';
     
     // 1. 绘制点之间的连线
     for (let i = 0; i < this.points.length; ++i) {
@@ -12660,10 +12988,22 @@ BG_Effect.init();
       } else if (msg.event === 'start_match' && msg.cfg){
         this.startPreparedMatch(msg.cfg, msg.starterId || this.roomLeaderId || this.localId);
       } else if (msg.event === 'peer_hit'){
-        if (Game.mode === 'workshop' && Game.state === 'playing' && Player.alive){
+        if ((Game.mode === 'workshop' || Game.mode==='fortress_duel') && Game.state === 'playing' && Player.alive && (msg.kind||'player')==='player'){
           const peer = this.peers.get(msg.from);
           onPlayerHit(Math.max(1, msg.dmg || 1), 0);
           textPop(Player.x, Player.y - 28, `HIT BY ${peer?.nick || 'PILOT'}`, C.R);
+        }
+        if (Game.mode==='fortress_duel' && Game.state==='playing' && (msg.kind==='flag' || msg.kind==='structure')){
+          if (msg.kind==='flag'){
+            Fortress.hitFlag(Math.max(1, msg.dmg||1));
+          } else if (msg.kind==='structure'){
+            const sid = msg.sid;
+            const st = Fortress.structures.find(v=>v.id===sid && v.hp>0);
+            if (st){
+              st.hp -= Math.max(1, msg.dmg||1);
+              if (st.hp<=0) sparks(st.x, st.y, 'glowE2', 6, 180);
+            }
+          }
         }
       }
     },
@@ -12688,6 +13028,7 @@ BG_Effect.init();
           Object.assign(peer, item.state);
           peer.netBullets = Array.isArray(item.state.bullets) ? item.state.bullets.slice(0, 120) : [];
           peer.smoothBullets = this.smoothBulletState(peer, peer.netBullets);
+          peer.netFortress = item.state.fortress || null;
         }
         this.peers.set(item.id, peer);
       }
@@ -12724,7 +13065,7 @@ BG_Effect.init();
 
     projectedPeer(peer){
       if (!peer) return null;
-      const workshopMirror = (Game.mode === 'workshop');
+      const workshopMirror = (Game.mode === 'workshop' || Game.mode === 'fortress_duel');
       return {
         ...peer,
         x: workshopMirror ? (W - (peer.x ?? W*0.5)) : (peer.x ?? W*0.5),
@@ -12754,7 +13095,7 @@ BG_Effect.init();
 
     validateRoomForMode(mode){
       const players = this.peers.size + 1;
-      if (mode === 'workshop' && players !== 2){ this.setStatus('WORKSHOP 房间必须 2 人（你 + 1 对手）'); return false; }
+      if ((mode === 'workshop' || mode==='fortress_duel') && players !== 2){ this.setStatus('该对战模式必须 2 人（你 + 1 对手）'); return false; }
       if (players < 2){ this.setStatus('至少需要 2 人才可开始联机'); return false; }
       return true;
     },
@@ -12838,7 +13179,7 @@ BG_Effect.init();
         this.sendServer({
           type:'input_state',
           nick:this.nick,
-          state:{ x: Player.x, y: Player.y, hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState() }
+          state:{ x: Player.x, y: Player.y, hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState(), fortress: (Game.mode==='fortress_duel') ? {flagHp:Fortress.flagHp, flagMaxHp:Fortress.flagMaxHp, structures:Fortress.structures.map(st=>({id:st.id,x:st.x,y:st.y,w:st.w,h:st.h,hp:st.hp,maxHp:st.maxHp,col:st.col,type:st.type}))} : null }
         });
       }
       // Server-authoritative world simulation: clients no longer relay world snapshots.
@@ -12860,7 +13201,7 @@ BG_Effect.init();
         const rx = pp.x, ry = pp.y;
         ctx.save();
         ctx.translate(rx, ry);
-        if (Game.mode==='workshop') ctx.rotate(Math.PI);
+        if (Game.mode==='workshop' || Game.mode==='fortress_duel') ctx.rotate(Math.PI);
         ctx.strokeStyle = C.P2;
         ctx.fillStyle = 'rgba(179,108,255,0.16)';
         ctx.lineWidth = 2;
@@ -12879,6 +13220,25 @@ BG_Effect.init();
           ctx.beginPath();
           ctx.arc(rx, ry, 18 + Math.sin(Game.time*8)*1.5, 0, Math.PI*2);
           ctx.stroke();
+        }
+
+        if (Game.mode==='fortress_duel'){
+          const pf = this.projectedPeerFortress(peer);
+          if (pf){
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,120,120,0.85)';
+            ctx.fillStyle = 'rgba(255,80,80,0.14)';
+            for (const st of (pf.structures||[])){
+              if ((st.hp||0)<=0) continue;
+              ctx.fillRect(st.x-st.w*0.5, st.y-st.h*0.5, st.w, st.h);
+              ctx.strokeRect(st.x-st.w*0.5, st.y-st.h*0.5, st.w, st.h);
+            }
+            const fPct = clamp((pf.flagHp||1)/Math.max(1,pf.flagMaxHp||1),0,1);
+            const bw=120, bh=6, bx=pf.flagX-bw*0.5, by=pf.flagY-24;
+            ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(bx,by,bw,bh);
+            ctx.fillStyle='rgba(255,90,110,0.95)'; ctx.fillRect(bx,by,bw*fPct,bh);
+            ctx.restore();
+          }
         }
       }
       ctx.restore();
@@ -12900,16 +13260,84 @@ BG_Effect.init();
       ctx.restore();
     },
 
+    
+
+    projectedPeerFortress(peer){
+      const pp = this.projectedPeer(peer);
+      const f = peer?.netFortress;
+      if (!pp || !f) return null;
+      const structures = (f.structures||[]).map(st=>({
+        ...st,
+        x: W - (st.x ?? W*0.5),
+        y: H - (st.y ?? H*0.75),
+      }));
+      return {
+        flagHp: f.flagHp || 1,
+        flagMaxHp: f.flagMaxHp || 1,
+        flagX: W*0.5,
+        flagY: H-62,
+        structures
+      };
+    },
+
+
+    applyPeerBulletPressure(dt){
+      if (!this.room || Game.mode !== 'fortress_duel' || Game.state!=='playing') return;
+      // 命中结算以 peer_hit 事件为准，避免镜像/插值误差导致幽灵扣血
+      return;
+      for (const peer of this.peers.values()){
+        const pp = this.projectedPeer(peer);
+        for (const b of (pp?.bullets||[])){
+          if (!b || !b.alive) continue;
+          if (hitCircle(Player.x, Player.y, Player.r, b.x, b.y, b.r||3) && Player.invuln<=0){
+            onPlayerHit(Math.max(2, (b.dmg||8)*0.35), 0);
+          }
+          for (const fs of Fortress.structures){
+            if (!fs || fs.hp<=0) continue;
+            if (circleRectOverlap(b.x, b.y, b.r||2, fs)){
+              fs.hp -= Math.max(2, (b.dmg||8)*0.20);
+              break;
+            }
+          }
+          if (b.y > H-72 && Math.abs(b.x - W*0.5) < 52){
+            Fortress.hitFlag(Math.max(2, (b.dmg||8)*0.22));
+          }
+        }
+      }
+    },
+
     tryHitWorkshopPeerByBullet(b){
-      if (!this.room || Game.mode !== 'workshop' || !b || !b.alive) return false;
+      if (!this.room || (Game.mode !== 'workshop' && Game.mode!=='fortress_duel') || !b || !b.alive) return false;
       for (const peer of this.peers.values()){
         if (peer.alive === false) continue;
         const pp = this.projectedPeer(peer);
-        if (!hitCircle(b.x,b.y,b.r, pp.x,pp.y, Player.r)) continue;
+        if (!hitCircle(b.x,b.y,b.r, pp.x,pp.y, Player.r)) {
+          if (Game.mode==='fortress_duel'){
+            const pf = this.projectedPeerFortress(peer);
+            if (pf){
+              let hitSt = null;
+              for (const st of pf.structures){
+                if ((st.hp||0)<=0) continue;
+                if (circleRectOverlap(b.x,b.y,b.r||2, st)){ hitSt = st; break; }
+              }
+              if (hitSt){
+                if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; } else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
+                this.sendServer({type:'peer_hit', dmg:Math.max(1, b.dmg||1), kind:'structure', sid:hitSt.id});
+                return true;
+              }
+              if (b.y > H-72 && Math.abs(b.x - W*0.5) < 52){
+                if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; } else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
+                this.sendServer({type:'peer_hit', dmg:Math.max(1, b.dmg||1), kind:'flag'});
+                return true;
+              }
+            }
+          }
+          continue;
+        }
         sparks(b.x,b.y,'glowP2', 8, 220);
         if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; }
         else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
-        this.sendServer({type:'peer_hit', dmg:b.dmg, nick:this.nick});
+        this.sendServer({type:'peer_hit', dmg:b.dmg, nick:this.nick, kind:'player'});
         return true;
       }
       return false;
@@ -12920,6 +13348,7 @@ BG_Effect.init();
   function update(dt){
     BG_Effect.update(dt);
     Multiplayer.update(dt);
+    Multiplayer.applyPeerBulletPressure?.(dt);
     Game.time += dt;
 
     // 仅在主循环中消费一次鼠标目标，避免 pointermove 高频触发计算
@@ -13016,7 +13445,7 @@ BG_Effect.init();
         e.onHit(9999);
       }
 
-      if (Game.mode==='fortress'){
+      if (Game.mode==='fortress' || Game.mode==='lab'){
         let siegeTarget = Fortress.pickStrategicTarget(e.x, e.y, 420);
         for (const fs of Fortress.structures){
           if (fs.hp<=0) continue;
@@ -13266,7 +13695,7 @@ BG_Effect.init();
 
     // --- UI Updates (Adapted for Cyberpunk HUD) ---
 ui.score.textContent = formatValue(Game.score);
-    if (Game.mode==='fortress'){
+    if (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel'){
       ui.wave.textContent = `${Game.wave}`;
     } else {
       ui.wave.textContent = Game.wave;
@@ -13364,6 +13793,8 @@ const AutoPilot = {
   _thinkCd: 0,
   _safeT: 0,
   _fortBuildCd: 0,
+  _fortSellsThisFortify: 0,
+  _fortPhaseSeen: 'idle',
 
 
   CONFIG: {
@@ -13424,6 +13855,8 @@ const AutoPilot = {
       this._thinkCd = 0;
       this._safeT = 0;
       this._fortBuildCd = 0;
+      this._fortSellsThisFortify = 0;
+      this._fortPhaseSeen = Fortress?.phase || 'idle';
     }
   },
 
@@ -13440,6 +13873,50 @@ const AutoPilot = {
       spinner:2.6, ram:2.2, beacon:2.4, taunt:2.8
     };
     return score[type] || 1.0;
+  },
+
+  _fortOverlapRatio(x, y, cfg){
+    if (!cfg) return 0;
+    const l1 = x - cfg.w*0.5, r1 = x + cfg.w*0.5;
+    const t1 = y - cfg.h*0.5, b1 = y + cfg.h*0.5;
+    let worst = 0;
+    for (const st of Fortress.structures){
+      if (!st || st.hp <= 0) continue;
+      const l2 = st.x - st.w*0.5, r2 = st.x + st.w*0.5;
+      const t2 = st.y - st.h*0.5, b2 = st.y + st.h*0.5;
+      const iw = Math.min(r1, r2) - Math.max(l1, l2);
+      const ih = Math.min(b1, b2) - Math.max(t1, t2);
+      if (iw <= 0 || ih <= 0) continue;
+      const inter = iw * ih;
+      const base = Math.min(cfg.w*cfg.h, st.w*st.h);
+      worst = Math.max(worst, inter / Math.max(1, base));
+    }
+    return worst;
+  },
+
+  _fortOverlapThreshold(itemType){
+    const p = this._fortItemPower(itemType);
+    const scoreK = clamp((Game.score - 900) / 3200, 0, 1);
+    return clamp(0.12 + scoreK * 0.28 + (p >= 2.8 ? 0.06 : 0), 0.10, 0.46);
+  },
+
+  _fortTryPlaceSmart(itemType, x, y, tries=4){
+    const cfg = Fortress.catalog[itemType];
+    if (!cfg) return false;
+    const th = this._fortOverlapThreshold(itemType);
+
+    for (let i=0; i<Math.max(1, tries); i++){
+      const ox = (i===0) ? 0 : (i%2 ? 10 : -10) * (1 + ((i/2)|0));
+      const oy = (i===0) ? 0 : (((i%3)-1) * 8);
+      const tx = clamp(x + ox, 30, W-30);
+      const ty = clamp(y + oy, H*0.40, H-70);
+      const over = this._fortOverlapRatio(tx, ty, cfg);
+      if (over > th) continue;
+      Fortress.selected = itemType;
+      if (Fortress.placeAt(tx, ty)) return true;
+    }
+
+    return false;
   },
 
   _fortPreferredPlacement(type, have, rows, slots){
@@ -13468,6 +13945,8 @@ const AutoPilot = {
     if (!cfg) return false;
     const need = cfg.cost - Fortress.stock;
     if (need <= 0) return false;
+    if ((this._fortSellsThisFortify||0) >= 1) return false;
+    if (need > Math.max(4, cfg.cost * 0.5)) return false;
 
     // 早期严禁卖建筑，避免“第一轮建了拆、拆了建”
     if ((Game.wave||1) <= 3) return false;
@@ -13504,6 +13983,7 @@ const AutoPilot = {
       if ((Fortress.stock + it.refund) < cfg.cost) continue;
       if (Fortress.sellAt(it.st.x, it.st.y)){
         this._fortLastSellT = Game.time || 0;
+        this._fortSellsThisFortify = (this._fortSellsThisFortify||0) + 1;
         return true;
       }
     }
@@ -13534,16 +14014,20 @@ const AutoPilot = {
     }
 
     Fortress.selected = pick;
-    if (Fortress.placeAt(guardNeed.x, guardNeed.y)) return true;
+    if (this._fortTryPlaceSmart(pick, guardNeed.x, guardNeed.y, 5)) return true;
     for (const sx of slots){
       Fortress.selected = pick;
-      if (Fortress.placeAt(sx, guardNeed.y)) return true;
+      if (this._fortTryPlaceSmart(pick, sx, guardNeed.y, 3)) return true;
     }
     return false;
   },
 
   _autoFortressBuild(dt){
     if (Game.mode!=='fortress' || Fortress.phase!=='fortify' || !Fortress.canBuild()) return;
+    if (this._fortPhaseSeen !== Fortress.phase){
+      this._fortPhaseSeen = Fortress.phase;
+      if (Fortress.phase==='fortify') this._fortSellsThisFortify = 0;
+    }
     this._fortBuildCd = Math.max(0, (this._fortBuildCd||0) - dt);
     if (this._fortBuildCd > 0) return;
 
@@ -13567,7 +14051,7 @@ const AutoPilot = {
       const cfg = Fortress.catalog.repairplayer;
       if (cfg && Fortress.stock >= cfg.cost){
         Fortress.selected = 'repairplayer';
-        if (Fortress.placeAt(clamp(Player.x, 44, W-44), clamp(Player.y + 34, H*0.52, H-72))){
+        if (this._fortTryPlaceSmart('mine', clamp(Player.x, 44, W-44), clamp(Player.y + 34, H*0.52, H-72), 4)){
           this._fortBuildCd = 0.12;
           return;
         }
@@ -13578,7 +14062,7 @@ const AutoPilot = {
       const cfg = Fortress.catalog.repair;
       if (cfg && Fortress.stock >= cfg.cost){
         Fortress.selected = 'repair';
-        if (Fortress.placeAt(W*0.5, H-112)){
+        if (this._fortTryPlaceSmart('repairplayer', W*0.5, H-112, 5)){
           this._fortBuildCd = 0.12;
           return;
         }
@@ -13604,7 +14088,7 @@ const AutoPilot = {
       const pick = (Fortress.stock >= (mid?.cost||999)) ? 'wall' : ((Fortress.stock >= (low?.cost||999)) ? 'barricade' : null);
       if (pick){
         Fortress.selected = pick;
-        if (Fortress.placeAt(slots[openIdx], baseY+6)){
+        if (this._fortTryPlaceSmart(pick, slots[openIdx], baseY+6, 4)){
           this._fortBuildCd = 0.12;
           return;
         }
@@ -13658,7 +14142,7 @@ const AutoPilot = {
       const p = this._fortPreferredPlacement(step.type, have, rows, slots);
       const x = p.x;
       const y = p.y;
-      if (Fortress.placeAt(x, y)){
+      if (this._fortTryPlaceSmart(step.type, x, y, 5)){
         this._fortBuildCd = 0.18;
         return;
       }
@@ -13682,7 +14166,7 @@ const AutoPilot = {
       const firstAtk = (Fortress.stock >= (Fortress.catalog.turret?.cost||999)) ? 'turret' : ((Fortress.stock >= (Fortress.catalog.gatling?.cost||999)) ? 'gatling' : null);
       if (firstAtk){
         Fortress.selected = firstAtk;
-        if (Fortress.placeAt(W*0.5, rows[1])){ this._fortBuildCd = 0.2; return; }
+        if (this._fortTryPlaceSmart(firstAtk, W*0.5, rows[1], 6)){ this._fortBuildCd = 0.2; return; }
       }
     }
 
@@ -13697,7 +14181,7 @@ const AutoPilot = {
         for (let i=0;i<slots.length;i++){
           const x = slots[i] + ((i%2) ? 16 : -16);
           const y = rows[(i + (cfg?.w||0)) % rows.length] + ((i%3)-1)*10;
-          if (Fortress.placeAt(x, y)) return true;
+          if (this._fortTryPlaceSmart(k, x, y, 3)) return true;
         }
       }
       return false;
@@ -14015,7 +14499,7 @@ const AutoPilot = {
       cand.push({x: W*0.50, y: H*0.80});
       cand.push({x: W*0.32, y: H*0.82});
       cand.push({x: W*0.68, y: H*0.82});
-      if (Game.mode==='fortress'){
+      if (Game.mode==='fortress' || Game.mode==='lab'){
         cand.push({x:W*0.50, y:H*0.72});
         cand.push({x:W*0.40, y:H*0.74});
         cand.push({x:W*0.60, y:H*0.74});
@@ -14364,7 +14848,7 @@ const AutoPilot = {
       if (dy < -40) s *= 0.75;
       if (dy > 260) s *= 1.35;
       if (e.type === 'BOSS') s *= 0.65;
-      if (Game.mode==='fortress'){
+      if (Game.mode==='fortress' || Game.mode==='lab'){
         const toFlag = Math.abs(e.x - W*0.5) * 0.45 + Math.abs((H-62) - e.y) * 1.35;
         s = s * 0.72 + toFlag * 0.48;
       }
@@ -14510,7 +14994,7 @@ spawnerCd: Spawner.cd,
       bulletsP: bulletsP.map(b => ({...b, mods: b.mods ? [...b.mods] : []})),
       bulletsE: bulletsE.map(b => ({...b, mods: b.mods ? [...b.mods] : []})),
       supplies: supplies.map(s => ({...s})),
-      fortress: (Game.mode==='fortress') ? {
+      fortress: ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel')) ? {
         phase: Fortress.phase, timer: Fortress.timer, stock: Fortress.stock,
         flagHp: Fortress.flagHp, flagMaxHp: Fortress.flagMaxHp,
         selected: Fortress.selected, spawnCd: Fortress.spawnCd, spawnLeft: Fortress.spawnLeft,
@@ -14669,7 +15153,7 @@ Game.bossAlive = frame.game.bossAlive;
 
     particles.length = 0; shockwaves.length = 0; beams.length = 0; texts.length = 0;
 
-if (frame.fortress && Game.mode==='fortress') {
+if (frame.fortress && (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel')) {
   Fortress.phase = frame.fortress.phase;
   Fortress.timer = frame.fortress.timer;
   Fortress.stock = frame.fortress.stock;
@@ -14825,10 +15309,12 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
   }
 
   function drawBullets(arr){
-    if (PERF.additive) ctx.globalCompositeOperation='lighter';
+    if (FXState.additiveOn) ctx.globalCompositeOperation='lighter';
+    const tier = PERF.dynamicFX ? FXState.tier : 0;
     const minX = -50, maxX = W+50, minY = -50, maxY = H+50;
     for(const b of arr){
       if (!b.alive) continue;
+      if (tier >= 3 && b.team==='E' && b.r <= 2.4 && ((PERF.fxFrameMod + ((b.id||0)&1)) & 1)) continue;
       if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
       drawBulletVisual(b);
     }
@@ -14867,7 +15353,7 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
 
 
   function drawFortress(){
-    if (Game.mode!=='fortress') return;
+    if (Game.mode!=='fortress' && Game.mode!=='lab' && Game.mode!=='fortress_duel') return;
 
     const fy = H - 44;
     ctx.save();
@@ -14876,31 +15362,39 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
     ctx.fillRect(W*0.5-38, fy-16, 76, 22);
     ctx.strokeStyle = 'rgba(255,80,110,0.8)';
     ctx.strokeRect(W*0.5-38, fy-16, 76, 22);
-    ctx.fillStyle = '#ff5577';
-    ctx.fillRect(W*0.5-2, fy-34, 4, 18);
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.moveTo(W*0.5+2, fy-34);
-    ctx.lineTo(W*0.5+26, fy-27);
-    ctx.lineTo(W*0.5+2, fy-20);
-    ctx.closePath();
-    ctx.fill();
+    if (Game.mode!=='lab' && Game.mode!=='fortress_duel'){
+      ctx.fillStyle = '#ff5577';
+      ctx.fillRect(W*0.5-2, fy-34, 4, 18);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(W*0.5+2, fy-34);
+      ctx.lineTo(W*0.5+26, fy-27);
+      ctx.lineTo(W*0.5+2, fy-20);
+      ctx.closePath();
+      ctx.fill();
+    } else if (Game.mode==='fortress_duel') {
+      ctx.fillStyle = 'rgba(160,220,255,0.95)';
+      ctx.fillRect(W*0.5-8, fy-30, 16, 10);
+    }
 
-    const flagPct = clamp(Fortress.flagHp / Math.max(1, Fortress.flagMaxHp), 0, 1);
     const barW = 170, barH = 8, barX = W*0.5 - barW*0.5, barY = fy - 54;
-    ctx.globalAlpha = 0.96;
-    ctx.fillStyle = 'rgba(0,0,0,0.66)';
-    ctx.fillRect(barX, barY, barW, barH);
-    ctx.fillStyle = '#ff5b7f';
-    ctx.fillRect(barX, barY, barW*flagPct, barH);
-    ctx.strokeStyle = 'rgba(255,255,255,0.90)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX, barY, barW, barH);
+    if (Game.mode!=='lab' && Game.mode!=='fortress_duel'){
+      const flagPct = clamp(Fortress.flagHp / Math.max(1, Fortress.flagMaxHp), 0, 1);
+      ctx.globalAlpha = 0.96;
+      ctx.fillStyle = 'rgba(0,0,0,0.66)';
+      ctx.fillRect(barX, barY, barW, barH);
+      ctx.fillStyle = '#ff5b7f';
+      ctx.fillRect(barX, barY, barW*flagPct, barH);
+      ctx.strokeStyle = 'rgba(255,255,255,0.90)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(barX, barY, barW, barH);
+    }
     ctx.font='700 10px "Consolas", monospace';
     ctx.textAlign='center';
     ctx.textBaseline='bottom';
     ctx.fillStyle='#fff';
-    ctx.fillText(`FLAG ${Math.ceil(Fortress.flagHp)}/${Math.ceil(Fortress.flagMaxHp)}`, W*0.5, barY-2);
+    if (Game.mode==='lab') ctx.fillText('LAB 无旗帜（仅工事实验）', W*0.5, barY-2);
+    else ctx.fillText(`FLAG ${Math.ceil(Fortress.flagHp)}/${Math.ceil(Fortress.flagMaxHp)}`, W*0.5, barY-2);
 
     for (const fs of Fortress.structures){
       const hpPct = clamp(fs.hp / Math.max(1, fs.maxHp), 0, 1);
@@ -14982,13 +15476,15 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
 
   function drawParticles(){
     if (!particles.length) return;
-    if (PERF.additive) ctx.globalCompositeOperation='lighter';
+    if (FXState.additiveOn) ctx.globalCompositeOperation='lighter';
     
     // 粒子只需要较小的 buffer
     const minX = -20, maxX = W+20, minY = -20, maxY = H+20;
 
+    const tier = PERF.dynamicFX ? FXState.tier : 0;
     for(const p of particles){
       if (!p.alive) continue;
+      if (tier >= 3 && (PERF.fxFrameMod % 3) !== 0 && (p.scale||0) < 0.5) continue;
       
       // 1. 剔除屏幕外粒子
       if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
@@ -15257,6 +15753,7 @@ document.getElementById('btnAutoPilot')?.addEventListener('click', () => {
 });
 
 function render(dt) {
+  updateFXState();
   Camera.update(dt);
 
   // 先重置回设备像素坐标系，清空整个 Canvas
@@ -15273,7 +15770,7 @@ function render(dt) {
   
   // 绘制星空 (产生视差，不跟随 Zoom 或稍微跟随)
   ctx.save();
-  if (PERF.additive) ctx.globalCompositeOperation = 'lighter';
+  if (FXState.additiveOn) ctx.globalCompositeOperation = 'lighter';
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
   for (const s of stars) {
     s.y += (s.v * dt) / H * 400; // 简单的下落
@@ -15314,6 +15811,19 @@ function render(dt) {
 
   // --- 步骤 3: 绘制世界 (World Space) ---
   drawGrid(dt);
+
+  if (Game.mode==='fortress_duel'){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,60,80,0.9)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10,7]);
+    ctx.beginPath();
+    ctx.moveTo(0, H*0.5);
+    ctx.lineTo(W, H*0.5);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
 
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
@@ -15376,6 +15886,7 @@ function render(dt) {
   // ================= Flow / UI =================
   function resetGame(){
     bulletsP.length=bulletsE.length=enemies.length=particles.length=supplies.length=texts.length=shockwaves.length=beams.length=0;
+    FXState.tier = 0; FXState.glowBudget = 1.0; FXState.additiveOn = PERF.additive;
 
     Player.x=W*0.5; Player.y=H*0.78;
     Input.px=Player.x; Input.py=Player.y; Input.tx=Player.x; Input.ty=Player.y;
@@ -15680,7 +16191,7 @@ applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
     forge: forge ? JSON.parse(JSON.stringify(forge)) : null,
     net,
   };
-  if (mode === 'survival' || mode === 'fortress') {
+  if (mode === 'survival' || mode === 'fortress' || mode === 'fortress_duel') {
     const diffVal = document.getElementById('inpDiffMode')?.value || 1;
     DiffConfig.apply(diffVal);
   } else {
@@ -15805,7 +16316,25 @@ setupPlayerEmittersFromBuild(b);
     spawnShockwave(W*0.5, 92, C.Y, 240, 0.55);
   }
 
-  if (mode === 'workshop'){
+  
+if (mode === 'fortress_duel'){
+    Game.wave = 1;
+    Game.time = 0;
+    Game.score = 0;
+    enemies.length = 0;
+    Fortress.start();
+    Fortress.phase = 'fortify';
+    Fortress.duelTimer = 35;
+    Fortress.stock = 38;
+    Fortress.flagMaxHp = 620;
+    Fortress.flagHp = Fortress.flagMaxHp;
+    Fortress.updatePanel();
+
+    textPop(W*0.5, 92, 'FORTRESS DUEL PREP', '#ff8ea2');
+    spawnShockwave(W*0.5, 92, '#ff8ea2', 220, 0.52);
+  }
+
+if (mode === 'workshop'){
     // online workshop duel: no AI rival; remote player acts as opponent
     Game.wave = 1;
     Game.time = 0;
@@ -15821,11 +16350,16 @@ if (mode === 'lab'){
     Game.time = 0;
     Game.score = 0;
     enemies.length = 0;
-    // 优先使用传入的 forge 对象，如果没有则尝试从本地存储读取（兜底）
-    const targetForge = forge || JSON.parse(localStorage.getItem(LS_FORGE) || 'null');
-    if (targetForge) spawnForgeEnemy(targetForge);
 
-    textPop(W*0.5, 92, 'LAB MODE', C.P2);
+    Fortress.start();
+    Fortress.stock = 999999;
+    Fortress.phase = 'fortify';
+    Fortress.labLockedAssault = false;
+    Fortress.labForgeSpawned = false;
+    Fortress.labForgeSpec = forge || JSON.parse(localStorage.getItem(LS_FORGE) || 'null');
+    Fortress.updatePanel();
+
+    textPop(W*0.5, 92, 'LAB FORTRESS PREP', C.P2);
     spawnShockwave(W*0.5, 92, C.P2, 240, 0.55);
   }
 
@@ -15873,6 +16407,7 @@ canvas.style.pointerEvents = 'auto';
   ui.menu.style.display='none';
   ui.over.classList.remove('show');
 canvas.style.pointerEvents = 'auto';
+  if (mode==='fortress' || mode==='lab' || mode==='fortress_duel') Fortress.updatePanel();
 
   if (audioOn){
     ensureAudio();
@@ -18059,6 +18594,9 @@ function initMenuUI(){
   initForgeExtendedUI();
   buildForgeMoveChips()
   wireForgeExtraEmitterButtons();
+  bindAccordionsAnimated();
+
+  document.querySelectorAll('#pageWorkshop details.acc, #pageForge details.acc').forEach(d=>{ d.open = false; });
 
   // save 按钮（只负责存档，不再负责 core 绑定）
   document.getElementById('btnSaveBuilds')?.addEventListener('click', ()=>{
@@ -18427,6 +18965,42 @@ function toggleCompactHUD(e){
 }
 ui.btnCompactUI?.addEventListener('click', toggleCompactHUD, {passive:false});
 
+
+function bindAccordionsAnimated(rootSel='#pageWorkshop, #pageForge'){
+  const roots = document.querySelectorAll(rootSel);
+  roots.forEach(root=>{
+    root.querySelectorAll('details.acc').forEach(d=>{
+      const sum = d.querySelector(':scope > summary');
+      const body = d.querySelector(':scope > .acc-body');
+      if (!sum || !body || d.dataset.accBound==='1') return;
+      d.dataset.accBound='1';
+      sum.addEventListener('click', (ev)=>{
+        ev.preventDefault();
+        const opening = !d.open;
+        if (opening){
+          d.open = true;
+          body.style.maxHeight = '0px';
+          body.style.opacity = '0';
+          body.style.transform = 'translateY(-4px)';
+          requestAnimationFrame(()=>{
+            body.style.maxHeight = body.scrollHeight + 'px';
+            body.style.opacity = '1';
+            body.style.transform = 'translateY(0)';
+          });
+        } else {
+          body.style.maxHeight = body.scrollHeight + 'px';
+          requestAnimationFrame(()=>{
+            body.style.maxHeight = '0px';
+            body.style.opacity = '0';
+            body.style.transform = 'translateY(-4px)';
+          });
+          setTimeout(()=>{ d.open = false; }, 260);
+        }
+      });
+    });
+  });
+}
+
 document.querySelectorAll('#fortressBuildScroller [data-item]').forEach((el)=>{
   el.addEventListener('click', ()=>Fortress.select(el.dataset.item));
 });
@@ -18436,7 +19010,7 @@ ui.btnFortStartWave?.addEventListener('click', ()=>Fortress.beginAssault());
 ui.btnFortRepairFlag?.addEventListener('click', ()=>Fortress.repairFlag(6, 180));
 
 document.addEventListener('pointerdown', (e)=>{
-  if (Game.mode!=='fortress' || !Fortress.preview) return;
+  if ((Game.mode!=='fortress' && Game.mode!=='lab' && Game.mode!=='fortress_duel') || !Fortress.preview) return;
   if (e.target === canvas) return;
   Fortress.clearPreview();
 }, {passive:true, capture:true});
