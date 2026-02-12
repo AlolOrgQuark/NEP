@@ -1657,6 +1657,19 @@ input[type="checkbox"] {
 </details>
 
           <details class="acc" open>
+            <summary>EXTRA EMITTERS <span class="muted">UNLIMITED</span></summary>
+            <div class="acc-body">
+              <div class="menu-actions" style="justify-content:flex-start;gap:6px">
+                <button id="btnForgeExtraAdd" class="mini-btn">ADD BASE</button>
+                <button id="btnForgeExtraAddFrom1" class="mini-btn">COPY SLOT1</button>
+                <button id="btnForgeExtraAddFrom2" class="mini-btn">COPY SLOT2</button>
+              </div>
+              <div class="muted" style="margin:6px 0 8px">每个条目支持完整 emitter/wrapper JSON，可无限追加、修改、删除。</div>
+              <div id="forgeExtraEmittersList" style="display:flex;flex-direction:column;gap:8px"></div>
+            </div>
+          </details>
+
+          <details class="acc" open>
             <summary>FORGE MODS / TRAITS</summary>
             <div class="acc-body">
               <div class="field"><label>BULLET AFFIX (BOTH EMITTERS)</label>
@@ -16510,6 +16523,147 @@ function initForgeExtendedUI() {
 }
 
 
+function ensureForgeExtraEmitters(){
+  if (!Array.isArray(ForgeState.extraEmitters)) ForgeState.extraEmitters = [];
+}
+
+function summarizeSerializedEmitter(node){
+  if (!node) return 'EMPTY';
+  const wrappers = [];
+  let cur = node;
+  while (cur && cur.isWrapper){
+    wrappers.push(cur.wrapperType || '?');
+    cur = cur.inner || cur.innerA || cur.innerB;
+  }
+  const baseType = cur?.type || 'AIM';
+  const mods = Array.isArray(cur?.mods) ? cur.mods : [];
+  const modTxt = mods.length ? ` mods:${mods.join(',')}` : '';
+  const wrapTxt = wrappers.length ? ` [${wrappers.join(' -> ')}]` : '';
+  return `${baseType}${wrapTxt}${modTxt}`;
+}
+
+function normalizeSerializedEmitter(node){
+  if (!node) return null;
+  if (node.type && !node.isWrapper){
+    return {
+      isWrapper:false,
+      type: node.type || 'AIM',
+      mods: Array.isArray(node.mods) ? node.mods.slice(0, 12) : [],
+      speed: Number.isFinite(+node.speed) ? +node.speed : 220,
+      cd: Number.isFinite(+node.cd) ? +node.cd : 1.2
+    };
+  }
+  if (node.isWrapper || node.wrapperType){
+    const out = {
+      isWrapper:true,
+      wrapperType: node.wrapperType || node.type || '',
+      compCfg: (node.compCfg && typeof node.compCfg==='object') ? deepClone(node.compCfg) : {}
+    };
+    if (out.wrapperType === 'INTERLEAVE'){
+      out.innerA = normalizeSerializedEmitter(node.innerA || node.inner);
+      out.innerB = normalizeSerializedEmitter(node.innerB || node.inner);
+    } else {
+      out.inner = normalizeSerializedEmitter(node.inner || node.innerA || node.innerB);
+    }
+    return out;
+  }
+  return null;
+}
+
+function getSerializedFromSlot(slotNum){
+  const spec = buildEmitterSpecFromSlot(slotNum);
+  if (!spec) return null;
+  if (spec.type === '_COMPOSITE') return serializeEmitterRecursive(spec._compositeInstance);
+  return normalizeSerializedEmitter({
+    isWrapper:false,
+    type: spec.type || 'AIM',
+    mods: Array.isArray(spec.cfg?.mods) ? spec.cfg.mods : [],
+    speed: spec.cfg?.speed ?? 220,
+    cd: spec.cfg?.baseCd ?? 1.2
+  });
+}
+
+function renderForgeExtraEmittersUI(){
+  ensureForgeExtraEmitters();
+  const root = document.getElementById('forgeExtraEmittersList');
+  if (!root) return;
+  root.innerHTML = '';
+
+  if (!ForgeState.extraEmitters.length){
+    const empty = document.createElement('div');
+    empty.className = 'muted';
+    empty.textContent = '暂无额外 emitter。可无限添加。';
+    root.appendChild(empty);
+    return;
+  }
+
+  ForgeState.extraEmitters.forEach((item, idx)=>{
+    const card = document.createElement('div');
+    card.style.cssText = 'border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.22);padding:8px';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px';
+    title.innerHTML = `<div class="mono" style="font-size:12px">EXTRA #${idx+1} · ${summarizeSerializedEmitter(item)}</div>`;
+
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:6px';
+    const btnSave = document.createElement('button');
+    btnSave.className = 'mini-btn';
+    btnSave.textContent = 'APPLY';
+    const btnDel = document.createElement('button');
+    btnDel.className = 'mini-btn';
+    btnDel.textContent = 'REMOVE';
+    btns.appendChild(btnSave);
+    btns.appendChild(btnDel);
+    title.appendChild(btns);
+
+    const ta = document.createElement('textarea');
+    ta.style.cssText = 'width:100%;min-height:120px;background:rgba(0,0,0,0.4);color:#9deeff;border:1px solid rgba(157,238,255,0.35);font-family:monospace;font-size:11px';
+    ta.value = JSON.stringify(item, null, 2);
+
+    btnSave.addEventListener('click', ()=>{
+      try{
+        const parsed = JSON.parse(ta.value || '{}');
+        const norm = normalizeSerializedEmitter(parsed);
+        if (!norm) throw new Error('invalid emitter json');
+        ForgeState.extraEmitters[idx] = norm;
+        saveForge();
+        syncForgeUIFromState();
+        textPop(W*0.5, 90, `EXTRA #${idx+1} UPDATED`, C.P1);
+      }catch(err){
+        alert('Emitter JSON 无效：' + (err?.message || err));
+      }
+    });
+
+    btnDel.addEventListener('click', ()=>{
+      ForgeState.extraEmitters.splice(idx,1);
+      saveForge();
+      syncForgeUIFromState();
+    });
+
+    card.appendChild(title);
+    card.appendChild(ta);
+    root.appendChild(card);
+  });
+}
+
+function wireForgeExtraEmitterButtons(){
+  const addBase = document.getElementById('btnForgeExtraAdd');
+  const add1 = document.getElementById('btnForgeExtraAddFrom1');
+  const add2 = document.getElementById('btnForgeExtraAddFrom2');
+  const push = (data)=>{
+    ensureForgeExtraEmitters();
+    const norm = normalizeSerializedEmitter(data || {isWrapper:false,type:'AIM',mods:[],speed:220,cd:1.2});
+    if (!norm) return;
+    ForgeState.extraEmitters.push(norm);
+    saveForge();
+    syncForgeUIFromState();
+  };
+  addBase?.addEventListener('click', ()=>push({isWrapper:false,type:'AIM',mods:[...(ForgeState.mods||[])],speed:220,cd:1.2}));
+  add1?.addEventListener('click', ()=>push(getSerializedFromSlot(1)));
+  add2?.addEventListener('click', ()=>push(getSerializedFromSlot(2)));
+}
+
 function restoreWrapperUI(slot, layer) {
   const wrapperName = ForgeState[`slot${slot}`]?.[`layer${layer}`] || '';
   const sel = document.getElementById(`forgeEm${slot}Comp${layer}`);
@@ -16590,6 +16744,7 @@ const moveSet = new Set(ForgeState.moveKeys);
 document.querySelectorAll('#forgeMoveChips .pick-chip').forEach(btn => {
   btn.classList.toggle('on', moveSet.has(btn.dataset.key));
 });
+  renderForgeExtraEmittersUI();
   refreshForgePreview();
 }
 
@@ -17243,6 +17398,7 @@ function initMenuUI(){
   hookForgeInputs();
   initForgeExtendedUI();
   buildForgeMoveChips()
+  wireForgeExtraEmitterButtons();
 
   // save 按钮（只负责存档，不再负责 core 绑定）
   document.getElementById('btnSaveBuilds')?.addEventListener('click', ()=>{
@@ -17255,9 +17411,23 @@ function initMenuUI(){
   document.getElementById('btnCloseIO')?.addEventListener('click', closeIO);
 
   document.getElementById('btnExportBuilds')?.addEventListener('click', ()=>setIOText(exportBuildsJSON()));
-  document.getElementById('btnImportBuilds')?.addEventListener('click', ()=>{ importBuildsJSON(getIOText()); });
+  const importIOAuto = (txt)=>{
+    let obj = null;
+    try{ obj = JSON.parse(txt||'{}'); }catch(_){ }
+    const t = obj?.type || '';
+    if (t === 'forge' || obj?.forge || obj?.slot1 || obj?.emitters){ importForgeJSON(txt); return 'forge'; }
+    if (t === 'builds' || obj?.builds){ importBuildsJSON(txt); return 'builds'; }
+    importForgeJSON(txt);
+    return 'forge';
+  };
+
+  document.getElementById('btnImportBuilds')?.addEventListener('click', ()=>{
+    try{ importIOAuto(getIOText()); }catch(err){ alert(err?.message || err); }
+  });
   document.getElementById('btnExportForge')?.addEventListener('click', ()=>setIOText(exportForgeJSON()));
-  document.getElementById('btnImportForge')?.addEventListener('click', ()=>{ importForgeJSON(getIOText()); });
+  document.getElementById('btnImportForge')?.addEventListener('click', ()=>{
+    try{ importIOAuto(getIOText()); }catch(err){ alert(err?.message || err); }
+  });
 
   document.getElementById('btnCopyIO')?.addEventListener('click', async ()=>{
     try{ await navigator.clipboard.writeText(getIOText()); textPop(W*0.5, 86, 'COPIED', C.P1); }catch(e){}
