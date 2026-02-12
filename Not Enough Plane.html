@@ -13388,15 +13388,6 @@ const AutoPilot = {
     const need = cfg.cost - Fortress.stock;
     if (need <= 0) return false;
 
-    // 早期严禁卖建筑，避免“第一轮建了拆、拆了建”
-    if ((Game.wave||1) <= 3) return false;
-    if ((Game.time||0) - (this._fortLastSellT||-999) < 2.6) return false;
-
-    const minKeep = { wall:2, heavywall:1, turret:1, repairplayer:1 };
-    const countByType = {};
-    for (const st of Fortress.structures) if (st.hp>0) countByType[st.type]=(countByType[st.type]||0)+1;
-
-    const targetPower = this._fortItemPower(itemType);
     const sacSet = new Set(preferredSacrifice);
     const candidates = Fortress.structures
       .filter(st => st.hp>0)
