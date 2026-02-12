@@ -731,7 +731,25 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   align-items:center;
 }
 .acc > summary::-webkit-details-marker{ display:none; }
+.acc > summary::after{
+  content:'▸';
+  opacity:.8;
+  transition:transform .22s ease;
+}
+.acc[open] > summary::after{ transform:rotate(90deg); }
 .acc .acc-body{
+  max-height:0;
+  overflow:hidden;
+  opacity:0;
+  transform:translateY(-4px);
+  padding:0 12px;
+  border-top:1px solid rgba(255,255,255,0.00);
+  transition:max-height .28s ease, opacity .24s ease, transform .24s ease, padding .24s ease, border-color .24s ease;
+}
+.acc[open] .acc-body{
+  max-height:960px;
+  opacity:1;
+  transform:translateY(0);
   padding:10px 12px 12px;
   border-top:1px solid rgba(255,255,255,0.10);
 }
@@ -1404,7 +1422,7 @@ input[type="checkbox"] {
             </div>
           </div>
 
-          <details class="acc" open>
+          <details class="acc">
             <summary>CORE <span class="muted">HP / FIRE / DMG / CRIT</span></summary>
             <div class="acc-body">
               <div class="field"><label>NAME</label><input id="ws_name"></div>
@@ -1472,7 +1490,7 @@ input[type="checkbox"] {
             </div>
           </details>
 
-          <details class="acc" open>
+          <details class="acc">
             <summary>AFFIX <span class="muted">CHIPS</span></summary>
             <div class="acc-body">
               <div class="field"><label>SEARCH</label>
@@ -1482,7 +1500,7 @@ input[type="checkbox"] {
               <div class="muted" style="margin-top:8px">建议保持 0~4 个词条；分裂/烟花类会显著提高弹幕量。</div>
             </div>
           </details>
-          <details class="acc" open>
+          <details class="acc">
   <summary>PLAYER EMITTERS <span class="muted">START LOADOUT · 0~3</span></summary>
   <div class="acc-body">
     <div class="field">
@@ -1509,7 +1527,7 @@ input[type="checkbox"] {
             <div class="menu-intro">同样低密度：基础参数用 select/input，词条/traits 用芯片选择。</div>
           </div>
 
-          <details class="acc" open>
+          <details class="acc">
             <summary>FORGE CORE</summary>
             <div class="acc-body">
               <div class="field"><label>IS BOSS</label>
@@ -1551,7 +1569,7 @@ input[type="checkbox"] {
             </div>
           </details>
           
-          <details class="acc" open>
+          <details class="acc">
   <summary>APPEARANCE <span class="muted">BODY PARAMS</span></summary>
   <div class="acc-body">
 
@@ -1610,7 +1628,7 @@ input[type="checkbox"] {
   </div>
 </details>
 
-<details class="acc" open>
+<details class="acc">
   <summary>WEAPONS</summary>
   <div class="acc-body">
     
@@ -1685,7 +1703,7 @@ input[type="checkbox"] {
   </div>
 </details>
 
-          <details class="acc" open>
+          <details class="acc">
             <summary>EXTRA EMITTERS <span class="muted">UNLIMITED</span></summary>
             <div class="acc-body">
               <div class="menu-actions" style="justify-content:flex-start;gap:6px">
@@ -1699,7 +1717,7 @@ input[type="checkbox"] {
             </div>
           </details>
 
-          <details class="acc" open>
+          <details class="acc">
             <summary>FORGE MODS / TRAITS</summary>
             <div class="acc-body">
               <div class="field"><label>BULLET AFFIX (BOTH EMITTERS)</label>
@@ -4738,6 +4756,7 @@ ORBIT_SELF: {
       onSpawn(b, ctx){
         if (!ctx || !ctx.owner || !ctx.owner.alive) return;
         b._orbOwner = ctx.owner;
+        b._orbReleased = false;
         // 初始角度
         b._orbA = Math.atan2(b.y - ctx.owner.y, b.x - ctx.owner.x);
         b._orbR = 40;
@@ -4751,8 +4770,9 @@ ORBIT_SELF: {
         b.life = 99; 
       },
       onUpdate(b, dt, ctx){
-        // 1. 如果子弹已经获得速度（被射出了），则不再执行环绕逻辑，恢复物理运动
-        if (Math.abs(b.vx) > 0.1 || Math.abs(b.vy) > 0.1) {
+        // 1. 如果子弹已经射出（兼容 WIGGLE/ACCEL 等会改写速度的词条），不再执行环绕逻辑
+        if (b._orbReleased || Math.abs(b.vx) > 0.1 || Math.abs(b.vy) > 0.1) {
+            b._orbReleased = true;
             // 恢复生命倒计时，防止射出后无限飞行
             if (b.life > 3.0) b.life = 2.0; 
             return;
@@ -4808,6 +4828,11 @@ ORBIT_SELF: {
           if (ahead > -24 && tangentDot > -0.65) {
             b.vx = dirX * b._orbSp;
             b.vy = dirY * b._orbSp;
+            b._orbReleased = true;
+            if (b.mods?.includes('WIGGLE')){
+              b._baseVx = b.vx;
+              b._baseVy = b.vy;
+            }
             sparks(b.x, b.y, b.spr, 5, 150);
             // 子弹射出，逻辑结束，下一帧交由物理引擎接管
           }
@@ -11199,15 +11224,14 @@ DANCING_BLADES: () => ({
         setTimeout(() => {
           if(!o || !o.alive) return;
           const phase = rand(0, Math.PI*2);
+          // 不同层使用不同颜色
+          const layerCol = idx===0 ? ctx.getColor() : (idx===1 ? ctx.getAltColor() : C.Y);
+          const layerSpr = idx===0 ? (ctx.team==='P'?'glowP':'glowE') : 
+                          idx===1 ? (ctx.team==='P'?'glowP2':'glowE2') : 'glowY';
           
           for(let i=0; i<layer.count; i++){
             const a = phase + (i/layer.count)*Math.PI*2;
             const sp = (ctx.team==='P' ? layer.speed*1.4 : layer.speed);
-            
-            // 不同层使用不同颜色
-            const layerCol = idx===0 ? ctx.getColor() : (idx===1 ? ctx.getAltColor() : C.Y);
-            const layerSpr = idx===0 ? (ctx.team==='P'?'glowP':'glowE') : 
-                            idx===1 ? (ctx.team==='P'?'glowP2':'glowE2') : 'glowY';
             
             spawnBullet(ctx.team, o.x, o.y+yOff,
               Math.cos(a)*sp, Math.sin(a)*sp, {
@@ -13667,6 +13691,50 @@ const AutoPilot = {
     return score[type] || 1.0;
   },
 
+  _fortOverlapRatio(x, y, cfg){
+    if (!cfg) return 0;
+    const l1 = x - cfg.w*0.5, r1 = x + cfg.w*0.5;
+    const t1 = y - cfg.h*0.5, b1 = y + cfg.h*0.5;
+    let worst = 0;
+    for (const st of Fortress.structures){
+      if (!st || st.hp <= 0) continue;
+      const l2 = st.x - st.w*0.5, r2 = st.x + st.w*0.5;
+      const t2 = st.y - st.h*0.5, b2 = st.y + st.h*0.5;
+      const iw = Math.min(r1, r2) - Math.max(l1, l2);
+      const ih = Math.min(b1, b2) - Math.max(t1, t2);
+      if (iw <= 0 || ih <= 0) continue;
+      const inter = iw * ih;
+      const base = Math.min(cfg.w*cfg.h, st.w*st.h);
+      worst = Math.max(worst, inter / Math.max(1, base));
+    }
+    return worst;
+  },
+
+  _fortOverlapThreshold(itemType){
+    const p = this._fortItemPower(itemType);
+    const scoreK = clamp((Game.score - 900) / 3200, 0, 1);
+    return clamp(0.12 + scoreK * 0.28 + (p >= 2.8 ? 0.06 : 0), 0.10, 0.46);
+  },
+
+  _fortTryPlaceSmart(itemType, x, y, tries=4){
+    const cfg = Fortress.catalog[itemType];
+    if (!cfg) return false;
+    const th = this._fortOverlapThreshold(itemType);
+
+    for (let i=0; i<Math.max(1, tries); i++){
+      const ox = (i===0) ? 0 : (i%2 ? 10 : -10) * (1 + ((i/2)|0));
+      const oy = (i===0) ? 0 : (((i%3)-1) * 8);
+      const tx = clamp(x + ox, 30, W-30);
+      const ty = clamp(y + oy, H*0.40, H-70);
+      const over = this._fortOverlapRatio(tx, ty, cfg);
+      if (over > th) continue;
+      Fortress.selected = itemType;
+      if (Fortress.placeAt(tx, ty)) return true;
+    }
+
+    return false;
+  },
+
   _fortPreferredPlacement(type, have, rows, slots){
     const left = slots[Math.max(0, Math.floor(slots.length*0.25)-1)] || slots[1] || W*0.32;
     const right = slots[Math.min(slots.length-1, Math.floor(slots.length*0.75))] || slots[4] || W*0.68;
@@ -13759,10 +13827,10 @@ const AutoPilot = {
     }
 
     Fortress.selected = pick;
-    if (Fortress.placeAt(guardNeed.x, guardNeed.y)) return true;
+    if (this._fortTryPlaceSmart(pick, guardNeed.x, guardNeed.y, 5)) return true;
     for (const sx of slots){
       Fortress.selected = pick;
-      if (Fortress.placeAt(sx, guardNeed.y)) return true;
+      if (this._fortTryPlaceSmart(pick, sx, guardNeed.y, 3)) return true;
     }
     return false;
   },
@@ -13792,7 +13860,7 @@ const AutoPilot = {
       const cfg = Fortress.catalog.repairplayer;
       if (cfg && Fortress.stock >= cfg.cost){
         Fortress.selected = 'repairplayer';
-        if (Fortress.placeAt(clamp(Player.x, 44, W-44), clamp(Player.y + 34, H*0.52, H-72))){
+        if (this._fortTryPlaceSmart('mine', clamp(Player.x, 44, W-44), clamp(Player.y + 34, H*0.52, H-72), 4)){
           this._fortBuildCd = 0.12;
           return;
         }
@@ -13803,7 +13871,7 @@ const AutoPilot = {
       const cfg = Fortress.catalog.repair;
       if (cfg && Fortress.stock >= cfg.cost){
         Fortress.selected = 'repair';
-        if (Fortress.placeAt(W*0.5, H-112)){
+        if (this._fortTryPlaceSmart('repairplayer', W*0.5, H-112, 5)){
           this._fortBuildCd = 0.12;
           return;
         }
@@ -13829,7 +13897,7 @@ const AutoPilot = {
       const pick = (Fortress.stock >= (mid?.cost||999)) ? 'wall' : ((Fortress.stock >= (low?.cost||999)) ? 'barricade' : null);
       if (pick){
         Fortress.selected = pick;
-        if (Fortress.placeAt(slots[openIdx], baseY+6)){
+        if (this._fortTryPlaceSmart(pick, slots[openIdx], baseY+6, 4)){
           this._fortBuildCd = 0.12;
           return;
         }
@@ -13883,7 +13951,7 @@ const AutoPilot = {
       const p = this._fortPreferredPlacement(step.type, have, rows, slots);
       const x = p.x;
       const y = p.y;
-      if (Fortress.placeAt(x, y)){
+      if (this._fortTryPlaceSmart(step.type, x, y, 5)){
         this._fortBuildCd = 0.18;
         return;
       }
@@ -13907,7 +13975,7 @@ const AutoPilot = {
       const firstAtk = (Fortress.stock >= (Fortress.catalog.turret?.cost||999)) ? 'turret' : ((Fortress.stock >= (Fortress.catalog.gatling?.cost||999)) ? 'gatling' : null);
       if (firstAtk){
         Fortress.selected = firstAtk;
-        if (Fortress.placeAt(W*0.5, rows[1])){ this._fortBuildCd = 0.2; return; }
+        if (this._fortTryPlaceSmart(firstAtk, W*0.5, rows[1], 6)){ this._fortBuildCd = 0.2; return; }
       }
     }
 
@@ -13922,7 +13990,7 @@ const AutoPilot = {
         for (let i=0;i<slots.length;i++){
           const x = slots[i] + ((i%2) ? 16 : -16);
           const y = rows[(i + (cfg?.w||0)) % rows.length] + ((i%3)-1)*10;
-          if (Fortress.placeAt(x, y)) return true;
+          if (this._fortTryPlaceSmart(k, x, y, 3)) return true;
         }
       }
       return false;
@@ -18290,6 +18358,8 @@ function initMenuUI(){
   initForgeExtendedUI();
   buildForgeMoveChips()
   wireForgeExtraEmitterButtons();
+
+  document.querySelectorAll('#pageWorkshop details.acc, #pageForge details.acc').forEach(d=>{ d.open = false; });
 
   // save 按钮（只负责存档，不再负责 core 绑定）
   document.getElementById('btnSaveBuilds')?.addEventListener('click', ()=>{
