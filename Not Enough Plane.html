@@ -2710,6 +2710,8 @@ const addShake = (m, t=0.16) => {
     activeDrag:null,
     preview:null,
     previewPointerId:null,
+    squadRoles:new Map(),
+    squadIntelCd:0,
     catalog:{
       barricade:{cost:3,w:46,h:16,hp:220,col:'#b8d28a',type:'barricade'},
       wall:{cost:6,w:78,h:20,hp:520,col:'#7ef9c0',type:'wall'},
@@ -2858,6 +2860,8 @@ const addShake = (m, t=0.16) => {
       this.activeDrag=null;
       this.preview=null;
       this.previewPointerId=null;
+      this.squadRoles.clear();
+      this.squadIntelCd=0;
     },
     start(){
       this.reset();
@@ -3031,10 +3035,63 @@ const addShake = (m, t=0.16) => {
       const forceFlag = corridorOpen && (pressure > 0.62 || siegePower > 1.85);
       return forceFlag ? flagBase : best;
     },
+    _updateSquadIntel(dt){
+      if (Game.mode!=='fortress' || this.phase!=='assault') return;
+      this.squadIntelCd = Math.max(0, (this.squadIntelCd||0) - dt);
+      if (this.squadIntelCd > 0) return;
+      this.squadIntelCd = 0.24;
+
+      const aliveEnemies = enemies.filter(e=>e.alive && e.type!=='BOSS');
+      if (!aliveEnemies.length){
+        this.squadRoles.clear();
+        return;
+      }
+      aliveEnemies.sort((a,b)=>a.x-b.x);
+      const n = aliveEnemies.length;
+      for (let i=0;i<n;i++){
+        const e = aliveEnemies[i];
+        const key = e.spawnId ?? `E-${i}`;
+        let role = 'breaker';
+        if (i===0 || i===n-1) role = 'flank';
+        else if (i >= Math.floor(n*0.3) && i <= Math.ceil(n*0.7)) role = 'core';
+        if (n >= 6 && i%3===0) role = 'support';
+        this.squadRoles.set(key, role);
+      }
+    },
+    _pickRoleTarget(role, x,y,maxD=99999){
+      const alive = this.structures.filter(s=>s.hp>0);
+      const flagBase = {x:W*0.5,y:H-62,type:'flag'};
+      if (!alive.length) return flagBase;
+
+      const byValue = {
+        breaker: new Set(['wall','heavywall','bunker','shield','barricade']),
+        flank: new Set(['sniper','missile','mortar','factory','beacon','repairfield']),
+        support: new Set(['repair','repairplayer','dronepad','pulse','tesla']),
+        core: new Set(['turret','gatling','flame','spinner','ram','taunt'])
+      };
+      const pref = byValue[role] || byValue.core;
+      let best = null;
+      let bestScore = -1e18;
+      for (const fs of alive){
+        const d2 = dist2(x,y,fs.x,fs.y);
+        if (d2 > maxD*maxD) continue;
+        const distW = 1 / (1 + Math.sqrt(d2) * 0.010);
+        const hpW = 1 + (1 - clamp(fs.hp / Math.max(1, fs.maxHp||1),0,1))*1.3;
+        const prefW = pref.has(fs.type) ? 1.7 : 0.95;
+        const laneW = (Math.abs(fs.x-W*0.5) < 170) ? 1.25 : 1.0;
+        const score = distW * hpW * prefW * laneW;
+        if (score > bestScore){ bestScore = score; best = fs; }
+      }
+      if (best) return best;
+      return this.pickStrategicTarget(x,y,maxD);
+    },
     getEnemyTarget(x,y,maxD=99999){
       if (Game.mode==='fortress'){
         const taunt = this.findTauntTarget(x,y,maxD);
         if (taunt) return taunt;
+        const near = enemies.find(e=>e.alive && e.type!=='BOSS' && dist2(e.x,e.y,x,y)<42*42);
+        const role = near ? this.squadRoles.get(near.spawnId ?? '') : null;
+        if (role) return this._pickRoleTarget(role, x, y, maxD);
         return this.pickStrategicTarget(x,y,maxD);
       }
       return Player.alive ? Player : null;
@@ -3133,6 +3190,7 @@ const addShake = (m, t=0.16) => {
     update(dt){
       if (Game.mode!=='fortress') return;
       if (this.phase==='assault'){
+        this._updateSquadIntel(dt);
         const needBoss = (Game.wave>0 && Game.wave%5===0 && !this.bossSpawned);
         if (this.spawnLeft<=0 && !Game.bossAlive && !needBoss){
           let aliveCount = 0;
@@ -9830,11 +9888,17 @@ if (Game.mode==='fortress'){
     // much tankier early; also scales with wave
     const hp = Math.round((2200 + d*260) * (1 + w*0.06) * (w<8?1.25:1.0));
     const e = baseEnemy('BOSS', 56, hp, 2200);
-    e.baseCol = C.E2;
-    e.tint = chance(0.45) ? C.E2 : C.Y;
-    e.body = genEnemyBody((w*99991) ^ 0xA5A5A5A5);
 
-e.x = W * 0.5; e.y = -180; e.vy = 46;
+    // Boss 造型/颜色强随机：避免首个 Boss 固定红色月牙
+    const bossPalette = [C.E1, C.E2, C.E3, C.E4, C.E5, C.E6, C.E7, C.Y, '#ff9b72', '#9dd7ff'];
+    const col = bossPalette[randi(0, bossPalette.length-1)];
+    e.baseCol = col;
+    e.tint = chance(0.7) ? col : bossPalette[randi(0, bossPalette.length-1)];
+    e.bodySeed = ((Game.spawnSeq||0) * 2654435761 + randi(0, 0x7fffffff) + ((w*1315423911)>>>0)) >>> 0;
+    e.body = genEnemyBody(e.bodySeed);
+    e._protoBodySeed = e.bodySeed;
+
+    e.x = W * 0.5; e.y = -180; e.vy = 46;
     e.phase = 0;
     e.state = 'enter';
 
@@ -9843,14 +9907,36 @@ e.x = W * 0.5; e.y = -180; e.vy = 46;
     // boss gets a proto-like bullet mods pack
     e.waveBulletMods = rollAffixes({wave: Math.max(10,w), maxCount: (w<12?2:4)});
 
-    // emitters: mix
-    e.emitters = [
-      EmitterCatalog.FAN({baseCd: lerp(1.45, 0.90, hf), speed: 240 + d*8, spr:'glowE2', col:C.E2, mods: mergeMods(e.waveBulletMods, ['TRAIL'])}),
-      EmitterCatalog.SPIRAL({baseCd: lerp(0.72, 0.30, hf), speed: 210 + d*8, spr:'glowE3', col:C.E3, mods: mergeMods(e.waveBulletMods, ['SPIN'])}),
+    // emitters: profile-based mix，避免固定模板
+    const bossProfiles = [
+      ['FAN','SPIRAL','RING'],
+      ['SHOTGUN','CROSS','FLOWER'],
+      ['EMPYREAN_LANCE','CELESTIAL_CORONA','SPIRAL'],
+      ['DRAGON_BREATH','NOVA_PULSE','RING'],
+      ['FAN','LASER','MINE'],
     ];
-    if (w>=9) e.emitters.push(EmitterCatalog.RING({baseCd: lerp(2.8, 1.6, hf), speed: 185 + d*7, spr:'glowE2', col:C.E2, mods: mergeMods(e.waveBulletMods, ['WAVE'])}));
-    if (w>=11) e.emitters.push(EmitterCatalog.MINE({baseCd: lerp(3.2, 2.0, hf), spr:'glowE3', col:C.E3, mods: mergeMods(e.waveBulletMods, ['MINE'])}));
-    if (w>=13) e.emitters.push(EmitterCatalog.LASER({baseCd: lerp(3.6, 2.2, hf)}));
+    const profile = bossProfiles[randi(0, bossProfiles.length-1)];
+    const mkBossEm = (type)=>{
+      const cfg = {
+        baseCd: lerp(2.2, 0.95, hf),
+        speed: 210 + d*8,
+        col: e.tint || e.baseCol,
+        spr: 'glowE2',
+        mods: mergeMods(e.waveBulletMods, ['TRAIL'])
+      };
+      if (type==='SPIRAL') cfg.mods = mergeMods(e.waveBulletMods, ['SPIN']);
+      if (type==='RING') cfg.mods = mergeMods(e.waveBulletMods, ['WAVE']);
+      if (type==='MINE') cfg.mods = mergeMods(e.waveBulletMods, ['MINE']);
+      if (type==='LASER') cfg.mods = mergeMods(e.waveBulletMods, ['PIERCE_LINE']);
+      if (type==='SHOTGUN') cfg.baseCd *= 0.82;
+      if (type==='FLOWER' || type==='NOVA_PULSE') cfg.baseCd *= 1.25;
+      const fac = EmitterCatalog[type] || EmitterCatalog.AIM;
+      return fac(cfg);
+    };
+    e.emitters = profile.slice(0, 2).map(mkBossEm);
+    if (w>=9) e.emitters.push(mkBossEm(profile[2] || 'RING'));
+    if (w>=11 && chance(0.65)) e.emitters.push(mkBossEm(chance(0.5)?'MINE':'LASER'));
+    if (w>=13 && chance(0.45)) e.emitters.push(mkBossEm(chance(0.5)?'FAN':'SPIRAL'));
 
     // defense traits for boss baseline
     applyEnemyTraits(e, ['ARMORED','SHIELD_LAYER'], d);
@@ -15090,12 +15176,43 @@ setupPlayerEmittersFromBuild(b);
   }
 
   if (mode === 'fortress'){
-    Game.wave = Math.max(1, wave|0);
+    const startW = Math.max(1, wave|0);
+    Game.wave = startW;
     Game.time = (Game.wave - 1) * 14;
     Game.score = Math.max(0, (Game.wave - 1) * 700);
     Game.difficulty = 1 + (Game.wave - 1) * 0.12;
     enemies.length = 0;
     Fortress.start();
+
+    // fortress warp：同步给予玩家升级与补给，避免只有波数变化
+    if (startW > 1){
+      const targetLv = Math.min(120, startW + 1);
+      Player.lv = targetLv;
+      Player.xpNeed = xpNeedFor(targetLv);
+      Player.xp = 0;
+      const lvDelta = Math.max(0, targetLv - 1);
+      Player.maxHp += lvDelta * 1.25;
+      Player.hp = Player.maxHp;
+      Player.dmgMul += lvDelta * 0.012;
+      Player.fireRate += lvDelta * 0.007;
+
+      const modsCount = Math.min(Player.gunModsMax, Math.ceil(targetLv / 5));
+      const prevAudio = audioOn;
+      audioOn = false;
+      for(let i=0; i<modsCount; i++) grantPlayerGunMod();
+      audioOn = prevAudio;
+
+      // 材料和地图补给双通道
+      Fortress.stock += Math.floor((startW - 1) * 3.6);
+      const dropN = clamp(2 + Math.floor(startW / 5), 2, 8);
+      for (let i=0;i<dropN;i++){
+        spawnSupply(rand(W*0.16, W*0.84), rand(H*0.36, H*0.70), chance(0.5)?'WXP':'WMOD');
+      }
+
+      textPop(W*0.5, H*0.24, `FORTRESS WARP: WAVE ${startW}`, C.Y);
+      spawnShockwave(W*0.5, H*0.24, C.Y, 300, 0.6);
+    }
+
     textPop(W*0.5, 92, 'FORTRESS MODE', '#7ef9c0');
     spawnShockwave(W*0.5, 92, '#7ef9c0', 260, 0.55);
   }
