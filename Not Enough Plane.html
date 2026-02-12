@@ -9940,7 +9940,7 @@ for (const em of e.emitters){
         // fortress: 与 survival 同一套节奏，但额外受本波预算 spawnLeft 控制
         this.cd -= dt;
         if (this.cd<=0 && Fortress.spawnLeft>0){
-          this.cd = baseRate * DiffConfig.spawnRateMul * rand(0.72, 1.26);
+          this.cd = Math.max(0.09, baseRate * DiffConfig.spawnRateMul);
 
           if (Game.bossAlive && chance(0.55)) return;
           if (enemies.length >= 7 && !Game.bossAlive) return;
