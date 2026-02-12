@@ -2978,7 +2978,7 @@ const addShake = (m, t=0.16) => {
     canBuild(){ return (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && this.phase==='fortify' && Game.state==='playing'; },
     updatePanel(){
       if (!ui.fortressPanel) return;
-      const on = (Game.mode==='fortress' || Game.mode==='lab') && Game.state==='playing';
+      const on = (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Game.state==='playing';
       ui.fortressPanel.style.display = (on && (this.phase==='fortify' || Game.mode==='lab' || Game.mode==='fortress_duel')) ? 'block' : 'none';
       if (!on) return;
       const phaseText = (Game.mode==='fortress_duel')
@@ -3730,7 +3730,7 @@ function recoverLocalControl(){
   Joy.dx = 0;
   Joy.dy = 0;
   Input.tx = Player.x;
-  Input.ty = Player.y;
+  Input.ty = Player.y;p
   Input.px = Player.x;
   Input.py = Player.y;
   joyUpdateVisual();
@@ -3741,7 +3741,7 @@ function recoverLocalControl(){
     ensureAudio();
     checkDoubleTap();
 
-    if ((Game.mode==='fortress' || Game.mode==='lab') && Fortress.handlePointerDown(e.clientX, e.clientY, e.pointerId)){
+    if ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress.handlePointerDown(e.clientX, e.clientY, e.pointerId)){
       e.preventDefault?.();
       return;
     }
@@ -3774,7 +3774,7 @@ function recoverLocalControl(){
   }, {passive: false});
 
   canvas.addEventListener('pointermove', (e) => {
-    if ((Game.mode==='fortress' || Game.mode==='lab') && Fortress.handlePointerMove(e.clientX, e.clientY, e.pointerId)){
+    if ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress.handlePointerMove(e.clientX, e.clientY, e.pointerId)){
       e.preventDefault?.();
       return;
     }
@@ -3799,7 +3799,7 @@ function recoverLocalControl(){
 
   function endPointer(e){
     const pid = e ? e.pointerId : Input.pid;
-    if (e && (Game.mode==='fortress' || Game.mode==='lab') && Fortress.handlePointerUp(e.clientX, e.clientY, e.pointerId)){
+    if (e && (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress.handlePointerUp(e.clientX, e.clientY, e.pointerId)){
       e.preventDefault?.();
     }
     if (pid != null && pid !== Input.pid) return;
@@ -5675,7 +5675,7 @@ if (col===C.E7) return 'glowE7';
     b.pauseT = opts.pauseT ?? 0;
 
     b.depth = opts.depth ?? 0;
-    b.fortressSafe = !!opts.fortressSafe || ((Game.mode==='fortress' || Game.mode==='lab') && team==='P');
+    b.fortressSafe = !!opts.fortressSafe || ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && team==='P');
 
     // assign mods (affixes)
     if (opts.mods && opts.mods.length){
@@ -10286,8 +10286,9 @@ for (const em of e.emitters){
     update(dt){
       const t = Game.time;
       
-      if (Game.mode === 'fortress') {
+      if (Game.mode === 'fortress' || Game.mode === 'fortress_duel' || Game.mode === 'lab') {
         Fortress.update(dt);
+        if (Game.mode !== 'fortress') return;
         if (Fortress.phase !== 'assault') return;
 
         const timeSlope = (t < BAL.diffSwitchT) ? BAL.diffTimeEarly : BAL.diffTimeLate;
@@ -10564,7 +10565,7 @@ for (const em of e.emitters){
   }
 
   function findEnemyFocus(x,y, maxD=99999){
-    if (Game.mode==='fortress' || Game.mode==='lab') return Fortress.getEnemyTarget(x,y,maxD);
+    if (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') return Fortress.getEnemyTarget(x,y,maxD);
     return Player.alive ? Player : null;
   }
 
@@ -11920,6 +11921,7 @@ function grantPlayerEmitter(){
 }
 
   function firePlayer(dt){
+    if (Game.mode==='fortress_duel' && Fortress.phase!=='assault') return;
     Player.fireCd -= dt;
     if (Player.fireCd>0) return;
 
@@ -13281,6 +13283,8 @@ BG_Effect.init();
 
     applyPeerBulletPressure(dt){
       if (!this.room || Game.mode !== 'fortress_duel' || Game.state!=='playing') return;
+      // 命中结算以 peer_hit 事件为准，避免镜像/插值误差导致幽灵扣血
+      return;
       for (const peer of this.peers.values()){
         const pp = this.projectedPeer(peer);
         for (const b of (pp?.bullets||[])){
@@ -13691,7 +13695,7 @@ BG_Effect.init();
 
     // --- UI Updates (Adapted for Cyberpunk HUD) ---
 ui.score.textContent = formatValue(Game.score);
-    if (Game.mode==='fortress' || Game.mode==='lab'){
+    if (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel'){
       ui.wave.textContent = `${Game.wave}`;
     } else {
       ui.wave.textContent = Game.wave;
@@ -14990,7 +14994,7 @@ spawnerCd: Spawner.cd,
       bulletsP: bulletsP.map(b => ({...b, mods: b.mods ? [...b.mods] : []})),
       bulletsE: bulletsE.map(b => ({...b, mods: b.mods ? [...b.mods] : []})),
       supplies: supplies.map(s => ({...s})),
-      fortress: ((Game.mode==='fortress' || Game.mode==='lab')) ? {
+      fortress: ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel')) ? {
         phase: Fortress.phase, timer: Fortress.timer, stock: Fortress.stock,
         flagHp: Fortress.flagHp, flagMaxHp: Fortress.flagMaxHp,
         selected: Fortress.selected, spawnCd: Fortress.spawnCd, spawnLeft: Fortress.spawnLeft,
@@ -15149,7 +15153,7 @@ Game.bossAlive = frame.game.bossAlive;
 
     particles.length = 0; shockwaves.length = 0; beams.length = 0; texts.length = 0;
 
-if (frame.fortress && (Game.mode==='fortress' || Game.mode==='lab')) {
+if (frame.fortress && (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel')) {
   Fortress.phase = frame.fortress.phase;
   Fortress.timer = frame.fortress.timer;
   Fortress.stock = frame.fortress.stock;
@@ -15368,14 +15372,14 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
       ctx.lineTo(W*0.5+2, fy-20);
       ctx.closePath();
       ctx.fill();
-    } else {
+    } else if (Game.mode==='fortress_duel') {
       ctx.fillStyle = 'rgba(160,220,255,0.95)';
       ctx.fillRect(W*0.5-8, fy-30, 16, 10);
     }
 
+    const barW = 170, barH = 8, barX = W*0.5 - barW*0.5, barY = fy - 54;
     if (Game.mode!=='lab' && Game.mode!=='fortress_duel'){
       const flagPct = clamp(Fortress.flagHp / Math.max(1, Fortress.flagMaxHp), 0, 1);
-      const barW = 170, barH = 8, barX = W*0.5 - barW*0.5, barY = fy - 54;
       ctx.globalAlpha = 0.96;
       ctx.fillStyle = 'rgba(0,0,0,0.66)';
       ctx.fillRect(barX, barY, barW, barH);
@@ -15389,7 +15393,8 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
     ctx.textAlign='center';
     ctx.textBaseline='bottom';
     ctx.fillStyle='#fff';
-    ctx.fillText(`FLAG ${Math.ceil(Fortress.flagHp)}/${Math.ceil(Fortress.flagMaxHp)}`, W*0.5, barY-2);
+    if (Game.mode==='lab') ctx.fillText('LAB 无旗帜（仅工事实验）', W*0.5, barY-2);
+    else ctx.fillText(`FLAG ${Math.ceil(Fortress.flagHp)}/${Math.ceil(Fortress.flagMaxHp)}`, W*0.5, barY-2);
 
     for (const fs of Fortress.structures){
       const hpPct = clamp(fs.hp / Math.max(1, fs.maxHp), 0, 1);
@@ -16402,6 +16407,7 @@ canvas.style.pointerEvents = 'auto';
   ui.menu.style.display='none';
   ui.over.classList.remove('show');
 canvas.style.pointerEvents = 'auto';
+  if (mode==='fortress' || mode==='lab' || mode==='fortress_duel') Fortress.updatePanel();
 
   if (audioOn){
     ensureAudio();
@@ -18589,8 +18595,6 @@ function initMenuUI(){
   buildForgeMoveChips()
   wireForgeExtraEmitterButtons();
   bindAccordionsAnimated();
-
-  document.querySelectorAll('#pageWorkshop details.acc, #pageForge details.acc').forEach(d=>{ d.open = false; });
 
   document.querySelectorAll('#pageWorkshop details.acc, #pageForge details.acc').forEach(d=>{ d.open = false; });
 
