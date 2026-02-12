@@ -156,6 +156,7 @@ button:disabled{ opacity:0.5; cursor:not-allowed; filter:grayscale(1); }
   padding:max(10px, env(safe-area-inset-top)) 15px 10px;
 }
 .hud-group{ display:flex; gap:8px; }
+.top .hud-group:last-child{ flex-wrap:wrap; justify-content:flex-end; row-gap:6px; max-width:min(62vw, 520px); }
 
 .stat-pill{
   background:rgba(0,0,0,0.6);
@@ -291,10 +292,15 @@ button:disabled{ opacity:0.5; cursor:not-allowed; filter:grayscale(1); }
   width:min(500px, 90vw);
   align-self:center;
   padding:8px 10px;
-  background:rgba(8,14,34,0.52);
-  border:1px solid rgba(82,230,255,0.25);
-  backdrop-filter:blur(6px);
-  -webkit-backdrop-filter:blur(6px);
+  background:linear-gradient(
+    90deg,
+    rgba(0,0,0,0.6) 0%,
+    rgba(14,23,56,0.85) 20%,
+    rgba(14,23,56,0.85) 80%,
+    rgba(0,0,0,0.6) 100%
+  );
+  border-top:1px solid rgba(255,255,255,0.1);
+  border-bottom:1px solid rgba(255,255,255,0.1);
   display:none;
   margin-bottom:6px;
 }
@@ -1212,6 +1218,7 @@ input[type="checkbox"] {
         </div>
         <div class="row" style="margin-top:4px">
           <button id="btnFortStartWave" class="mini-btn" style="border-color:var(--c-danger);color:var(--c-danger)">开始敌袭</button>
+          <button id="btnFortRepairFlag" class="mini-btn" style="border-color:#ff7fa1;color:#ff7fa1">修旗 6</button>
           <button id="btnFortSell" class="mini-btn" style="border-color:#ffb347;color:#ffb347">SELL</button>
           <button id="btnFortUndo" class="mini-btn">UNDO</button>
         </div>
@@ -1883,6 +1890,7 @@ input[type="checkbox"] {
     fortressPhase: $('fortressPhase'),
     fortressMat: $('fortressMat'),
     fortressCore: $('fortressCore'),
+    btnFortRepairFlag: $('btnFortRepairFlag'),
     btnFortWall: $('btnFortWall'),
     btnFortTurret: $('btnFortTurret'),
     btnFortShield: $('btnFortShield'),
@@ -2748,7 +2756,7 @@ const addShake = (m, t=0.16) => {
             const t = findNearestEnemy(st.x, st.y, 260);
             if (t){
               const a = Math.atan2(t.y-st.y, t.x-st.x);
-              spawnBullet('P', st.x, st.y, Math.cos(a)*460, Math.sin(a)*460, {r:2.6,dmg:15+Game.wave*0.75,col:'#92c7ff',spr:'glowP2',life:1.0,mods:['PIERCE_LINE'],style:1,pierce:1});
+              fortressSpawnBullet('P', st.x, st.y, Math.cos(a)*460, Math.sin(a)*460, {r:2.6,dmg:15+Game.wave*0.75,col:'#92c7ff',spr:'glowP2',life:1.0,mods:['PIERCE_LINE'],style:1,pierce:1});
               st.cd = Math.max(0.05, 0.18 - st.spinBoost*0.05);
             }
           }
@@ -2869,6 +2877,10 @@ const addShake = (m, t=0.16) => {
       ui.fortressMat.textContent = `材料 ${Math.floor(this.stock)}`;
       ui.fortressCore.textContent = `旗帜 ${(this.flagHp/this.flagMaxHp*100).toFixed(0)}%`;
       if (ui.btnFortStartWave) ui.btnFortStartWave.style.display = this.phase==='fortify' ? 'inline-block' : 'none';
+      if (ui.btnFortRepairFlag){
+        ui.btnFortRepairFlag.style.display = this.phase==='fortify' ? 'inline-block' : 'none';
+        ui.btnFortRepairFlag.disabled = this.stock < 6 || this.flagHp >= this.flagMaxHp;
+      }
     },
     syncSelectionUI(){
       const map = Object.keys(this.catalog);
@@ -2902,6 +2914,16 @@ const addShake = (m, t=0.16) => {
       textPop(W*0.5, H*0.16, `加固 +${gain}`, C.P1);
       spawnShockwave(W*0.5, H*0.16, C.P1, 220, 0.4);
       this.updatePanel();
+    },
+    repairFlag(cost=6, heal=180){
+      if (Game.mode!=='fortress' || Game.state!=='playing' || this.phase!=='fortify') return false;
+      if (this.stock < cost || this.flagHp >= this.flagMaxHp) return false;
+      this.stock -= cost;
+      this.flagHp = Math.min(this.flagMaxHp, this.flagHp + heal);
+      sparks(W*0.5, H-58, 'glowP2', 9, 260);
+      textPop(W*0.5, H-76, `旗帜 +${Math.floor(heal)}`, '#ff7fa1');
+      this.updatePanel();
+      return true;
     },
     toWorld(screenX, screenY){
       const z = (Camera && Camera.zoom) ? Camera.zoom : 1.0;
@@ -3042,8 +3064,9 @@ const addShake = (m, t=0.16) => {
           if (st.cd<=0){
             const t = findNearestEnemy(st.x, st.y, 500);
             if (t){
-              const a = Math.atan2(t.y-st.y, t.x-st.x);
-              spawnBullet('P', st.x, st.y-6, Math.cos(a)*520, Math.sin(a)*520, {r:2.8,dmg:26+Game.wave*1.2,col:C.P2,spr:'glowP2',life:1.9,mods:['PIERCE_LINE'],style:1,pierce:1});
+              const lead = predictEnemyPos(st.x, st.y, t, 520) || t;
+              const a = Math.atan2(lead.y-st.y, lead.x-st.x);
+              fortressSpawnBullet('P', st.x, st.y-6, Math.cos(a)*520, Math.sin(a)*520, {r:2.8,dmg:26+Game.wave*1.2,col:C.P2,spr:'glowP2',life:1.9,mods:['PIERCE_LINE'],style:1,pierce:1});
               st.cd = 0.36;
             }
           }
@@ -3052,10 +3075,11 @@ const addShake = (m, t=0.16) => {
           if (st.cd<=0){
             const t = findNearestEnemy(st.x, st.y, 520);
             if (t){
-              const base = Math.atan2(t.y-st.y, t.x-st.x);
+              const lead = predictEnemyPos(st.x, st.y, t, 560) || t;
+              const base = Math.atan2(lead.y-st.y, lead.x-st.x);
               for (let k=-1;k<=1;k++){
                 const a = base + k*0.05;
-                spawnBullet('P', st.x, st.y-4, Math.cos(a)*560, Math.sin(a)*560, {r:2.2,dmg:9+Game.wave*0.55,col:'#ff8f8f',spr:'glowP',life:1.4,mods:[],style:1});
+                fortressSpawnBullet('P', st.x, st.y-4, Math.cos(a)*560, Math.sin(a)*560, {r:2.2,dmg:9+Game.wave*0.55,col:'#ff8f8f',spr:'glowP',life:1.4,mods:[],style:1});
               }
               st.cd = 0.15;
             }
@@ -3065,8 +3089,9 @@ const addShake = (m, t=0.16) => {
           if (st.cd<=0){
             const t = findNearestEnemy(st.x, st.y, 760);
             if (t){
-              const a = Math.atan2(t.y-st.y, t.x-st.x);
-              const mb = spawnBullet('P', st.x, st.y-10, Math.cos(a)*320, Math.sin(a)*320, {r:3.4,dmg:40+Game.wave*1.9,col:'#ffd28a',spr:'glowY',life:1.8,mods:['MINE'],style:1,mineT:0.45});
+              const lead = predictEnemyPos(st.x, st.y, t, 320) || t;
+              const a = Math.atan2(lead.y-st.y, lead.x-st.x);
+              const mb = fortressSpawnBullet('P', st.x, st.y-10, Math.cos(a)*320, Math.sin(a)*320, {r:3.4,dmg:40+Game.wave*1.9,col:'#ffd28a',spr:'glowY',life:1.8,mods:['MINE'],style:1,mineT:0.45});
               if (mb) mb.noHitT = 0.04;
               st.cd = 1.65;
             }
@@ -3076,7 +3101,8 @@ const addShake = (m, t=0.16) => {
           if (st.cd<=0){
             const t = findNearestEnemy(st.x, st.y, 340);
             if (t){
-              spawnBeam(st.x, st.y-6, t.x, t.y, 5, 0.12, 20 + Game.wave*1.1, '#9dd7ff');
+              const lead = predictEnemyPos(st.x, st.y, t, 760) || t;
+              spawnBeam(st.x, st.y-6, lead.x, lead.y, 5, 0.12, 20 + Game.wave*1.1, '#9dd7ff');
               t.onHit?.(20 + Game.wave*1.1);
               st.cd = 0.95;
             }
@@ -3097,8 +3123,9 @@ const addShake = (m, t=0.16) => {
           if (st.cd<=0){
             const t = findNearestEnemy(st.x, st.y, 800);
             if (t){
-              const a = Math.atan2(t.y-st.y, t.x-st.x);
-              const b = spawnBullet('P', st.x, st.y-8, Math.cos(a)*340, Math.sin(a)*340, {r:3.8,dmg:30+Game.wave*1.35,col:'#d7d7ff',spr:'glowP2',life:2.1,mods:['MINE'],mineT:0.32,style:1});
+              const lead = predictEnemyPos(st.x, st.y, t, 340) || t;
+              const a = Math.atan2(lead.y-st.y, lead.x-st.x);
+              const b = fortressSpawnBullet('P', st.x, st.y-8, Math.cos(a)*340, Math.sin(a)*340, {r:3.8,dmg:30+Game.wave*1.35,col:'#d7d7ff',spr:'glowP2',life:2.1,mods:['MINE'],mineT:0.32,style:1});
               if (b) b.noHitT = 0.06;
               st.cd = 1.24;
             }
@@ -3109,8 +3136,9 @@ const addShake = (m, t=0.16) => {
             const t = findNearestEnemy(st.x, st.y, 680);
             if (t){
               for (let i=0;i<2;i++){
-                const a = Math.atan2(t.y-st.y, t.x-st.x) + (i?0.12:-0.12);
-                const b = spawnBullet('P', st.x, st.y-8, Math.cos(a)*340, Math.sin(a)*340, {r:2.8,dmg:18+Game.wave*0.9,col:'#8bf7ff',spr:'glowP',life:1.8,mods:['HOMING'],homing:1,style:1});
+                const lead = predictEnemyPos(st.x, st.y, t, 340) || t;
+                const a = Math.atan2(lead.y-st.y, lead.x-st.x) + (i?0.12:-0.12);
+                const b = fortressSpawnBullet('P', st.x, st.y-8, Math.cos(a)*340, Math.sin(a)*340, {r:2.8,dmg:18+Game.wave*0.9,col:'#8bf7ff',spr:'glowP',life:1.8,mods:['HOMING'],homing:1,style:1});
                 if (b) b.turnAfter = 0.08;
               }
               st.cd = 1.25;
@@ -3121,8 +3149,9 @@ const addShake = (m, t=0.16) => {
           if (st.cd<=0){
             const t = findNearestEnemy(st.x, st.y, 760);
             if (t){
-              const a = Math.atan2(t.y-st.y, t.x-st.x);
-              spawnBullet('P', st.x, st.y-8, Math.cos(a)*900, Math.sin(a)*900, {r:3.2,dmg:88+Game.wave*3.1,col:'#ffa5ff',spr:'glowP2',life:1.3,mods:['PHASE_SHIFT'],style:1,pierce:5});
+              const lead = predictEnemyPos(st.x, st.y, t, 900) || t;
+              const a = Math.atan2(lead.y-st.y, lead.x-st.x);
+              fortressSpawnBullet('P', st.x, st.y-8, Math.cos(a)*900, Math.sin(a)*900, {r:3.2,dmg:88+Game.wave*3.1,col:'#ffa5ff',spr:'glowP2',life:1.3,mods:['PHASE_SHIFT'],style:1,pierce:5});
               st.cd = 0.52;
             }
           }
@@ -3590,7 +3619,7 @@ function recoverLocalControl(){
   const mods = propagateMods(b.mods);
   for (const sgn of [-1, 1]){
     const a = base + sgn * (0.28 + rand(-0.05, 0.05));
-    spawnBullet(b.team, b.x, b.y,
+    spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
       Math.cos(a)*sp*0.92, Math.sin(a)*sp*0.92,
       Object.assign({
         r: Math.max(2.2, b.r*0.85),
@@ -3611,7 +3640,7 @@ function _doSplit3(b){
   const mods = propagateMods(b.mods);
   for (let i = -1; i <= 1; i++){
     const a = base + i * (0.26 + rand(-0.05, 0.05));
-    spawnBullet(b.team, b.x, b.y,
+    spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
       Math.cos(a)*sp*0.90, Math.sin(a)*sp*0.90,
       Object.assign({
         r: Math.max(2.2, b.r*0.80),
@@ -3632,7 +3661,7 @@ function _doCrossSplit(b){
   const mods = propagateMods(b.mods);
   for (const off of [Math.PI/2, -Math.PI/2]){
     const a = base + off;
-    spawnBullet(b.team, b.x, b.y,
+    spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
       Math.cos(a)*sp*0.85, Math.sin(a)*sp*0.85,
       Object.assign({
         r: Math.max(2.2, b.r*0.80),
@@ -3809,7 +3838,7 @@ function _doCrossSplit(b){
         const mods = propagateMods(b.mods);
         for (let i=0; i<n; i++){
           const a = rand(0, Math.PI*2);
-          spawnBullet(b.team, b.x, b.y,
+          spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
             Math.cos(a)*sp, Math.sin(a)*sp,
             Object.assign({
               r: 2.4,
@@ -3835,7 +3864,7 @@ function _doCrossSplit(b){
         const mods = propagateMods(b.mods);
         for (let i=0; i<n; i++){
           const a = rand(0, Math.PI*2);
-          spawnBullet(b.team, b.x, b.y,
+          spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
             Math.cos(a)*sp, Math.sin(a)*sp,
             Object.assign({
               r: 2.4, dmg: b.dmg*0.35,
@@ -3874,7 +3903,7 @@ function _doCrossSplit(b){
         const base = Math.atan2(b.vy,b.vx);
         for (const sgn of [-1,1]){
           const a = base + sgn*(0.20 + rand(-0.04,0.04));
-          spawnBullet(b.team, b.x, b.y, Math.cos(a)*sp*0.96, Math.sin(a)*sp*0.96, Object.assign({
+          spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y, Math.cos(a)*sp*0.96, Math.sin(a)*sp*0.96, Object.assign({
             r: b.r*0.92,
             dmg: b.dmg*0.70,
             col: b.col, spr: b.spr, style:b.style, life: b.life*0.90,
@@ -3948,7 +3977,7 @@ function _doCrossSplit(b){
           const sp   = 120;
           const dna  = inheritBulletDNA(b, 0.50);
           const mods = propagateMods(b.mods).filter(k => k !== 'TRAIL_SHOOT');
-          spawnBullet(b.team, b.x, b.y,
+          spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
             Math.cos(a)*sp, Math.sin(a)*sp,
             Object.assign({
               r:2.0, dmg: b.dmg*0.30,
@@ -3982,7 +4011,7 @@ function _doCrossSplit(b){
         const mods = propagateMods(b.mods);
         for (let i=0; i<n; i++){
           const a = i * (Math.PI*2/n);
-          spawnBullet(b.team, b.x, b.y,
+          spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
             Math.cos(a)*sp, Math.sin(a)*sp,
             Object.assign({
               r:2.2, dmg: b.dmg*0.35,
@@ -4050,7 +4079,7 @@ function _doCrossSplit(b){
         for (let i=0; i<n; i++){
           const t = (i/(n-1))-0.5;
           const a = base + t*spread;
-          spawnBullet(b.team, b.x, b.y,
+          spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
             Math.cos(a)*sp*0.90, Math.sin(a)*sp*0.90,
             Object.assign({
               r: Math.max(2.0, b.r*0.75), dmg: b.dmg*0.40,
@@ -4139,7 +4168,7 @@ function _doCrossSplit(b){
         const baseA = Math.atan2(b.vy, b.vx);
         for(const off of [-0.4, 0.4]){
           const a = baseA + off + Math.PI; // 反向散射
-          spawnBullet(b.team, b.x, b.y, Math.cos(a)*sp, Math.sin(a)*sp, Object.assign({
+          spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y, Math.cos(a)*sp, Math.sin(a)*sp, Object.assign({
             r: b.r*0.7, dmg: b.dmg*0.5, col:b.col, spr:b.spr, style:0, life:1.5,
             depth: b.depth+1, bounce:0 // 子弹不再反弹
           }, inheritBulletMotion(b)));
@@ -4194,7 +4223,7 @@ function _doCrossSplit(b){
              else { const t=findEnemyFocus(b.x,b.y); if(t){ tx=t.x; ty=t.y; } }
              
              const a = Math.atan2(ty-b.y, tx-b.x);
-             spawnBullet(b.team, b.x, b.y, Math.cos(a)*200, Math.sin(a)*200, {
+             spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y, Math.cos(a)*200, Math.sin(a)*200, {
                r:2.0, dmg:b.dmg*0.3, col:b.col, spr:b.spr, style:0, life:0.8,
                depth: b.depth+1
              });
@@ -4214,7 +4243,7 @@ function _doCrossSplit(b){
            const n = 6;
            for(let i=0;i<n;i++){
              const a = (i/n)*Math.PI*2;
-             spawnBullet(b.team, b.x, b.y, Math.cos(a)*150, Math.sin(a)*150, {
+             spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y, Math.cos(a)*150, Math.sin(a)*150, {
                r:2.2, dmg:b.dmg*0.4, col:b.col, style:0, life:0.6, depth:b.depth+1
              });
            }
@@ -4236,7 +4265,7 @@ function _doCrossSplit(b){
         const mods = propagateMods(b.mods).filter(k => k !== 'ECHO');
         for (let i = -1; i <= 1; i++){
           const a = base + Math.PI + i*0.35;
-          spawnBullet(b.team, b.x, b.y,
+          spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
             Math.cos(a)*sp*0.70, Math.sin(a)*sp*0.70,
             Object.assign({
               r: Math.max(2.0, b.r*0.75), dmg: b.dmg*0.35,
@@ -4273,7 +4302,7 @@ function _doCrossSplit(b){
         const phase = rand(0, Math.PI*2);
         for (let i=0; i<n; i++){
           const a = phase + i*(Math.PI*2/n);
-          spawnBullet(b.team, b.x, b.y,
+          spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
             Math.cos(a)*sp, Math.sin(a)*sp,
             Object.assign({
               r:2.0, dmg: b.dmg*0.22,
@@ -4302,7 +4331,7 @@ function _doCrossSplit(b){
         for (let i=0; i<n; i++){
           const sgn = (i%2===0) ? 1 : -1;
           const a = base + sgn*(0.35 + i*0.15);
-          const child = spawnBullet(b.team, b.x, b.y,
+          const child = spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
             Math.cos(a)*sp, Math.sin(a)*sp,
             Object.assign({
               r: Math.max(2.0, b.r*0.80), dmg: b.dmg*0.30,
@@ -4565,7 +4594,7 @@ function _doCrossSplit(b){
           b._shotT = b._shotCd;
           // 卫星射出的子弹方向：向外径向
           const sp = 280;
-          spawnBullet(b.team, b.x, b.y, Math.cos(b._ang)*sp, Math.sin(b._ang)*sp, {
+          spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y, Math.cos(b._ang)*sp, Math.sin(b._ang)*sp, {
             r: 2.2, 
             dmg: (5 + Game.wave * 0.4), 
             col: b.col, // 继承卫星球颜色
@@ -4609,7 +4638,7 @@ function _doCrossSplit(b){
           const ang = (i / count) * Math.PI * 2 + rand(-0.2, 0.2);
           
           // 产生下一代子弹
-          const child = spawnBullet(b.team, b.x, b.y, Math.cos(ang)*sp, Math.sin(ang)*sp, {
+          const child = spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y, Math.cos(ang)*sp, Math.sin(ang)*sp, {
             r: Math.max(1.8, b.r * 0.7),
             dmg: dmg,
             col: b.col,
@@ -4698,7 +4727,7 @@ function _doCrossSplit(b){
           const spreadAngle = (i/(splitCount-1) - 0.5) * 0.9;
           const a = baseA + spreadAngle;
           
-          const quantum = spawnBullet(b.team, b.x, b.y,
+          const quantum = spawnBullet((b.fortressSafe?'P':b.team), b.x, b.y,
             Math.cos(a)*sp*0.95, Math.sin(a)*sp*0.95, {
               r: b.r * 0.85,
               dmg: b.dmg * 0.45,
@@ -5086,7 +5115,7 @@ function _doCrossSplit(b){
           for(let i=0; i<burstCount; i++){
             const a = (i/burstCount)*Math.PI*2 + rand(-0.1, 0.1);
             
-            spawnBullet(b.team, pos.x, pos.y,
+            spawnBullet((b.fortressSafe?'P':b.team), pos.x, pos.y,
               Math.cos(a)*sp, Math.sin(a)*sp,
               Object.assign({
                 r: Math.max(2.2, b.r*0.80),
@@ -7134,6 +7163,67 @@ function diamondPath(x,y,r,rot=0, skew=1){
   ctx.closePath();
 }
 
+function getPoly3DDef(kind){
+  let verts = [], edges = [];
+  if (kind==='cube'){
+    for(let x=-1; x<=1; x+=2) for(let y=-1; y<=1; y+=2) for(let z=-1; z<=1; z+=2) verts.push({x,y,z});
+    edges = [[0,1],[1,3],[3,2],[2,0], [4,5],[5,7],[7,6],[6,4], [0,4],[1,5],[2,6],[3,7]];
+  } else if (kind==='pyramid'){
+    const h = 1.0;
+    verts = [{x:0,y:-h,z:0},{x:-1,y:h,z:-0.8},{x:1,y:h,z:-0.8},{x:0,y:h,z:1.0}];
+    edges = [[0,1],[0,2],[0,3],[1,2],[2,3],[3,1]];
+  } else if (kind==='octa'){
+    verts = [{x:0,y:-1.4,z:0},{x:0,y:1.4,z:0},{x:-1,y:0,z:0},{x:1,y:0,z:0},{x:0,y:0,z:-1},{x:0,y:0,z:1}];
+    edges = [[0,2],[0,3],[0,4],[0,5],[1,2],[1,3],[1,4],[1,5],[2,4],[4,3],[3,5],[5,2]];
+  } else if (kind==='tetra'){
+    verts = [{x:0,y:-1.3,z:0},{x:-1.1,y:0.9,z:-0.8},{x:1.1,y:0.9,z:-0.8},{x:0,y:0.9,z:1.15}];
+    edges = [[0,1],[0,2],[0,3],[1,2],[2,3],[3,1]];
+  } else if (kind==='prism'){
+    verts = [
+      {x:-1,y:-0.9,z:-0.8},{x:1,y:-0.9,z:-0.8},{x:0,y:0.9,z:-0.8},
+      {x:-1,y:-0.9,z:0.8},{x:1,y:-0.9,z:0.8},{x:0,y:0.9,z:0.8}
+    ];
+    edges = [[0,1],[1,2],[2,0],[3,4],[4,5],[5,3],[0,3],[1,4],[2,5]];
+  }
+  return {verts, edges};
+}
+
+function drawPoly3DWire(kind, cx, cy, size, time, col, drawNodes=false){
+  const {verts, edges} = getPoly3DDef(kind);
+  if (!verts.length) return;
+  const rot3D = (x, y, z, angX, angY) => {
+    let y1 = y * Math.cos(angX) - z * Math.sin(angX);
+    let z1 = y * Math.sin(angX) + z * Math.cos(angX);
+    let x2 = x * Math.cos(angY) - z1 * Math.sin(angY);
+    let z2 = x * Math.sin(angY) + z1 * Math.cos(angY);
+    return {x:x2, y:y1, z:z2};
+  };
+  const p2d = [];
+  for (const v of verts){
+    const r = rot3D(v.x*size, v.y*size, v.z*size, time*0.7, time);
+    p2d.push({x:cx+r.x, y:cy+r.y, z:r.z});
+  }
+  ctx.save();
+  tronFill(col, 0.14);
+  ctx.beginPath();
+  for (const p of p2d) ctx.lineTo(p.x,p.y);
+  ctx.closePath();
+  ctx.fill();
+  for (const [i,j] of edges){
+    const p1 = p2d[i], p2 = p2d[j];
+    const avgZ = (p1.z + p2.z) / 2;
+    const zNorm = clamp((avgZ + size) / (size*2), 0, 1);
+    tronStroke(col, 1.0 + 1.8*zNorm, 0.30 + 0.70*zNorm);
+    ctx.beginPath();
+    ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+    if (drawNodes){
+      ctx.fillStyle = rgbToRgba(col, 0.45 + 0.45*zNorm);
+      ctx.fillRect(p1.x-1.1,p1.y-1.1,2.2,2.2);
+    }
+  }
+  ctx.restore();
+}
+
 function crossPath(x,y,r,rot=0, t=0.25){
   // plus sign polygon (12 points)
   const w = r, th = r*t;
@@ -7371,114 +7461,10 @@ if (b.kind === 'crescent'){
       // 内部核心
       ctx.beginPath(); ctx.arc(e.x, e.y, R0*0.3, 0, Math.PI*2); ctx.stroke();
     }
-    else if (['cube', 'pyramid', 'octa'].includes(b.kind)) {
-      // 简易 3D 投影器
+    else if (['cube', 'pyramid', 'octa', 'tetra', 'prism'].includes(b.kind)) {
       const t = Game.time * (b.rot1 || 1);
-      const size = R0 * 0.7; // 稍微缩小一点以免看起来太大
-      
-      // 3D 旋转矩阵辅助
-      const rot3D = (x, y, z, angX, angY) => {
-        // Rot X
-        let y1 = y * Math.cos(angX) - z * Math.sin(angX);
-        let z1 = y * Math.sin(angX) + z * Math.cos(angX);
-        // Rot Y
-        let x2 = x * Math.cos(angY) - z1 * Math.sin(angY);
-        let z2 = x * Math.sin(angY) + z1 * Math.cos(angY);
-        return {x: x2, y: y1, z: z2};
-      };
-
-      let verts = [];
-      let edges = [];
-
-      // 定义顶点和边
-      if (b.kind === 'cube') {
-        // 立方体 8 顶点
-        for(let x=-1; x<=1; x+=2)
-        for(let y=-1; y<=1; y+=2)
-        for(let z=-1; z<=1; z+=2)
-          verts.push({x, y, z});
-        // 12 条边 (简单连接逻辑)
-        edges = [
-          [0,1],[1,3],[3,2],[2,0], // Front
-          [4,5],[5,7],[7,6],[6,4], // Back
-          [0,4],[1,5],[2,6],[3,7]  // Connectors
-        ];
-      } 
-      else if (b.kind === 'pyramid') {
-        // 四面体 (底面三角形 + 顶点)
-        const h = 1.0;
-        verts = [
-          {x:0, y:-h, z:0},           // Tip
-          {x:-1, y:h, z:-0.8},        // Base 1
-          {x:1, y:h, z:-0.8},         // Base 2
-          {x:0, y:h, z:1.0}           // Base 3
-        ];
-        edges = [[0,1],[0,2],[0,3],[1,2],[2,3],[3,1]];
-      }
-      else if (b.kind === 'octa') {
-        // 八面体 (6 顶点)
-        verts = [
-          {x:0, y:-1.4, z:0}, {x:0, y:1.4, z:0}, // Top, Bot
-          {x:-1, y:0, z:0}, {x:1, y:0, z:0},     // Left, Right
-          {x:0, y:0, z:-1}, {x:0, y:0, z:1}      // Front, Back
-        ];
-        edges = [
-          [0,2],[0,3],[0,4],[0,5], // Top to mid
-          [1,2],[1,3],[1,4],[1,5], // Bot to mid
-          [2,4],[4,3],[3,5],[5,2]  // Mid ring
-        ];
-      }
-
-      // 投影并绘制
-      const p2d = [];
-      for(let v of verts) {
-        // 应用旋转 (X轴和Y轴同时旋转)
-        const r = rot3D(v.x * size, v.y * size, v.z * size, t * 0.7, t);
-        // 简单的透视投影 (z越远越小) - 这里用正交投影+z层级模拟即可，保持风格统一
-        // 加上 e.x, e.y 位移
-        p2d.push({x: e.x + r.x, y: e.y + r.y, z: r.z});
-      }
-
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-
-      // 1. 绘制半透明面 (为了立体感，用 fill 填充整体轮廓)
-      // 简单算法：计算凸包或直接画多边形。这里简单地填充所有三角形面会比较乱，
-      // 我们只画一个包含所有点的背景光晕来模拟体积感。
-      tronFill(col, 0.15);
-      ctx.beginPath();
-      for(let p of p2d) ctx.lineTo(p.x, p.y);
-      ctx.closePath();
-      ctx.fill();
-
-      // 2. 绘制边框 (根据 Z 深度调整亮度/粗细实现遮挡感)
-      for(let edge of edges) {
-        const p1 = p2d[edge[0]];
-        const p2 = p2d[edge[1]];
-        const avgZ = (p1.z + p2.z) / 2;
-        
-        // Z-fade: 远的线变细变暗
-        // size 大概在 20-40 之间。z 范围大概 -size 到 +size
-        const zNorm = (avgZ + size) / (size * 2); // 0..1
-        const alpha = 0.3 + 0.7 * clamp(zNorm, 0, 1);
-        const width = 1.0 + 1.5 * clamp(zNorm, 0, 1);
-
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        tronStroke(col, width, alpha); // 使用封装好的颜色
-        ctx.stroke();
-        
-        // 节点高亮
-        if (b.kind === 'octa' || b.kind === 'cube') {
-           ctx.fillStyle = '#fff';
-           ctx.globalAlpha = alpha;
-           const s = width; // 节点大小
-           ctx.fillRect(p1.x - s/2, p1.y - s/2, s, s);
-        }
-      }
-      // 恢复 Alpha
-      ctx.globalAlpha = 1;
+      const size = R0 * 0.7;
+      drawPoly3DWire(b.kind, e.x, e.y, size, t, col, (b.kind==='octa' || b.kind==='cube' || b.kind==='tetra'));
 
 } else if (b.kind === 'spiral') {
   // 游戏内渲染：几何螺旋
@@ -9780,6 +9766,21 @@ for (const em of e.emitters){
     return best;
   }
 
+  function predictEnemyPos(srcX, srcY, target, speed=520){
+    if (!target) return null;
+    const tvx = Number.isFinite(target.vx) ? target.vx : (target.mmx?.vx || 0);
+    const tvy = Number.isFinite(target.vy) ? target.vy : (target.mmx?.vy || 0);
+    const dx = target.x - srcX, dy = target.y - srcY;
+    const dist = Math.hypot(dx, dy);
+    const tof = clamp(dist / Math.max(80, speed), 0, 1.25);
+    return {x:target.x + tvx*tof, y:target.y + tvy*tof};
+  }
+
+  function fortressSpawnBullet(team, x, y, vx, vy, opt){
+    const b = spawnBullet(team, x, y, vx, vy, Object.assign({}, opt, {fortressSafe:true}));
+    if (b) b.fortressSafe = true;
+    return b;
+  }
 
   function findEnemyFocus(x,y, maxD=99999){
     if (Game.mode==='fortress') return Fortress.getEnemyTarget(x,y,maxD);
@@ -11292,6 +11293,12 @@ if (b.homing > 0){
           }
         }
         if (blocked) continue;
+        // 敌方子弹直击旗帜
+        if (b.y > H-72 && Math.abs(b.x - W*0.5) < 52){
+          Fortress.hitFlag(Math.max(6, b.dmg||10));
+          killBullet(b, 'flag', {childMods: []});
+          continue;
+        }
       }
 
       // ricochet for enemy shots
@@ -11320,7 +11327,7 @@ if (b.homing > 0){
           const sp = 190 + d*7;
           for(let i=0;i<n;i++){
             const a = rand(0,Math.PI*2);
-            spawnBullet(b.team, b.x,b.y, Math.cos(a)*sp, Math.sin(a)*sp, {
+            spawnBullet((b.fortressSafe?'P':b.team), b.x,b.y, Math.cos(a)*sp, Math.sin(a)*sp, {
               r:2.7, dmg: (b.team==='E' ? (10+d*0.65) : b.dmg*0.35),
               col: b.col, spr: b.spr, style:0, life:1.35,
               depth: b.depth+1,
@@ -13623,6 +13630,22 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
     ctx.closePath();
     ctx.fill();
 
+    const flagPct = clamp(Fortress.flagHp / Math.max(1, Fortress.flagMaxHp), 0, 1);
+    const barW = 170, barH = 8, barX = W*0.5 - barW*0.5, barY = fy - 54;
+    ctx.globalAlpha = 0.96;
+    ctx.fillStyle = 'rgba(0,0,0,0.66)';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#ff5b7f';
+    ctx.fillRect(barX, barY, barW*flagPct, barH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.90)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.font='700 10px "Consolas", monospace';
+    ctx.textAlign='center';
+    ctx.textBaseline='bottom';
+    ctx.fillStyle='#fff';
+    ctx.fillText(`FLAG ${Math.ceil(Fortress.flagHp)}/${Math.ceil(Fortress.flagMaxHp)}`, W*0.5, barY-2);
+
     for (const fs of Fortress.structures){
       const hpPct = clamp(fs.hp / Math.max(1, fs.maxHp), 0, 1);
       ctx.fillStyle = 'rgba(0,0,0,0.62)';
@@ -13630,9 +13653,19 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
       ctx.strokeStyle = fs.col;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w, fs.h);
+      ctx.fillStyle = 'rgba(255,255,255,0.24)';
+      ctx.globalAlpha = 0.98;
+      ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5-6, fs.w, 4);
       ctx.fillStyle = fs.col;
-      ctx.globalAlpha = 0.28;
-      ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w*hpPct, 4);
+      ctx.globalAlpha = 0.92;
+      ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5-6, fs.w*hpPct, 4);
+      ctx.globalAlpha = 0.96;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.font='700 10px "Consolas", monospace';
+      ctx.textAlign='center';
+      ctx.textBaseline='middle';
+      const nm = ({barricade:'木障',wall:'钢壁',heavywall:'合金墙',bunker:'堡垒墙',shield:'棱镜盾',turret:'炮塔',gatling:'加特林',sniper:'狙击塔',missile:'导弹井',tesla:'特斯拉',flame:'喷火塔',mortar:'迫击炮',dronepad:'无人机坪',pulse:'脉冲器',mine:'地雷',slow:'减速塔',repair:'旗帜修',repairplayer:'医疗站',repairfield:'工程站',factory:'补给站',spinner:'旋刃塔',ram:'冲锋桩',beacon:'信标',taunt:'诱敌堡'})[fs.type] || fs.type;
+      ctx.fillText(nm, fs.x, fs.y);
       ctx.globalAlpha = 0.9;
       if (fs.type==='turret'){
         ctx.beginPath();
@@ -16264,58 +16297,10 @@ function refreshForgePreview(){
     }
   case 'cube':
     case 'pyramid':
-    case 'octa': {
-      // 3D 预览渲染
-      const t = rot; // 复用上方定义的 rot
-      const size = R * 0.7;
-      
-      const rot3D = (x, y, z, angX, angY) => {
-        let y1 = y * Math.cos(angX) - z * Math.sin(angX);
-        let z1 = y * Math.sin(angX) + z * Math.cos(angX);
-        let x2 = x * Math.cos(angY) - z1 * Math.sin(angY);
-        let z2 = x * Math.sin(angY) + z1 * Math.cos(angY);
-        return {x: x2, y: y1, z: z2};
-      };
-
-      let verts = [], edges = [];
-      if (kind === 'cube') {
-        for(let x=-1; x<=1; x+=2) for(let y=-1; y<=1; y+=2) for(let z=-1; z<=1; z+=2) verts.push({x,y,z});
-        edges = [[0,1],[1,3],[3,2],[2,0], [4,5],[5,7],[7,6],[6,4], [0,4],[1,5],[2,6],[3,7]];
-      } else if (kind === 'pyramid') {
-        const h = 1.0;
-        verts = [{x:0, y:-h, z:0}, {x:-1, y:h, z:-0.8}, {x:1, y:h, z:-0.8}, {x:0, y:h, z:1.0}];
-        edges = [[0,1],[0,2],[0,3],[1,2],[2,3],[3,1]];
-      } else { // octa
-        verts = [{x:0, y:-1.4, z:0}, {x:0, y:1.4, z:0}, {x:-1, y:0, z:0}, {x:1, y:0, z:0}, {x:0, y:0, z:-1}, {x:0, y:0, z:1}];
-        edges = [[0,2],[0,3],[0,4],[0,5], [1,2],[1,3],[1,4],[1,5], [2,4],[4,3],[3,5],[5,2]];
-      }
-
-      const p2d = [];
-      for(let v of verts) {
-        const r = rot3D(v.x * size, v.y * size, v.z * size, t * 0.7, t);
-        p2d.push({x: cx + r.x, y: cy + r.y, z: r.z}); // 使用 cx, cy
-      }
-
-      // Fill glow
-      ctx.fillStyle = rgba(col, 0.15);
-      ctx.beginPath();
-      for(let p of p2d) ctx.lineTo(p.x, p.y);
-      ctx.closePath();
-      ctx.fill();
-
-      // Wireframe
-      for(let edge of edges) {
-        const p1 = p2d[edge[0]], p2 = p2d[edge[1]];
-        const avgZ = (p1.z + p2.z) / 2;
-        const zNorm = (avgZ + size) / (size * 2);
-        
-        ctx.strokeStyle = rgba(col, 0.4 + 0.6 * clamp(zNorm,0,1));
-        ctx.lineWidth = 1.5 + 2.0 * clamp(zNorm,0,1);
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.stroke();
-      }
+    case 'octa':
+    case 'tetra':
+    case 'prism': {
+      drawPoly3DWire(kind, cx, cy, R*0.7, rot, col, true);
       break;
     }
             case 'crescent': {
@@ -16770,7 +16755,7 @@ function initMenuUI(){
 const BODY_KINDS = [
   'poly','star','gear','ringRect','diamondRing','arcSeg','crescent','cross','chevron','shard',
   'insect', 'wing', 'crystal',
-  'cube', 'pyramid', 'octa',
+  'cube', 'pyramid', 'octa', 'tetra', 'prism',
   // 新增壮美外观
   'spiral', 'lotus', 'dragon', 'phoenix', 'nebula'
 ];
@@ -17016,6 +17001,7 @@ document.querySelectorAll('#fortressBuildScroller [data-item]').forEach((el)=>{
 ui.btnFortSell?.addEventListener('click', ()=>Fortress.select(Fortress.sellMode ? Fortress.selected : 'sell'));
 ui.btnFortUndo?.addEventListener('click', ()=>Fortress.undo());
 ui.btnFortStartWave?.addEventListener('click', ()=>Fortress.beginAssault());
+ui.btnFortRepairFlag?.addEventListener('click', ()=>Fortress.repairFlag(6, 180));
 
 document.getElementById('btnResumePause')?.addEventListener('click', ()=>{
   if (Game.state==='paused') togglePause();
