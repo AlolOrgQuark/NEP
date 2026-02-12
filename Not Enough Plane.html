@@ -292,13 +292,6 @@ button:disabled{ opacity:0.5; cursor:not-allowed; filter:grayscale(1); }
   width:min(500px, 90vw);
   align-self:center;
   padding:8px 10px;
-  background:linear-gradient(
-    90deg,
-    rgba(0,0,0,0.6) 0%,
-    rgba(14,23,56,0.85) 20%,
-    rgba(14,23,56,0.85) 80%,
-    rgba(0,0,0,0.6) 100%
-  );
   border-top:1px solid rgba(255,255,255,0.1);
   border-bottom:1px solid rgba(255,255,255,0.1);
   display:none;
@@ -2715,11 +2708,13 @@ const addShake = (m, t=0.16) => {
     sellMode:false,
     bossSpawned:false,
     activeDrag:null,
+    preview:null,
+    previewPointerId:null,
     catalog:{
       barricade:{cost:3,w:46,h:16,hp:220,col:'#b8d28a',type:'barricade'},
-      wall:{cost:6,w:56,h:20,hp:520,col:'#7ef9c0',type:'wall'},
-      heavywall:{cost:11,w:74,h:24,hp:980,col:'#89f5dd',type:'heavywall'},
-      bunker:{cost:18,w:92,h:28,hp:1800,col:'#76ffd7',type:'bunker'},
+      wall:{cost:6,w:78,h:20,hp:520,col:'#7ef9c0',type:'wall'},
+      heavywall:{cost:11,w:104,h:24,hp:980,col:'#89f5dd',type:'heavywall'},
+      bunker:{cost:18,w:126,h:28,hp:1800,col:'#76ffd7',type:'bunker'},
       shield:{cost:9,w:74,h:18,hp:720,col:'#b36cff',type:'shield'},
       turret:{cost:10,w:44,h:24,hp:460,col:'#ff5577',type:'turret',cd:0.42},
       gatling:{cost:12,w:40,h:22,hp:400,col:'#ff8f8f',type:'gatling',cd:0.16},
@@ -2861,11 +2856,14 @@ const addShake = (m, t=0.16) => {
       this.sellMode=false;
       this.bossSpawned=false;
       this.activeDrag=null;
+      this.preview=null;
+      this.previewPointerId=null;
     },
     start(){
       this.reset();
       this.stock = 28;
       this.phase='fortify';
+      this.clearPreview();
       this.updatePanel();
       this.syncSelectionUI();
     },
@@ -2896,11 +2894,13 @@ const addShake = (m, t=0.16) => {
     select(item){
       this.sellMode = (item==='sell');
       if (!this.sellMode) this.selected = item;
+      this.clearPreview();
       this.syncSelectionUI();
     },
     beginAssault(){
       if (this.phase!=='fortify') return;
       this.phase='assault';
+      this.clearPreview();
       this.spawnLeft = 12 + Math.floor(Game.wave*2.6);
       this.bossSpawned = false;
       WaveDirector.onWave(Game.wave);
@@ -2925,6 +2925,7 @@ const addShake = (m, t=0.16) => {
       this.flagHp = Math.min(this.flagMaxHp, this.flagHp + heal);
       sparks(W*0.5, H-58, 'glowP2', 9, 260);
       textPop(W*0.5, H-76, `旗帜 +${Math.floor(heal)}`, '#ff7fa1');
+      this.clearPreview();
       this.updatePanel();
       return true;
     },
@@ -2933,14 +2934,31 @@ const addShake = (m, t=0.16) => {
       const cx = W*0.5, cy = H*0.5;
       return {x:(screenX-cx)/z + cx, y:(screenY-cy)/z + cy};
     },
+    resolvePlacementPoint(screenX, screenY){
+      const pt = this.toWorld(screenX, screenY);
+      return {x:clamp(pt.x, 30, W-30), y:clamp(pt.y, H*0.40, H-70)};
+    },
+    clearPreview(){
+      this.preview = null;
+      this.previewPointerId = null;
+    },
+    setPreview(screenX, screenY, pointerId=null){
+      if (!this.canBuild() || this.sellMode) return false;
+      const cfg = this.catalog[this.selected];
+      if (!cfg || this.stock < cfg.cost) return false;
+      const p = this.resolvePlacementPoint(screenX, screenY);
+      this.preview = {x:p.x, y:p.y, item:this.selected};
+      this.previewPointerId = pointerId;
+      return true;
+    },
     placeAt(screenX, screenY){
       if (!this.canBuild()) return false;
       if (this.sellMode) return this.sellAt(screenX, screenY);
       const cfg = this.catalog[this.selected];
       if (!cfg || this.stock < cfg.cost) return false;
-      const pt = this.toWorld(screenX, screenY);
-      const x = clamp(pt.x, 30, W-30);
-      const y = clamp(pt.y, H*0.40, H-70);
+      const p = this.resolvePlacementPoint(screenX, screenY);
+      const x = p.x;
+      const y = p.y;
       const id = this.sid++;
       const st = {id,x,y,w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,cd:cfg.cd||0,cost:cfg.cost};
       this.getBehavior(st.type)?.onCreate?.(st, {fortress:this});
@@ -2948,6 +2966,7 @@ const addShake = (m, t=0.16) => {
       this.stock -= cfg.cost;
       this.undoStack.push({type:'place', id, refund:cfg.cost});
       sparks(x,y,'glowP', 8, 180);
+      this.clearPreview();
       this.updatePanel();
       return true;
     },
@@ -2969,17 +2988,72 @@ const addShake = (m, t=0.16) => {
       }
       return best;
     },
+    pickStrategicTarget(x,y,maxD=99999){
+      const alive = this.structures.filter(s=>s.hp>0);
+      if (!alive.length) return {x:W*0.5,y:H-62,type:'flag'};
+
+      const pressure = clamp((enemies.length / Math.max(3, 2 + Game.difficulty*1.3)), 0, 1);
+      const siegePower = clamp((Game.difficulty*0.45 + enemies.length*0.07 + Game.wave*0.025), 0, 3.2);
+      const corridor = alive.filter(s => Math.abs(s.x - W*0.5) < 170 && s.y > H*0.44);
+      const corridorHp = corridor.reduce((a,s)=>a + (s.hp||0), 0);
+      const corridorOpen = corridor.length <= 1 || corridorHp < (380 + Game.wave*35 + siegePower*180);
+
+      let best = null;
+      let bestScore = -1e18;
+      for (const fs of alive){
+        const d2 = dist2(x,y,fs.x,fs.y);
+        if (d2 > maxD*maxD) continue;
+
+        const hpPct = clamp(fs.hp / Math.max(1, fs.maxHp||1), 0, 1);
+        const distW = 1 / (1 + Math.sqrt(d2) * 0.010);
+        const laneW = (Math.abs(fs.x - W*0.5) < 185 && fs.y > H*0.44) ? 1.8 : 0.9;
+        const softenW = (1 - hpPct) * 1.5;
+
+        const offenseMap = {
+          turret:2.2,gatling:2.4,sniper:2.0,missile:2.5,tesla:2.3,flame:2.1,mortar:2.4,
+          dronepad:2.0,pulse:1.9,spinner:1.6,ram:1.6,beacon:1.8,repair:1.7,repairfield:2.0,
+          wall:1.5,heavywall:1.9,bunker:2.1,shield:1.8,taunt:1.4,factory:1.5
+        };
+        const value = offenseMap[fs.type] || 1.2;
+
+        const longPlan = (pressure < 0.52)
+          ? (value * 1.05 + laneW * 0.55)
+          : (laneW * 1.35 + value * 0.75);
+
+        const score = longPlan * distW + softenW;
+        if (score > bestScore){ bestScore = score; best = fs; }
+      }
+
+      const flagBase = {x:W*0.5,y:H-62,type:'flag'};
+      if (!best) return flagBase;
+
+      // 只有在防线已经打开且敌方总体能力占优时，才集中冲旗
+      const forceFlag = corridorOpen && (pressure > 0.62 || siegePower > 1.85);
+      return forceFlag ? flagBase : best;
+    },
     getEnemyTarget(x,y,maxD=99999){
       if (Game.mode==='fortress'){
         const taunt = this.findTauntTarget(x,y,maxD);
         if (taunt) return taunt;
-        return {x:W*0.5,y:H-62};
+        return this.pickStrategicTarget(x,y,maxD);
       }
       return Player.alive ? Player : null;
     },
     handlePointerDown(screenX, screenY, pointerId=null){
       if (Game.mode!=='fortress' || Game.state!=='playing') return false;
       const pt = this.toWorld(screenX, screenY);
+      if (this.preview){
+        const pv = this.preview;
+        const cfg = this.catalog[pv.item];
+        if (cfg){
+          const hw = cfg.w*0.5, hh = cfg.h*0.5;
+          if (pt.x>=pv.x-hw && pt.x<=pv.x+hw && pt.y>=pv.y-hh && pt.y<=pv.y+hh){
+            this.selected = pv.item;
+            return this.placeAt(screenX, screenY);
+          }
+        }
+        this.clearPreview();
+      }
       const idx = this.pickStructure(screenX, screenY);
       if (idx>=0){
         const st = this.structures[idx];
@@ -2991,10 +3065,18 @@ const addShake = (m, t=0.16) => {
           return true;
         }
       }
+      if (this.canBuild() && IS_TOUCH && !this.sellMode){
+        return this.setPreview(screenX, screenY, pointerId);
+      }
       if (this.canBuild()) return this.placeAt(screenX, screenY);
       return false;
     },
     handlePointerMove(screenX, screenY, pointerId=null){
+      if (this.canBuild() && !IS_TOUCH && !this.sellMode){
+        this.setPreview(screenX, screenY, pointerId);
+      } else if (this.preview && (!this.canBuild() || this.sellMode)){
+        this.clearPreview();
+      }
       if (!this.activeDrag || (pointerId!=null && this.activeDrag.pointerId!=null && pointerId!==this.activeDrag.pointerId)) return false;
       const st = this.structures.find(v=>v.id===this.activeDrag.sid);
       if (!st) return false;
@@ -7550,26 +7632,62 @@ if (b.kind === 'crescent'){
   g.lineTo(e.x + R0*0.4, e.y + R0*0.4);
   g.stroke();
 } else if (b.kind === 'cone') {
-  const segs = 16;
-  const tipX = e.x + Math.cos(rot - Math.PI/2) * R0 * 1.15;
-  const tipY = e.y + Math.sin(rot - Math.PI/2) * R0 * 1.15;
-  const baseCx = e.x - Math.cos(rot - Math.PI/2) * R0 * 0.32;
-  const baseCy = e.y - Math.sin(rot - Math.PI/2) * R0 * 0.32;
-  const bw = R0 * 0.66, bh = R0 * 0.34;
-  tronFillG(col, 0.16);
+  const dir = rot - Math.PI*0.5;
+  const ux = Math.cos(dir), uy = Math.sin(dir);
+  const tipX = e.x + ux * R0 * 1.25;
+  const tipY = e.y + uy * R0 * 1.25;
+  const baseCx = e.x - ux * R0 * 0.42;
+  const baseCy = e.y - uy * R0 * 0.42;
+  const bw = R0 * 0.76, bh = R0 * 0.40;
+
+  g.save();
+  g.translate(baseCx, baseCy);
+  g.rotate(dir + Math.PI*0.5);
+
+  const grd = g.createLinearGradient(0, -bh, 0, -bh - R0*1.8);
+  grd.addColorStop(0.0, rgbToRgba(col, 0.34));
+  grd.addColorStop(0.70, rgbToRgba(col, 0.18));
+  grd.addColorStop(1.0, 'rgba(255,255,255,0.03)');
+
+  g.beginPath();
+  g.moveTo(0, -R0*1.75);
+  g.lineTo(-bw, 0);
+  g.lineTo(bw, 0);
+  g.closePath();
+  g.fillStyle = grd;
+  g.fill();
+
+  g.strokeStyle = rgbToRgba(col, 0.88);
+  g.lineWidth = 2;
+  g.stroke();
+
+  g.beginPath();
+  g.moveTo(0, -R0*1.75);
+  g.lineTo(0, 0);
+  g.moveTo(-bw*0.56, 0);
+  g.lineTo(0, -R0*1.1);
+  g.moveTo(bw*0.56, 0);
+  g.lineTo(0, -R0*1.1);
+  g.lineWidth = 1.25;
+  g.strokeStyle = rgbToRgba(col, 0.46);
+  g.stroke();
+
+  g.beginPath();
+  g.ellipse(0, 0, bw, bh, 0, 0, Math.PI*2);
+  g.fillStyle = rgbToRgba(col, 0.20);
+  g.fill();
+  g.strokeStyle = rgbToRgba(col, 0.78);
+  g.lineWidth = 1.4;
+  g.stroke();
+
+  g.restore();
+
   g.beginPath();
   g.moveTo(tipX, tipY);
-  for(let i=0;i<=segs;i++){
-    const a = rot + Math.PI/2 + (i/segs)*Math.PI*2;
-    g.lineTo(baseCx + Math.cos(a)*bw, baseCy + Math.sin(a)*bh);
-  }
+  g.lineTo(baseCx - bw*Math.cos(rot), baseCy - bw*Math.sin(rot));
+  g.lineTo(baseCx + bw*Math.cos(rot), baseCy + bw*Math.sin(rot));
   g.closePath();
-  g.fill();
-  tronStrokeG(col, 2, 0.9);
-  g.stroke();
-  tronStrokeG(col, 1.2, 0.55);
-  g.beginPath();
-  g.ellipse(baseCx, baseCy, bw, bh, rot, 0, Math.PI*2);
+  tronStrokeG(col, 1.1, 0.35);
   g.stroke();
 } else if (b.kind === 'dragon') {
       // 龙形：蛇形身体+翼
@@ -8664,7 +8782,8 @@ function spawnEnemyCoreFromSpecs(spec, d){
 
   const EnemyFactory = {
     spawnFromProto(proto, d){
-      const e = MoveCatalog[proto.moveKey](d);
+      const moveKeys = (Array.isArray(proto.moveKeys) && proto.moveKeys.length) ? proto.moveKeys : [proto.moveKey||'DRIFT'];
+      const e = MoveCatalog[moveKeys[0]](d);
       e.baseCol = proto.baseCol;
       e.body = genEnemyBody(proto.bodySeed ^ ((e.x*1000)|0) ^ ((e.y*1000)|0));
       e.emitters = proto.emitters.map(em => {
@@ -8672,7 +8791,8 @@ function spawnEnemyCoreFromSpecs(spec, d){
         return EmitterCatalog[em.type]?.(em.cfg) ?? EmitterCatalog.AIM(em.cfg||{});
       });
       // keep proto specs for cloning / orbiter, etc.
-e._protoMoveKey = proto.moveKey;
+e._protoMoveKey = moveKeys[0];
+e._protoMoveKeys = moveKeys;
 e._protoEmitters = proto.emitters;
 e._protoWaveBulletMods = proto.waveBulletMods;
 e._protoBodySeed = proto.bodySeed;
@@ -8681,7 +8801,8 @@ e._protoBaseCol = proto.baseCol;
       // wave-level bullet mods pack for this enemy (applied by emitters if cfg.mods not set)
       e.waveBulletMods = proto.waveBulletMods;
      
-attachMoveMixer(e, d, proto.moveKey);
+attachMoveMixer(e, d, moveKeys[0]);
+if (e.mmx) e.mmx.availableModes = moveKeys;
 
       // apply traits
       applyEnemyTraits(e, proto.traitsForced, d);
@@ -9105,6 +9226,80 @@ if (chance(0.75)){
         }
       };
     },
+
+    // 天穹冠冕：多重圆冠扫射，子弹带轻微摆动，视觉更壮美
+    CELESTIAL_CROWN(baseFactory, cfg={}){
+      const petals = cfg.petals ?? 5;
+      const spin = cfg.spinSpeed ?? 1.6;
+      const swing = cfg.swing ?? 0.22;
+      const baseEm = baseFactory(cfg.baseCfg || cfg);
+      let phase = 0;
+      return {
+        type:`CELESTIAL_CROWN<${baseEm.type||'?'},${petals}>`, _baseType:baseEm.type,
+        _composite:'CELESTIAL_CROWN', _base:baseEm,
+        cd: baseEm.cd * 1.45,
+        nextCd(o,dt){
+          phase += (dt||0.016) * spin;
+          return (baseEm.nextCd?.(o,dt) ?? 1) * 1.45;
+        },
+        fire(owner){
+          const beforeP = bulletsP.length;
+          const beforeE = bulletsE.length;
+          for (let i=0;i<petals;i++){
+            owner._emitAngleOffset = phase + i * (Math.PI*2/petals);
+            baseEm.fire(owner);
+          }
+          owner._emitAngleOffset = 0;
+          for(const arr of [bulletsP, bulletsE]){
+            const before = (arr === bulletsP) ? beforeP : beforeE;
+            for(let i=before;i<arr.length;i++){
+              const b = arr[i];
+              if (!b?.alive) continue;
+              b.waveA = Math.max(b.waveA||0, 20 + petals*2);
+              b.waveF = Math.max(b.waveF||0, 4.8 + spin*1.2);
+              b.waveP = phase + i*0.15;
+              b.life = Math.max(b.life||1.8, 2.2);
+            }
+          }
+        }
+      };
+    },
+
+    // 潮汐长枪：先聚束后展开，兼具压制和封位
+    TIDAL_LANCE(baseFactory, cfg={}){
+      const lanes = cfg.lanes ?? 3;
+      const arc = cfg.arc ?? 0.52;
+      const accel = cfg.accel ?? 210;
+      const baseEm = baseFactory(cfg.baseCfg || cfg);
+      let tick = 0;
+      return {
+        type:`TIDAL_LANCE<${baseEm.type||'?'},${lanes}>`, _baseType:baseEm.type,
+        _composite:'TIDAL_LANCE', _base:baseEm,
+        cd: baseEm.cd * 1.1,
+        nextCd(o,dt){ return (baseEm.nextCd?.(o,dt) ?? 1) * 1.1; },
+        fire(owner){
+          const beforeP = bulletsP.length;
+          const beforeE = bulletsE.length;
+          for (let i=0;i<lanes;i++){
+            const t = lanes<=1 ? 0 : (i/(lanes-1)-0.5);
+            owner._emitAngleOffset = t * arc + Math.sin(tick*0.6) * 0.08;
+            baseEm.fire(owner);
+          }
+          owner._emitAngleOffset = 0;
+          tick++;
+          for(const arr of [bulletsP, bulletsE]){
+            const before = (arr === bulletsP) ? beforeP : beforeE;
+            for(let i=before;i<arr.length;i++){
+              const b = arr[i];
+              if (!b?.alive) continue;
+              b.pauseT = Math.max(b.pauseT||0, 0.06);
+              b.accel = (b.accel||0) + accel;
+              b.life = Math.max(b.life||1.8, 2.4);
+            }
+          }
+        }
+      };
+    },
   };
   
   
@@ -9398,12 +9593,15 @@ const waveBulletMods = (w<4) ? [] : rollAffixes({
         if (w<=10) return chance(0.25)?'MINE':(chance(0.4)?'CROSS':'SPIRAL');
         
         const roll = Math.random();
-        if(roll<0.15) return 'LASER';
-        if(roll<0.30) return 'FLOWER';
-        if(roll<0.45) return 'SHOTGUN';
-        if(roll<0.60) return 'CROSS';
-        if(roll<0.75) return 'RING';
-        return 'SPIRAL';
+        if(roll<0.10) return 'LASER';
+        if(roll<0.20) return 'FLOWER';
+        if(roll<0.32) return 'SHOTGUN';
+        if(roll<0.44) return 'CROSS';
+        if(roll<0.56) return 'RING';
+        if(roll<0.68) return 'SPIRAL';
+        if(roll<0.80) return 'EMPYREAN_LANCE';
+        if(roll<0.92) return 'CELESTIAL_CORONA';
+        return chance(0.5)?'NOVA_PULSE':'DRAGON_BREATH';
       }
 
       function rollEmitterMods(w, type){
@@ -9431,7 +9629,11 @@ const waveBulletMods = (w<4) ? [] : rollAffixes({
         if (type==='CROSS') return {type, cfg:{baseCd: lerp(1.8, 1.0, hf), speed: 200 + d*5, col: baseCol}};
         if (type==='SHOTGUN') return {type, cfg:{baseCd: lerp(2.2, 1.2, hf), col: baseCol}};
         if (type==='FLOWER') return {type, cfg:{col: baseCol}};
-        
+        if (type==='EMPYREAN_LANCE') return {type, cfg:{baseCd: lerp(2.1, 1.2, hf), speed: 300 + d*7, col: baseCol, spr:'glowE6'}};
+        if (type==='CELESTIAL_CORONA') return {type, cfg:{baseCd: lerp(2.8, 1.6, hf), speed: 250 + d*6, col: baseCol, spr:'glowE7'}};
+        if (type==='NOVA_PULSE') return {type, cfg:{baseCd: lerp(2.4, 1.4, hf), col: baseCol, spr:'glowE5'}};
+        if (type==='DRAGON_BREATH') return {type, cfg:{baseCd: lerp(1.9, 1.1, hf), speed: 280 + d*8, col: baseCol, spr:'glowE6'}};
+
         return {type:'AIM', cfg:{baseCd:1.2, col:baseCol}};
       }
 
@@ -9513,6 +9715,42 @@ for (const proto of this.deck){
       if (em.cfg?.mods && !em.cfg.mods.includes(pick) && em.cfg.mods.length < 5){
         em.cfg.mods.push(pick);
       }
+    }
+  }
+}
+if (Game.mode==='fortress'){
+  for (const proto of this.deck){
+    if (!proto.emitters || !proto.emitters.length) continue;
+    if (chance(0.45)){
+      const idx = randi(0, proto.emitters.length-1);
+      const base = proto.emitters[idx];
+      const t = base.type;
+      if (EmitterCatalog[t]){
+        const fancy = ['DOUBLE_HELIX','SPIRAL_ARMS','WIDENING_FAN','ACCEL_WAVE','STACKED_RING','CELESTIAL_CROWN','TIDAL_LANCE'];
+        const key = fancy[randi(0, fancy.length-1)];
+        const wrap = CompositeWrappers[key];
+        if (wrap){
+          const c = Object.assign({}, base.cfg || {});
+          const mixCfg = {
+            baseCfg: c,
+            helixSpeed: 1.6 + Math.random()*1.1,
+            arms: randi(2,4),
+            rotSpeed: 1.0 + Math.random()*1.3,
+            maxSpread: Math.PI*(0.25 + Math.random()*0.35),
+            steps: randi(3,5),
+            accelVal: 180 + Math.random()*240,
+            layers: randi(2,4),
+            layerInterval: 0.08 + Math.random()*0.09,
+          };
+          proto.emitters[idx] = { type:'_COMPOSITE', _compositeInstance:wrap(()=>EmitterCatalog[t](c), mixCfg), cfg:c };
+        }
+      }
+    }
+    if (proto.emitters.length < 3 && chance(0.26)){
+      const extraType = emitterPick(Math.max(4, w + randi(0,3)));
+      const ex = makeEmitterCfg(extraType, Math.max(4, w + 1));
+      ex.cfg.mods = mergeMods(proto.waveBulletMods, rollEmitterMods(Math.max(4,w+1), extraType));
+      proto.emitters.push(ex);
     }
   }
 }
@@ -9705,15 +9943,22 @@ for (const em of e.emitters){
         const k = clamp((d-1)/9, 0, 1);
         const baseRate = lerp(BAL.spawnRateEarly, BAL.spawnRateLate, k);
 
+        const strictCap = Math.max(4, Math.floor(3 + d*1.15 + Game.wave*0.08));
         this.cd -= dt;
         if (this.cd<=0 && Fortress.spawnLeft>0){
-          this.cd = baseRate * DiffConfig.spawnRateMul * rand(0.72, 1.26);
+          this.cd = Math.max(0.09, baseRate * DiffConfig.spawnRateMul);
 
-          if (Game.bossAlive && chance(0.55)) return;
-          if (enemies.length >= 8 && !Game.bossAlive) return;
+          if (enemies.length >= strictCap) return;
 
           const proto = WaveDirector.pick();
           const e = EnemyFactory.spawnFromProto(proto, d);
+          if (e.mmx){
+            e.mmx.nextT = Math.max(0.85, e.mmx.nextT * 0.72);
+            if (Array.isArray(e.mmx.availableModes) && e.mmx.availableModes.length > 1){
+              const modeFlip = ((Game.wave + enemies.length) % 3) === 0;
+              if (modeFlip) e.mmx.availableModes = [...e.mmx.availableModes].reverse();
+            }
+          }
 
           e.maxHp = Math.round(e.maxHp * proto.hpMul * DiffConfig.enemyHpMul);
           e.emCdMul = (e.emCdMul || 1.0) * DiffConfig.fireCdMul;
@@ -10869,7 +11114,62 @@ DANCING_BLADES: () => ({
     w.type = 'ALT_HELIX_RING';
     return w;
   };
-  
+
+  // EMpyrean Lance：神圣长枪，分段刺击 + 侧翼副炮
+  cat.EMPYREAN_LANCE = ()=>({
+    cd: 1.45,
+    nextCd(){ return Math.max(0.68, 1.9 / Math.max(0.6, ctx.getFireRate())); },
+    fire(o){
+      const a = aimA(o);
+      const sp = (ctx.team==='P') ? 700 : 520;
+      const dmg = (8.4 + Math.log2(1+ctx.getLv())*3.6) * ctx.getDmgMul() * (ctx.team==='P' ? 0.9 : 0.62);
+      for (let i=0;i<3;i++){
+        const k = i/2;
+        spawnAt(o, a, sp*(0.82 + k*0.32), {
+          dmg: dmg*(1.0 + k*0.2), r: 2.6 + k*0.7,
+          life: 1.35 + k*0.2, pierce: 1,
+          col: (i===2) ? ctx.getAltColor() : ctx.getColor(),
+          spr: (i===2) ? (ctx.team==='P'?'glowP2':'glowE2') : (ctx.team==='P'?'glowP':'glowE')
+        });
+      }
+      for (const side of [-1,1]){
+        spawnAt(o, a + side*0.22, sp*0.76, {
+          dmg:dmg*0.58, r:2.4, life:1.65,
+          col:ctx.getAltColor(),
+        });
+      }
+    }
+  });
+
+  // Celestial Corona：天冠涌环，先内后外封锁空间
+  cat.CELESTIAL_CORONA = ()=>({
+    cd: 2.15,
+    nextCd(){ return Math.max(1.05, 2.8 / Math.max(0.6, ctx.getFireRate())); },
+    fire(o){
+      const base = aimA(o);
+      const sp = (ctx.team==='P') ? 540 : 360;
+      const dmg = (7.2 + Math.log2(1+ctx.getLv())*3.0) * ctx.getDmgMul() * (ctx.team==='P' ? 0.82 : 0.58);
+      const rings = [10, 16, 22];
+      rings.forEach((count, idx)=>{
+        const phase = base + idx*0.18;
+        for (let i=0;i<count;i++){
+          const a = phase + i*(Math.PI*2/count);
+          const b = spawnAt(o, a, sp*(0.86 + idx*0.18), {
+            dmg:dmg*(1.05 - idx*0.16), r:2.4 + idx*0.3,
+            life:2.1 - idx*0.15,
+            col: idx===0 ? ctx.getColor() : (idx===1 ? ctx.getAltColor() : C.Y),
+            spr: idx===2 ? 'glowY' : (idx===1 ? (ctx.team==='P'?'glowP2':'glowE2') : (ctx.team==='P'?'glowP':'glowE')),
+          });
+          if (b){
+            b.waveA = 20 + idx*8;
+            b.waveF = 4.5 + idx*0.8;
+            b.waveP = phase;
+          }
+        }
+      });
+      spawnShockwave(o.x, o.y+yOff, ctx.getColor(), 130, 0.24);
+    }
+  });
   
   // [核心机制] 全自动包装器
 for (const key in cat) {
@@ -12487,10 +12787,27 @@ BG_Effect.init();
       }
 
       if (Game.mode==='fortress'){
+        let siegeTarget = Fortress.pickStrategicTarget(e.x, e.y, 420);
         for (const fs of Fortress.structures){
           if (fs.hp<=0) continue;
           pushCircleOutRect(e, fs);
         }
+
+        // 近战拆墙/拆塔逻辑：敌人会先拆防线，再图谋旗帜
+        if (siegeTarget && siegeTarget.type!=='flag'){
+          e._fortSiegeCd = Math.max(0, (e._fortSiegeCd||0) - dt);
+          const rr = (e.r || 18) + Math.max(siegeTarget.w||20, siegeTarget.h||20) * 0.28;
+          if (dist2(e.x,e.y,siegeTarget.x,siegeTarget.y) < rr*rr && e._fortSiegeCd<=0){
+            const siegeDmg = 18 + Game.difficulty*2.3 + Game.wave*0.42;
+            siegeTarget.hp -= siegeDmg;
+            e._fortSiegeCd = 0.48;
+            sparks(siegeTarget.x, siegeTarget.y, 'glowE2', 6, 180);
+            if (siegeTarget.hp<=0){
+              spawnShockwave(siegeTarget.x, siegeTarget.y, C.E2, 115, 0.22);
+            }
+          }
+        }
+
         if (e.y > H - 70){
           Fortress.hitFlag(58 + Game.wave*2.5);
           e.alive = false;
@@ -12790,6 +13107,8 @@ const AutoPilot = {
   // 节流
   _thinkCd: 0,
   _safeT: 0,
+  _fortBuildCd: 0,
+
 
   CONFIG: {
     // 决策频率与仿真
@@ -12836,8 +13155,8 @@ const AutoPilot = {
     MAX_TELEPORT_PER_TICK: 99999,
   },
 
-  toggle(){
-    this.active = !this.active;
+  setActive(on){
+    this.active = !!on;
     const btn = document.getElementById('btnAutoPilot');
     if (btn){
       btn.textContent = 'AI: ' + (this.active ? 'ON' : 'OFF');
@@ -12848,6 +13167,61 @@ const AutoPilot = {
       this.goalY = Player.y;
       this._thinkCd = 0;
       this._safeT = 0;
+      this._fortBuildCd = 0;
+    }
+  },
+
+  toggle(){
+    this.setActive(!this.active);
+  },
+
+  _autoFortressBuild(dt){
+    if (Game.mode!=='fortress' || Fortress.phase!=='fortify' || !Fortress.canBuild()) return;
+    this._fortBuildCd = Math.max(0, (this._fortBuildCd||0) - dt);
+    if (this._fortBuildCd > 0) return;
+
+    const byType = {};
+    for (const st of Fortress.structures){
+      byType[st.type] = (byType[st.type]||0) + 1;
+    }
+
+    const baseY = H - 132;
+    const rows = [baseY, baseY - 58, baseY - 108];
+    const slots = [0.18,0.32,0.46,0.54,0.68,0.82].map(k=>W*k);
+
+    const plan = [
+      {type:'wall', max:6, y:rows[0]},
+      {type:'heavywall', max:4, y:rows[1]},
+      {type:'bunker', max:2, y:rows[2]},
+      {type:'turret', max:4, y:rows[1]},
+      {type:'gatling', max:3, y:rows[0]},
+      {type:'sniper', max:2, y:rows[2]},
+      {type:'repairfield', max:1, y:rows[2]},
+    ];
+
+    for (const step of plan){
+      const have = byType[step.type] || 0;
+      if (have >= step.max) continue;
+      const cfg = Fortress.catalog[step.type];
+      if (!cfg || Fortress.stock < cfg.cost) continue;
+      Fortress.selected = step.type;
+      const x = slots[(have + (step.type.length%slots.length)) % slots.length];
+      const y = step.y + ((have%2) ? 12 : -8);
+      if (Fortress.placeAt(x, y)){
+        this._fortBuildCd = 0.18;
+        return;
+      }
+    }
+
+    if (Fortress.flagHp < Fortress.flagMaxHp*0.72 && Fortress.stock >= 6){
+      Fortress.repairFlag(6, 180);
+      this._fortBuildCd = 0.15;
+      return;
+    }
+
+    if (Fortress.stock < 6 || Fortress.structures.length >= 18){
+      Fortress.beginAssault();
+      this._fortBuildCd = 0.25;
     }
   },
 
@@ -12856,6 +13230,8 @@ const AutoPilot = {
    */
   update(dt){
     if (!this.active || !Player.alive || Game.state !== 'playing') return false;
+
+    if (Game.mode==='fortress') this._autoFortressBuild(dt);
 
     const C = this.CONFIG;
 
@@ -12921,11 +13297,17 @@ const AutoPilot = {
       cand.push({x: W*0.50, y: H*0.80});
       cand.push({x: W*0.32, y: H*0.82});
       cand.push({x: W*0.68, y: H*0.82});
+      if (Game.mode==='fortress'){
+        cand.push({x:W*0.50, y:H*0.72});
+        cand.push({x:W*0.40, y:H*0.74});
+        cand.push({x:W*0.60, y:H*0.74});
+      }
     }
 
     // 3) 进攻偏好（只在“连续安全”时启用）
     let predX = null;
     let idealY = clamp(H * C.IDEAL_Y, 90, H - 70);
+    if (Game.mode==='fortress') idealY = clamp(H * 0.68, 86, H - 86);
 
     if (C.ATTACK_ENABLE){
       // 用当前点的 score 粗测环境安全
@@ -13250,6 +13632,10 @@ const AutoPilot = {
       if (dy < -40) s *= 0.75;
       if (dy > 260) s *= 1.35;
       if (e.type === 'BOSS') s *= 0.65;
+      if (Game.mode==='fortress'){
+        const toFlag = Math.abs(e.x - W*0.5) * 0.45 + Math.abs((H-62) - e.y) * 1.35;
+        s = s * 0.72 + toFlag * 0.48;
+      }
 
       if (s < bestS){ bestS = s; best = e; }
     }
@@ -13769,6 +14155,24 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
       }
       Fortress.getBehavior(fs.type)?.onDraw?.(fs, ctx, {fortress:Fortress});
       ctx.globalAlpha = 0.85;
+    }
+    if (Fortress.preview && Fortress.canBuild() && !Fortress.sellMode){
+      const cfg = Fortress.catalog[Fortress.preview.item];
+      if (cfg){
+        const afford = Fortress.stock >= cfg.cost;
+        const px = Fortress.preview.x, py = Fortress.preview.y;
+        ctx.globalAlpha = 0.26;
+        ctx.fillStyle = afford ? 'rgba(126,249,192,0.92)' : 'rgba(255,94,122,0.92)';
+        ctx.fillRect(px-cfg.w*0.5, py-cfg.h*0.5, cfg.w, cfg.h);
+        ctx.globalAlpha = 0.92;
+        ctx.strokeStyle = afford ? 'rgba(190,255,236,0.95)' : 'rgba(255,168,188,0.95)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(px-cfg.w*0.5, py-cfg.h*0.5, cfg.w, cfg.h);
+        ctx.globalAlpha = 0.65;
+        ctx.setLineDash([5,4]);
+        ctx.strokeRect(px-cfg.w*0.5-2, py-cfg.h*0.5-2, cfg.w+4, cfg.h+4);
+        ctx.setLineDash([]);
+      }
     }
     ctx.restore();
   }
@@ -16696,6 +17100,12 @@ ui.btnFortSell?.addEventListener('click', ()=>Fortress.select(Fortress.sellMode 
 ui.btnFortUndo?.addEventListener('click', ()=>Fortress.undo());
 ui.btnFortStartWave?.addEventListener('click', ()=>Fortress.beginAssault());
 ui.btnFortRepairFlag?.addEventListener('click', ()=>Fortress.repairFlag(6, 180));
+
+document.addEventListener('pointerdown', (e)=>{
+  if (Game.mode!=='fortress' || !Fortress.preview) return;
+  if (e.target === canvas) return;
+  Fortress.clearPreview();
+}, {passive:true, capture:true});
 
 document.getElementById('btnResumePause')?.addEventListener('click', ()=>{
   if (Game.state==='paused') togglePause();
