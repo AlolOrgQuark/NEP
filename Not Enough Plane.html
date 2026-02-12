@@ -288,7 +288,7 @@ button:disabled{ opacity:0.5; cursor:not-allowed; filter:grayscale(1); }
 }
 
 #fortressPanel{
-  width:min(440px, 78vw);
+  width:min(500px, 90vw);
   align-self:center;
   padding:8px 10px;
   background:rgba(8,14,34,0.52);
@@ -296,6 +296,7 @@ button:disabled{ opacity:0.5; cursor:not-allowed; filter:grayscale(1); }
   backdrop-filter:blur(6px);
   -webkit-backdrop-filter:blur(6px);
   display:none;
+  margin-bottom:6px;
 }
 
 #fortressPanel,
@@ -1177,6 +1178,45 @@ input[type="checkbox"] {
     </div>
     <!-- Bottom HUD -->
     <div class="bottom">
+      <div id="fortressPanel">
+        <div class="row" style="margin-bottom:6px">
+          <span class="mono" id="fortressPhase" style="font-size:12px;color:var(--c-yellow)">FORTRESS</span>
+          <span class="mono" id="fortressMat" style="font-size:12px">MAT 0</span>
+          <span class="mono" id="fortressCore" style="font-size:12px;color:var(--c-danger)">FLAG 100%</span>
+        </div>
+        <div id="fortressBuildScroller">
+          <button id="btnFortBarricade" data-item="barricade" class="mini-btn on">木障 3</button>
+          <button id="btnFortWall" data-item="wall" class="mini-btn">钢壁 6</button>
+          <button id="btnFortHeavyWall" data-item="heavywall" class="mini-btn">合金墙 11</button>
+          <button id="btnFortBunker" data-item="bunker" class="mini-btn">堡垒墙 18</button>
+          <button id="btnFortShield" data-item="shield" class="mini-btn" style="border-color:var(--c-magenta);color:var(--c-magenta)">棱镜盾 9</button>
+          <button id="btnFortTurret" data-item="turret" class="mini-btn" style="border-color:var(--c-danger);color:var(--c-danger)">炮塔+ 10</button>
+          <button id="btnFortGatling" data-item="gatling" class="mini-btn" style="border-color:#ff8f8f;color:#ff8f8f">加特林 12</button>
+          <button id="btnFortSniper" data-item="sniper" class="mini-btn">狙击塔 14</button>
+          <button id="btnFortMissile" data-item="missile" class="mini-btn" style="border-color:#ffd28a;color:#ffd28a">导弹井 16</button>
+          <button id="btnFortTesla" data-item="tesla" class="mini-btn" style="border-color:#9dd7ff;color:#9dd7ff">特斯拉塔 15</button>
+          <button id="btnFortFlame" data-item="flame" class="mini-btn" style="border-color:#ffb56b;color:#ffb56b">喷火塔 13</button>
+          <button id="btnFortMortar" data-item="mortar" class="mini-btn" style="border-color:#d7d7ff;color:#d7d7ff">迫击炮 17</button>
+          <button id="btnFortDrone" data-item="dronepad" class="mini-btn" style="border-color:#8bf7ff;color:#8bf7ff">无人机坪 16</button>
+          <button id="btnFortPulse" data-item="pulse" class="mini-btn" style="border-color:var(--c-yellow);color:var(--c-yellow)">脉冲器 12</button>
+          <button id="btnFortMine" data-item="mine" class="mini-btn">地雷 8</button>
+          <button id="btnFortSlow" data-item="slow" class="mini-btn">减速塔 11</button>
+          <button id="btnFortRepair" data-item="repair" class="mini-btn">旗帜维修机 13</button>
+          <button id="btnFortRepairPlayer" data-item="repairplayer" class="mini-btn" style="border-color:#9deeff;color:#9deeff">医疗站 12</button>
+          <button id="btnFortRepairField" data-item="repairfield" class="mini-btn" style="border-color:#9dffad;color:#9dffad">工程站 14</button>
+          <button id="btnFortFactory" data-item="factory" class="mini-btn" style="border-color:#9dffad;color:#9dffad">补给站 12</button>
+          <button id="btnFortSpinner" data-item="spinner" class="mini-btn" style="border-color:#92c7ff;color:#92c7ff">旋刃塔 15</button>
+          <button id="btnFortRam" data-item="ram" class="mini-btn" style="border-color:#ffcb66;color:#ffcb66">冲锋桩 14</button>
+          <button id="btnFortBeacon" data-item="beacon" class="mini-btn" style="border-color:#b8a6ff;color:#b8a6ff">指挥信标 10</button>
+          <button id="btnFortTaunt" data-item="taunt" class="mini-btn" style="border-color:#ff9b72;color:#ff9b72">诱敌堡 16</button>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <button id="btnFortStartWave" class="mini-btn" style="border-color:var(--c-danger);color:var(--c-danger)">开始敌袭</button>
+          <button id="btnFortSell" class="mini-btn" style="border-color:#ffb347;color:#ffb347">SELL</button>
+          <button id="btnFortUndo" class="mini-btn">UNDO</button>
+        </div>
+      </div>
+
       <div class="hud-panel">
         
         <!-- HP Row -->
@@ -1225,41 +1265,6 @@ input[type="checkbox"] {
           <span class="chip c-p2" id="chipShield" style="display:none; color:var(--c-magenta)">SHD <b id="shText">0.0</b>s</span>
         </div>
 
-      </div>
-      <div id="fortressPanel">
-        <div class="row" style="margin-bottom:6px">
-          <span class="mono" id="fortressPhase" style="font-size:12px;color:var(--c-yellow)">FORTRESS</span>
-          <span class="mono" id="fortressMat" style="font-size:12px">MAT 0</span>
-          <span class="mono" id="fortressCore" style="font-size:12px;color:var(--c-danger)">FLAG 100%</span>
-        </div>
-        <div id="fortressBuildScroller">
-          <button id="btnFortBarricade" data-item="barricade" class="mini-btn on">木障 3</button>
-          <button id="btnFortWall" data-item="wall" class="mini-btn">钢壁 6</button>
-          <button id="btnFortHeavyWall" data-item="heavywall" class="mini-btn">合金墙 11</button>
-          <button id="btnFortBunker" data-item="bunker" class="mini-btn">堡垒墙 18</button>
-          <button id="btnFortShield" data-item="shield" class="mini-btn" style="border-color:var(--c-magenta);color:var(--c-magenta)">棱镜盾 9</button>
-          <button id="btnFortTurret" data-item="turret" class="mini-btn" style="border-color:var(--c-danger);color:var(--c-danger)">炮塔+ 10</button>
-          <button id="btnFortGatling" data-item="gatling" class="mini-btn" style="border-color:#ff8f8f;color:#ff8f8f">加特林 12</button>
-          <button id="btnFortSniper" data-item="sniper" class="mini-btn">狙击塔 14</button>
-          <button id="btnFortMissile" data-item="missile" class="mini-btn" style="border-color:#ffd28a;color:#ffd28a">导弹井 16</button>
-          <button id="btnFortTesla" data-item="tesla" class="mini-btn" style="border-color:#9dd7ff;color:#9dd7ff">特斯拉塔 15</button>
-          <button id="btnFortFlame" data-item="flame" class="mini-btn" style="border-color:#ffb56b;color:#ffb56b">喷火塔 13</button>
-          <button id="btnFortMortar" data-item="mortar" class="mini-btn" style="border-color:#d7d7ff;color:#d7d7ff">迫击炮 17</button>
-          <button id="btnFortDrone" data-item="dronepad" class="mini-btn" style="border-color:#8bf7ff;color:#8bf7ff">无人机坪 16</button>
-          <button id="btnFortPulse" data-item="pulse" class="mini-btn" style="border-color:var(--c-yellow);color:var(--c-yellow)">脉冲器 12</button>
-          <button id="btnFortMine" data-item="mine" class="mini-btn">地雷 8</button>
-          <button id="btnFortSlow" data-item="slow" class="mini-btn">减速塔 11</button>
-          <button id="btnFortRepair" data-item="repair" class="mini-btn">维修机 13</button>
-          <button id="btnFortFactory" data-item="factory" class="mini-btn" style="border-color:#9dffad;color:#9dffad">补给站 12</button>
-          <button id="btnFortSpinner" data-item="spinner" class="mini-btn" style="border-color:#92c7ff;color:#92c7ff">旋刃塔 15</button>
-          <button id="btnFortRam" data-item="ram" class="mini-btn" style="border-color:#ffcb66;color:#ffcb66">冲锋桩 14</button>
-          <button id="btnFortBeacon" data-item="beacon" class="mini-btn" style="border-color:#b8a6ff;color:#b8a6ff">指挥信标 10</button>
-        </div>
-        <div class="row" style="margin-top:4px">
-          <button id="btnFortStartWave" class="mini-btn" style="border-color:var(--c-danger);color:var(--c-danger)">开始敌袭</button>
-          <button id="btnFortSell" class="mini-btn" style="border-color:#ffb347;color:#ffb347">SELL</button>
-          <button id="btnFortUndo" class="mini-btn">UNDO</button>
-        </div>
       </div>
       <div class="hint">DOUBLE TAP TO DETONATE BOMB</div>
     </div>
@@ -2698,6 +2703,7 @@ const addShake = (m, t=0.16) => {
     undoStack:[],
     sellMode:false,
     bossSpawned:false,
+    activeDrag:null,
     catalog:{
       barricade:{cost:3,w:46,h:16,hp:110,col:'#b8d28a',type:'barricade'},
       wall:{cost:6,w:56,h:20,hp:260,col:'#7ef9c0',type:'wall'},
@@ -2706,20 +2712,23 @@ const addShake = (m, t=0.16) => {
       shield:{cost:9,w:74,h:18,hp:360,col:'#b36cff',type:'shield'},
       turret:{cost:10,w:44,h:24,hp:220,col:'#ff5577',type:'turret',cd:0.42},
       gatling:{cost:12,w:40,h:22,hp:190,col:'#ff8f8f',type:'gatling',cd:0.16},
-      sniper:{cost:14,w:36,h:24,hp:150,col:'#ffa5ff',type:'sniper',cd:0.85},
+      sniper:{cost:14,w:36,h:24,hp:150,col:'#ffa5ff',type:'sniper',cd:0.58},
       missile:{cost:16,w:42,h:26,hp:180,col:'#ffd28a',type:'missile',cd:1.75},
       tesla:{cost:15,w:40,h:28,hp:210,col:'#9dd7ff',type:'tesla',cd:1.05},
       flame:{cost:13,w:38,h:24,hp:220,col:'#ffb56b',type:'flame',cd:0.22},
-      mortar:{cost:17,w:44,h:28,hp:220,col:'#d7d7ff',type:'mortar',cd:1.9},
+      mortar:{cost:17,w:44,h:28,hp:220,col:'#d7d7ff',type:'mortar',cd:1.3},
       dronepad:{cost:16,w:42,h:26,hp:230,col:'#8bf7ff',type:'dronepad',cd:1.35},
-      pulse:{cost:12,w:36,h:36,hp:170,col:'#ffd56d',type:'pulse',cd:3.6},
+      pulse:{cost:12,w:36,h:36,hp:170,col:'#ffd56d',type:'pulse',cd:2.2},
       mine:{cost:8,w:24,h:24,hp:90,col:'#f2ff80',type:'mine'},
       slow:{cost:11,w:34,h:30,hp:190,col:'#8ee7ff',type:'slow'},
       repair:{cost:13,w:40,h:28,hp:190,col:'#9dffad',type:'repair',cd:4.2},
+      repairplayer:{cost:12,w:38,h:26,hp:170,col:'#9deeff',type:'repairplayer',cd:2.8},
+      repairfield:{cost:14,w:44,h:28,hp:260,col:'#9dffad',type:'repairfield',cd:3.2},
       factory:{cost:12,w:48,h:26,hp:240,col:'#9dffad',type:'factory',cd:6.0},
       spinner:{cost:15,w:42,h:24,hp:210,col:'#92c7ff',type:'spinner',cd:0.14,rot:0},
       ram:{cost:14,w:52,h:22,hp:260,col:'#ffcb66',type:'ram',cd:3.4,rot:0},
       beacon:{cost:10,w:32,h:32,hp:140,col:'#b8a6ff',type:'beacon',cd:2.8,rot:0},
+      taunt:{cost:16,w:58,h:38,hp:1300,col:'#ff9b72',type:'taunt',cd:0},
     },
     itemBehaviors:{
       spinner:{
@@ -2747,12 +2756,23 @@ const addShake = (m, t=0.16) => {
         },
       },
       ram:{
-        onCreate(st){ st.rot = st.rot || 0; st.dashT = 0; st.baseX = st.x; st.baseY = st.y; },
+        onCreate(st){ st.rot = st.rot || 0; st.dashT = 0; st.baseX = st.x; st.baseY = st.y; st.dragging=false; },
         onPointerDown(st, ctx){
           if (ctx.phase!=='assault') return false;
-          const a = Math.atan2(ctx.world.y-st.y, ctx.world.x-st.x);
-          st.rot = a;
-          st.dashT = 0.35;
+          st.dragging = true;
+          st.baseX = st.x; st.baseY = st.y;
+          return true;
+        },
+        onPointerMove(st, ctx){
+          if (!st.dragging || ctx.phase!=='assault') return false;
+          st.rot = Math.atan2(ctx.world.y-st.y, ctx.world.x-st.x);
+          return true;
+        },
+        onPointerUp(st, ctx){
+          if (!st.dragging || ctx.phase!=='assault') return false;
+          st.dragging = false;
+          st.rot = Math.atan2(ctx.world.y-st.y, ctx.world.x-st.x);
+          st.dashT = 0.40;
           st.baseX = st.x; st.baseY = st.y;
           spawnShockwave(st.x, st.y, '#ffcb66', 90, 0.18);
           return true;
@@ -2771,6 +2791,17 @@ const addShake = (m, t=0.16) => {
               st.x = clamp((st.baseX + st.x)*0.5, 28, W-28);
               st.y = clamp((st.baseY + st.y)*0.5, H*0.38, H-60);
             }
+          }
+          return true;
+        },
+      },
+      taunt:{
+        onCreate(st){ st.pulseT = 0; },
+        onUpdate(st, dt){
+          st.pulseT = (st.pulseT || 0) + dt;
+          if (st.pulseT > 1.2){
+            st.pulseT = 0;
+            spawnShockwave(st.x, st.y, '#ff9b72', 88, 0.16);
           }
           return true;
         },
@@ -2818,6 +2849,7 @@ const addShake = (m, t=0.16) => {
       this.undoStack.length=0;
       this.sellMode=false;
       this.bossSpawned=false;
+      this.activeDrag=null;
     },
     start(){
       this.reset();
@@ -2830,7 +2862,7 @@ const addShake = (m, t=0.16) => {
     updatePanel(){
       if (!ui.fortressPanel) return;
       const on = Game.mode==='fortress' && Game.state==='playing';
-      ui.fortressPanel.style.display = on ? 'block' : 'none';
+      ui.fortressPanel.style.display = (on && this.phase==='fortify') ? 'block' : 'none';
       if (!on) return;
       const phaseText = this.phase==='fortify' ? '准备阶段：选择物品后点画布放置' : `守城阶段 余敌:${this.spawnLeft}`;
       ui.fortressPhase.textContent = phaseText;
@@ -2903,7 +2935,24 @@ const addShake = (m, t=0.16) => {
       }
       return -1;
     },
-    handlePointerDown(screenX, screenY){
+    findTauntTarget(x,y,maxD=99999){
+      let best=null, bestD=maxD*maxD;
+      for (const s of this.structures){
+        if (s.hp<=0 || s.type!=='taunt') continue;
+        const d2 = dist2(x,y,s.x,s.y);
+        if (d2<bestD){ bestD=d2; best=s; }
+      }
+      return best;
+    },
+    getEnemyTarget(x,y,maxD=99999){
+      if (Game.mode==='fortress'){
+        const taunt = this.findTauntTarget(x,y,maxD);
+        if (taunt) return taunt;
+        return {x:W*0.5,y:H-62};
+      }
+      return Player.alive ? Player : null;
+    },
+    handlePointerDown(screenX, screenY, pointerId=null){
       if (Game.mode!=='fortress' || Game.state!=='playing') return false;
       const pt = this.toWorld(screenX, screenY);
       const idx = this.pickStructure(screenX, screenY);
@@ -2911,12 +2960,32 @@ const addShake = (m, t=0.16) => {
         const st = this.structures[idx];
         const acted = this.getBehavior(st.type)?.onPointerDown?.(st, {fortress:this, phase:this.phase, world:pt}) || false;
         if (acted){
+          const canDrag = !!this.getBehavior(st.type)?.onPointerMove;
+          if (canDrag) this.activeDrag = {pointerId, sid:st.id};
           this.updatePanel();
           return true;
         }
       }
       if (this.canBuild()) return this.placeAt(screenX, screenY);
       return false;
+    },
+    handlePointerMove(screenX, screenY, pointerId=null){
+      if (!this.activeDrag || (pointerId!=null && this.activeDrag.pointerId!=null && pointerId!==this.activeDrag.pointerId)) return false;
+      const st = this.structures.find(v=>v.id===this.activeDrag.sid);
+      if (!st) return false;
+      const pt = this.toWorld(screenX, screenY);
+      const acted = this.getBehavior(st.type)?.onPointerMove?.(st, {fortress:this, phase:this.phase, world:pt}) || false;
+      if (acted) return true;
+      return false;
+    },
+    handlePointerUp(screenX, screenY, pointerId=null){
+      if (!this.activeDrag || (pointerId!=null && this.activeDrag.pointerId!=null && pointerId!==this.activeDrag.pointerId)) return false;
+      const st = this.structures.find(v=>v.id===this.activeDrag.sid);
+      this.activeDrag = null;
+      if (!st) return false;
+      const pt = this.toWorld(screenX, screenY);
+      const acted = this.getBehavior(st.type)?.onPointerUp?.(st, {fortress:this, phase:this.phase, world:pt}) || false;
+      return acted;
     },
     sellAt(screenX, screenY){
       if (!this.canBuild()) return false;
@@ -3029,9 +3098,9 @@ const addShake = (m, t=0.16) => {
             const t = findNearestEnemy(st.x, st.y, 800);
             if (t){
               const a = Math.atan2(t.y-st.y, t.x-st.x);
-              const b = spawnBullet('P', st.x, st.y-8, Math.cos(a)*300, Math.sin(a)*300, {r:3.6,dmg:24+Game.wave*1.2,col:'#d7d7ff',spr:'glowP2',life:2.0,mods:['MINE'],mineT:0.35,style:1});
+              const b = spawnBullet('P', st.x, st.y-8, Math.cos(a)*340, Math.sin(a)*340, {r:3.8,dmg:30+Game.wave*1.35,col:'#d7d7ff',spr:'glowP2',life:2.1,mods:['MINE'],mineT:0.32,style:1});
               if (b) b.noHitT = 0.06;
-              st.cd = 1.8;
+              st.cd = 1.24;
             }
           }
         } else if (st.type==='dronepad'){
@@ -3053,22 +3122,22 @@ const addShake = (m, t=0.16) => {
             const t = findNearestEnemy(st.x, st.y, 760);
             if (t){
               const a = Math.atan2(t.y-st.y, t.x-st.x);
-              spawnBullet('P', st.x, st.y-8, Math.cos(a)*860, Math.sin(a)*860, {r:3.0,dmg:58+Game.wave*2.4,col:'#ffa5ff',spr:'glowP2',life:1.2,mods:['PHASE_SHIFT'],style:1,pierce:4});
-              st.cd = 0.82;
+              spawnBullet('P', st.x, st.y-8, Math.cos(a)*900, Math.sin(a)*900, {r:3.2,dmg:88+Game.wave*3.1,col:'#ffa5ff',spr:'glowP2',life:1.3,mods:['PHASE_SHIFT'],style:1,pierce:5});
+              st.cd = 0.52;
             }
           }
         } else if (st.type==='pulse'){
           st.cd -= dt;
           if (st.cd<=0){
-            spawnShockwave(st.x,st.y,C.Y,130,0.35);
+            spawnShockwave(st.x,st.y,C.Y,150,0.35);
             for (const e of enemies){
               if (!e.alive) continue;
-              if (dist2(st.x,st.y,e.x,e.y) < 145*145){
-                e._freezeT = Math.max(e._freezeT||0, 0.7);
-                e.onHit?.(18 + Game.wave*0.9);
+              if (dist2(st.x,st.y,e.x,e.y) < 165*165){
+                e._freezeT = Math.max(e._freezeT||0, 0.75);
+                e.onHit?.(20 + Game.wave*1.05);
               }
             }
-            st.cd = 4.8;
+            st.cd = 2.15;
           }
         } else if (st.type==='repair'){
           st.cd -= dt;
@@ -3076,6 +3145,25 @@ const addShake = (m, t=0.16) => {
             this.flagHp = Math.min(this.flagMaxHp, this.flagHp + 35);
             spawnShockwave(st.x,st.y,'#9dffad',90,0.25);
             st.cd = 5.0;
+          }
+        } else if (st.type==='repairplayer'){
+          st.cd -= dt;
+          if (st.cd<=0){
+            if (Player.alive) Player.hp = Math.min(Player.maxHp, Player.hp + 14);
+            spawnShockwave(st.x,st.y,'#9deeff',80,0.18);
+            st.cd = 2.6;
+          }
+        } else if (st.type==='repairfield'){
+          st.cd -= dt;
+          if (st.cd<=0){
+            for (const fs of this.structures){
+              if (fs.id===st.id || fs.hp<=0) continue;
+              if (dist2(st.x,st.y,fs.x,fs.y) < 190*190){
+                fs.hp = Math.min(fs.maxHp, fs.hp + 42);
+              }
+            }
+            spawnShockwave(st.x,st.y,'#9dffad',105,0.22);
+            st.cd = 3.1;
           }
         } else if (st.type==='factory'){
           st.cd -= dt;
@@ -3316,7 +3404,7 @@ function recoverLocalControl(){
     ensureAudio();
     checkDoubleTap();
 
-    if (Game.mode==='fortress' && Fortress.handlePointerDown(e.clientX, e.clientY)){
+    if (Game.mode==='fortress' && Fortress.handlePointerDown(e.clientX, e.clientY, e.pointerId)){
       e.preventDefault?.();
       return;
     }
@@ -3349,6 +3437,10 @@ function recoverLocalControl(){
   }, {passive: false});
 
   canvas.addEventListener('pointermove', (e) => {
+    if (Game.mode==='fortress' && Fortress.handlePointerMove(e.clientX, e.clientY, e.pointerId)){
+      e.preventDefault?.();
+      return;
+    }
     // 桌面 mouse 模式：仅缓存坐标，主循环每帧消费一次，避免高频同步卡顿
     if (!IS_TOUCH && inputMode === 'mouse'){
       Input.active = true;
@@ -3370,6 +3462,9 @@ function recoverLocalControl(){
 
   function endPointer(e){
     const pid = e ? e.pointerId : Input.pid;
+    if (e && Game.mode==='fortress' && Fortress.handlePointerUp(e.clientX, e.clientY, e.pointerId)){
+      e.preventDefault?.();
+    }
     if (pid != null && pid !== Input.pid) return;
     if (inputMode === 'joystick') joyRelease();
     Input.active = false;
@@ -3923,7 +4018,7 @@ function _doCrossSplit(b){
       onUpdate(b, dt, ctx){
         if (b.homing > 0) return;
         let tx, ty;
-        if (b.team === 'E' && Player.alive){ tx = Player.x; ty = Player.y; }
+        if (b.team === 'E'){ const t = findEnemyFocus(b.x,b.y); if (t){ tx = t.x; ty = t.y; } }
         else if (b.team === 'P'){
           const t = findNearestEnemy(b.x, b.y, 200);
           if (t){ tx = t.x; ty = t.y; }
@@ -4094,8 +4189,9 @@ function _doCrossSplit(b){
            if (b._turretCd <= 0) {
              b._turretCd = 0.15; // 射速
              // 向玩家发射
-             let tx=Player.x, ty=Player.y;
+             let tx=b.x, ty=b.y;
              if (b.team === 'P') { const e=findNearestEnemy(b.x,b.y); if(e){tx=e.x;ty=e.y;} }
+             else { const t=findEnemyFocus(b.x,b.y); if(t){ tx=t.x; ty=t.y; } }
              
              const a = Math.atan2(ty-b.y, tx-b.x);
              spawnBullet(b.team, b.x, b.y, Math.cos(a)*200, Math.sin(a)*200, {
@@ -4402,7 +4498,8 @@ function _doCrossSplit(b){
             // 寻找目标
             if (b.team === 'E') {
               // 敌人瞄准玩家
-              if (Player.alive) { targetX = Player.x; targetY = Player.y; }
+              const t = findEnemyFocus(b.x,b.y);
+              if (t) { targetX = t.x; targetY = t.y; }
             } else {
               // 玩家瞄准最近敌人
               const t = findNearestEnemy(b.x, b.y);
@@ -6231,8 +6328,10 @@ CHARGER:{
       e._chgCd = rand(2.4, 3.8) / Math.sqrt(d);
       e._chgT = 0.22 + rand(0,0.10);
 
-      const dx = Player.x - e.x;
-      const dy = Player.y - e.y;
+      const t = findEnemyFocus(e.x,e.y);
+      if (!t) return;
+      const dx = t.x - e.x;
+      const dy = t.y - e.y;
       const len = Math.max(1, Math.hypot(dx,dy));
       const sp = 420 + d*18;
       e._chgVx = (dx/len)*sp;
@@ -6294,9 +6393,12 @@ EMP_PULSE:{
       if (e._empCd>0) return;
       e._empCd = rand(4.0, 6.0) / Math.sqrt(d);
 
-      const dx = Player.x-e.x, dy=Player.y-e.y;
-      if (dx*dx+dy*dy < e._empR*e._empR){
-        Player.slowT = Math.min(2.2, Player.slowT + 1.0);
+      const t = findEnemyFocus(e.x,e.y);
+      if (t){
+        const dx = t.x-e.x, dy=t.y-e.y;
+        if (dx*dx+dy*dy < e._empR*e._empR && t===Player){
+          Player.slowT = Math.min(2.2, Player.slowT + 1.0);
+        }
       }
 
       let removed = 0;
@@ -6322,8 +6424,10 @@ CORROSIVE_AURA:{
     e._corR = 130 + randi(0,70);
     wrapMethod(e,'update',(old,dt)=>{
       old(dt);
-      const dx=Player.x-e.x, dy=Player.y-e.y;
-      if (dx*dx+dy*dy < e._corR*e._corR && Player.invuln<=0){
+      const t = findEnemyFocus(e.x,e.y);
+      if (!t) return;
+      const dx=t.x-e.x, dy=t.y-e.y;
+      if (dx*dx+dy*dy < e._corR*e._corR && t===Player && Player.invuln<=0){
         onPlayerHit(2.0 + d*0.22);
       }
     });
@@ -7679,7 +7783,7 @@ if (b.kind === 'crescent'){
   _cur: null,   // 当前敌人
   _curEm: null, // [新增] 当前发射器实例
   
-  getTarget: () => (Player.alive ? Player : null),
+  getTarget: () => findEnemyFocus((GenericEnemyCtx._cur?.x)||W*0.5, (GenericEnemyCtx._cur?.y)||0),
   getFireRate: () => 1.0,
   getDmgMul: () => 1.0,
   getLv: () => Game.wave || 1,
@@ -7802,7 +7906,9 @@ const EmitterCatalog = makeEmitterCatalog(GenericEnemyCtx);
       e.x=rand(20,W-20); e.y=-50;
       e.move=(dt)=>{
         e.y += (30+d*2)*dt;
-        const dx = Player.x - e.x;
+        const t = findEnemyFocus(e.x,e.y);
+        if (!t) return;
+        const dx = t.x - e.x;
         e.x += Math.sign(dx) * Math.min(Math.abs(dx), (45+d*4)*dt);
       };
       return e;
@@ -7926,7 +8032,9 @@ const EmitterCatalog = makeEmitterCatalog(GenericEnemyCtx);
       if (e._ddCd <= 0) {
         e._ddCd = rand(0.8, 1.4) / Math.sqrt(d);
         // 瞬间获得一个巨大的横向冲力
-        const dir = Player.x > e.x ? -1 : 1; // 聪明点：倾向于往远离玩家的方向闪
+        const t = findEnemyFocus(e.x,e.y);
+        const tx = t ? t.x : W*0.5;
+        const dir = tx > e.x ? -1 : 1; // 聪明点：倾向于往远离目标的方向闪
         e._vx = dir * (350 + 150 * hellFactor());
       }
       // 物理模拟：强力摩擦力使速度衰减
@@ -9672,6 +9780,12 @@ for (const em of e.emitters){
     return best;
   }
 
+
+  function findEnemyFocus(x,y, maxD=99999){
+    if (Game.mode==='fortress') return Fortress.getEnemyTarget(x,y,maxD);
+    return Player.alive ? Player : null;
+  }
+
   function spawnHomingMissile(x,y,target){
   if (!target) return;
   const a = Math.atan2(target.y-y, target.x-x);
@@ -11112,7 +11226,7 @@ if (b.homing > 0){
     const t = findNearestEnemy(b.x, b.y, 760);
     if (t){ tx = t.x; ty = t.y; }
   } else {
-    if (Player.alive){ tx = Player.x; ty = Player.y; }
+    { const t = findEnemyFocus(b.x,b.y); if (t){ tx = t.x; ty = t.y; } }
   }
 
   if (tx != null){
