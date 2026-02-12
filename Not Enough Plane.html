@@ -63,6 +63,12 @@ canvas{ width:100%; height:100%; display:block; touch-action:none; }
   z-index:10;
 }
 
+.ui.compact .bottom,
+.ui.compact .hint,
+.ui.compact #fortressPanel{
+  display:none !important;
+}
+
 /* ================= TYPOGRAPHY & UTILS ================= */
 .mono{ font-family:var(--font-mono); letter-spacing:-0.5px; }
 .neon-text{ text-shadow:0 0 8px currentColor; }
@@ -280,6 +286,20 @@ button:disabled{ opacity:0.5; cursor:not-allowed; filter:grayscale(1); }
   letter-spacing:2px;
   text-transform:uppercase;
 }
+
+#fortressPanel{
+  width:min(640px, 94vw);
+  align-self:center;
+  padding:8px 10px;
+  background:rgba(8,14,34,0.52);
+  border:1px solid rgba(82,230,255,0.25);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  display:none;
+}
+
+#fortressPanel .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+#fortressPanel .mini-btn{ font-size:11px; padding:5px 8px; }
 
 /* ================= OVERLAYS (GAMEOVER/PAUSE) ================= */
 .center-overlay{
@@ -1119,6 +1139,7 @@ input[type="checkbox"] {
 <button id="btnOption" class="mini-btn" style="display:none;border-color:var(--c-cyan);">OPTION</button>
 <button id="btnMute" class="mini-btn">AUDIO: ON</button>
 <button id="btnAutoPilot" class="mini-btn" style="border-color:var(--c-magenta); color:var(--c-magenta)">AI: OFF</button>
+<button id="btnCompactUI" class="mini-btn" style="border-color:rgba(255,255,255,0.3); color:#ddd">UI: FULL</button>
 <button id="btnPauseRetry" class="mini-btn" style="display:none; border-color:var(--c-yellow); color:var(--c-yellow)">RETRY</button>
       </div>
     </div>
@@ -1172,6 +1193,20 @@ input[type="checkbox"] {
           <span class="chip c-p2" id="chipShield" style="display:none; color:var(--c-magenta)">SHD <b id="shText">0.0</b>s</span>
         </div>
 
+      </div>
+      <div id="fortressPanel">
+        <div class="row" style="margin-bottom:6px">
+          <span class="mono" id="fortressPhase" style="font-size:12px;color:var(--c-yellow)">FORTRESS</span>
+          <span class="mono" id="fortressMat" style="font-size:12px">MAT 0</span>
+          <span class="mono" id="fortressCore" style="font-size:12px;color:var(--c-danger)">FLAG 100%</span>
+        </div>
+        <div class="row" id="fortressBuildRow">
+          <button id="btnFortWall" class="mini-btn">材料:钢壁 (6)</button>
+          <button id="btnFortTurret" class="mini-btn" style="border-color:var(--c-danger);color:var(--c-danger)">攻击机:炮塔 (10)</button>
+          <button id="btnFortShield" class="mini-btn" style="border-color:var(--c-magenta);color:var(--c-magenta)">防守机:棱镜盾 (9)</button>
+          <button id="btnFortPulse" class="mini-btn" style="border-color:var(--c-yellow);color:var(--c-yellow)">特殊机:脉冲器 (12)</button>
+          <button id="btnFortBuild" class="mini-btn" style="border-color:var(--c-cyan);color:var(--c-cyan)">部署到机体前方</button>
+        </div>
       </div>
       <div class="hint">DOUBLE TAP TO DETONATE BOMB</div>
     </div>
@@ -1254,6 +1289,7 @@ input[type="checkbox"] {
             <div class="menu-actions">
               <button id="btnStartSurvival">START SURVIVAL (BUILD A)</button>
               <button id="btnStartChallenge" style="border-color:var(--c-danger);color:var(--c-danger)">CHAOS CHALLENGE (1v1)</button>
+              <button id="btnStartFortress" style="border-color:#7ef9c0;color:#7ef9c0">START FORTRESS (BASTION)</button>
               <button id="btnStartDuel" style="border-color:var(--c-yellow);color:var(--c-yellow)">START DUEL (A vs B)</button>
               <button id="btnStartLab" style="border-color:rgba(179,108,255,0.6);color:var(--c-magenta)">START LAB (FORGE)</button>
             </div>
@@ -1782,6 +1818,17 @@ input[type="checkbox"] {
     btnMute: $('btnMute'),
     btnRevive: $('btnRevive'),
     btnOption: $('btnOption'),
+    btnCompactUI: $('btnCompactUI'),
+
+    fortressPanel: $('fortressPanel'),
+    fortressPhase: $('fortressPhase'),
+    fortressMat: $('fortressMat'),
+    fortressCore: $('fortressCore'),
+    btnFortWall: $('btnFortWall'),
+    btnFortTurret: $('btnFortTurret'),
+    btnFortShield: $('btnFortShield'),
+    btnFortPulse: $('btnFortPulse'),
+    btnFortBuild: $('btnFortBuild'),
 
     inpMpServer: $('inpMpServer'),
     inpMpRoom: $('inpMpRoom'),
@@ -2544,7 +2591,7 @@ const addShake = (m, t=0.16) => {
     lastBossAt:0,
     continues: 999999,
     killerData: null,
-    mode: 'survival',      // 'survival' | 'duel' | 'lab'
+    mode: 'survival',      // 'survival' | 'duel' | 'lab' | 'fortress'
     lastStart: { mode:'survival', wave:1 },
     mute(){
       audioOn = !audioOn;
@@ -2564,6 +2611,145 @@ const addShake = (m, t=0.16) => {
         // resume bgm if in game
         if (Game.state==='playing') Music.start();
       }
+    }
+  };
+
+  const Fortress = {
+    phase:'idle', // idle | fortify | assault
+    timer:0,
+    stock:0,
+    flagHp:1000,
+    flagMaxHp:1000,
+    selected:'wall',
+    structures:[],
+    waveSeed:1,
+    spawnCd:0,
+    spawnLeft:0,
+    rewards:{ wall:6, turret:10, shield:9, pulse:12 },
+    reset(){
+      this.phase='idle'; this.timer=0; this.stock=0; this.structures.length=0;
+      this.flagMaxHp = 1200;
+      this.flagHp = this.flagMaxHp;
+      this.selected='wall';
+      this.waveSeed=1; this.spawnCd=0; this.spawnLeft=0;
+    },
+    start(){
+      this.reset();
+      this.stock = 24;
+      this.phase='fortify';
+      this.timer=18;
+      this.updatePanel();
+    },
+    updatePanel(){
+      if (!ui.fortressPanel) return;
+      const on = Game.mode==='fortress' && Game.state==='playing';
+      ui.fortressPanel.style.display = on ? 'block' : 'none';
+      if (!on) return;
+      const phaseText = this.phase==='fortify' ? `加固阶段 ${this.timer.toFixed(1)}s` : `守城阶段 余敌:${this.spawnLeft}`;
+      ui.fortressPhase.textContent = phaseText;
+      ui.fortressMat.textContent = `材料 ${Math.floor(this.stock)}`;
+      ui.fortressCore.textContent = `旗帜 ${(this.flagHp/this.flagMaxHp*100).toFixed(0)}%`;
+    },
+    beginAssault(){
+      this.phase='assault';
+      this.spawnLeft = 8 + Math.floor(Game.wave*2.4);
+      this.spawnCd = 0.25;
+      this.timer = 999;
+      textPop(W*0.5, H*0.16, `敌袭 WAVE ${Game.wave}`, C.E1);
+      spawnShockwave(W*0.5, H*0.16, C.E1, 240, 0.45);
+    },
+    beginFortify(){
+      this.phase='fortify';
+      this.timer = Math.max(8, 16 - Math.min(8, Game.wave*0.45));
+      const gain = 10 + Math.floor(Game.wave*2.6);
+      this.stock += gain;
+      Game.wave += 1;
+      textPop(W*0.5, H*0.16, `加固 +${gain}`, C.P1);
+      spawnShockwave(W*0.5, H*0.16, C.P1, 220, 0.4);
+    },
+    canBuild(){ return Game.mode==='fortress' && this.phase==='fortify' && Game.state==='playing'; },
+    placeSelected(){
+      if (!this.canBuild()) return;
+      const cfg = {
+        wall:{cost:6,w:56,h:20,hp:220,col:'#7ef9c0',kind:'defense'},
+        turret:{cost:10,w:44,h:24,hp:170,col:'#ff5577',kind:'attack',cd:0.7},
+        shield:{cost:9,w:72,h:16,hp:260,col:'#b36cff',kind:'defense'},
+        pulse:{cost:12,w:36,h:36,hp:150,col:'#ffd56d',kind:'skill',cd:4.6}
+      }[this.selected] || null;
+      if (!cfg || this.stock < cfg.cost) return;
+      this.stock -= cfg.cost;
+      const x = clamp(Player.x, 42, W-42);
+      const y = clamp(Player.y-84, H*0.45, H-84);
+      this.structures.push({x,y,w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:this.selected,kind:cfg.kind,cd:cfg.cd||0});
+      sparks(x,y,'glowP', 10, 220);
+      this.updatePanel();
+    },
+    hitFlag(dmg){
+      this.flagHp = Math.max(0, this.flagHp - dmg);
+      if (this.flagHp<=0 && Player.alive){
+        Player.hp = 0;
+      }
+    },
+    update(dt){
+      if (Game.mode!=='fortress') return;
+      if (this.phase==='fortify'){
+        this.timer -= dt;
+        if (this.timer<=0) this.beginAssault();
+      } else if (this.phase==='assault'){
+        this.spawnCd -= dt;
+        if (this.spawnLeft>0 && this.spawnCd<=0){
+          const proto = WaveDirector.pick();
+          const d = Game.difficulty;
+          const e = EnemyFactory.spawnFromProto(proto, d);
+          e.maxHp = Math.round(e.maxHp * proto.hpMul * DiffConfig.enemyHpMul * (1 + Game.wave*0.06));
+          e.hp = e.maxHp;
+          e.emCdMul = (e.emCdMul||1) * DiffConfig.fireCdMul;
+          e.score = Math.round(e.score * proto.scoreMul);
+          resolveSpawnOverlap(e, 12);
+          enemies.push(e);
+          this.spawnLeft -= 1;
+          this.spawnCd = rand(0.32, 0.78) * Math.max(0.45, 1 - Game.wave*0.02);
+        }
+        if (this.spawnLeft<=0){
+          let aliveCount = 0;
+          for (const e of enemies) if (e.alive) aliveCount++;
+          if (aliveCount===0) this.beginFortify();
+        }
+      }
+
+      let w = 0;
+      for (const s of this.structures){
+        if (s.hp<=0) continue;
+        if (s.type==='turret'){
+          s.cd -= dt;
+          if (s.cd<=0){
+            const t = findNearestEnemy(s.x, s.y, 480);
+            if (t){
+              const a = Math.atan2(t.y-s.y, t.x-s.x);
+              spawnBullet('P', s.x, s.y-6, Math.cos(a)*430, Math.sin(a)*430, {r:2.6,dmg:14+Game.wave*0.8,col:C.P2,spr:'glowP2',life:1.6,mods:[],style:1});
+              s.cd = 0.55;
+            }
+          }
+        } else if (s.type==='pulse'){
+          s.cd -= dt;
+          if (s.cd<=0){
+            spawnShockwave(s.x,s.y,C.Y,130,0.35);
+            for (const e of enemies){
+              if (!e.alive) continue;
+              const d2 = dist2(s.x,s.y,e.x,e.y);
+              if (d2 < 140*140){
+                e._freezeT = Math.max(e._freezeT||0, 0.45);
+                e.onHit?.(8 + Game.wave*0.4);
+              }
+            }
+            s.cd = 4.8;
+          }
+        }
+        this.structures[w++] = s;
+      }
+      this.structures.length = w;
+
+      this.updatePanel();
     }
   };
 
@@ -4892,6 +5078,43 @@ function refreshDNAAfterFire(beforeP, beforeE){
     const rr=ar+br;
     return dist2(ax,ay,bx,by)<=rr*rr;
   };
+
+
+  function circleRectOverlap(cx, cy, cr, rect){
+    const hw = rect.w*0.5, hh = rect.h*0.5;
+    const nx = clamp(cx, rect.x-hw, rect.x+hw);
+    const ny = clamp(cy, rect.y-hh, rect.y+hh);
+    return dist2(cx, cy, nx, ny) <= cr*cr;
+  }
+
+  function pushCircleOutRect(obj, rect){
+    const hw = rect.w*0.5, hh = rect.h*0.5;
+    const left = rect.x - hw, right = rect.x + hw;
+    const top = rect.y - hh, bottom = rect.y + hh;
+    const nx = clamp(obj.x, left, right);
+    const ny = clamp(obj.y, top, bottom);
+    const dx = obj.x - nx, dy = obj.y - ny;
+    const rr = (obj.r||10) + 1;
+    const d2 = dx*dx + dy*dy;
+    if (d2 >= rr*rr) return false;
+    if (d2 > 1e-6){
+      const d = Math.sqrt(d2);
+      const k = (rr - d) / d;
+      obj.x += dx * k;
+      obj.y += dy * k;
+      return true;
+    }
+    const padL = Math.abs(obj.x - left);
+    const padR = Math.abs(right - obj.x);
+    const padT = Math.abs(obj.y - top);
+    const padB = Math.abs(bottom - obj.y);
+    const m = Math.min(padL, padR, padT, padB);
+    if (m===padL) obj.x = left - rr;
+    else if (m===padR) obj.x = right + rr;
+    else if (m===padT) obj.y = top - rr;
+    else obj.y = bottom + rr;
+    return true;
+  }
 
   // ================= Supplies =================
   const Supply = {
@@ -8965,6 +9188,11 @@ for (const em of e.emitters){
     update(dt){
       const t = Game.time;
       
+      if (Game.mode === 'fortress') {
+        Fortress.update(dt);
+        return;
+      }
+
       if (Game.mode === 'challenge') {
         // 如果场上没有活着的敌人，生成下一波
         // 注意：Game.bossAlive 在这里不作为限制，因为我们每次只出一只“Boss级”怪
@@ -10536,6 +10764,21 @@ if (b.homing > 0){
         b.y += py * b.waveA * s * dt;
       }
 
+      if (Game.mode==='fortress' && b.team==='E'){
+        let blocked = false;
+        for (const fs of Fortress.structures){
+          if (fs.hp<=0) continue;
+          if (circleRectOverlap(b.x, b.y, b.r||2, fs)){
+            fs.hp -= Math.max(8, b.dmg||10);
+            sparks(b.x,b.y,'glowP2', 6, 180);
+            killBullet(b, 'wall', {childMods: []});
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
+      }
+
       // ricochet for enemy shots
       if (b.team==='E' && b.bounce>0){
         let bounced=false;
@@ -11652,8 +11895,7 @@ BG_Effect.init();
     firePlayer(dt);
     updatePlayerEmitters(dt);
     const isNetAuthoritative = !!(Game.lastStart && Game.lastStart.net);
-    if (!isNetAuthoritative && Game.mode === 'survival') Spawner.update(dt);
-    if (!isNetAuthoritative && Game.mode === 'challenge') Spawner.update(dt);
+    if (!isNetAuthoritative && (Game.mode === 'survival' || Game.mode === 'challenge' || Game.mode === 'fortress')) Spawner.update(dt);
 
     updateBullets(dt, bulletsP);
     updateBullets(dt, bulletsE);
@@ -11682,6 +11924,19 @@ BG_Effect.init();
         onPlayerHit(20 + Game.difficulty*1.6);
         e.onHit(9999);
       }
+
+      if (Game.mode==='fortress'){
+        for (const fs of Fortress.structures){
+          if (fs.hp<=0) continue;
+          pushCircleOutRect(e, fs);
+        }
+        if (e.y > H - 70){
+          Fortress.hitFlag(58 + Game.wave*2.5);
+          e.alive = false;
+          spawnShockwave(e.x, H-62, C.E1, 120, 0.3);
+        }
+      }
+
       if (e.y > H/Camera.zoom + 220) e.alive=false;
     }
     if (!isNetAuthoritative){
@@ -11879,7 +12134,11 @@ BG_Effect.init();
 
     // --- UI Updates (Adapted for Cyberpunk HUD) ---
 ui.score.textContent = formatValue(Game.score);
-    ui.wave.textContent = Game.wave;
+    if (Game.mode==='fortress'){
+      ui.wave.textContent = `FORT ${Game.wave}`;
+    } else {
+      ui.wave.textContent = Game.wave;
+    }
     ui.lvText.textContent = Player.lv;
     ui.droneText.textContent = Player.drones;
     ui.modText.textContent = Player.mods;
@@ -12828,6 +13087,52 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
     ctx.globalCompositeOperation='source-over';
   }
 
+
+  function drawFortress(){
+    if (Game.mode!=='fortress') return;
+
+    const fy = H - 44;
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = 'rgba(10,20,40,0.75)';
+    ctx.fillRect(W*0.5-38, fy-16, 76, 22);
+    ctx.strokeStyle = 'rgba(255,80,110,0.8)';
+    ctx.strokeRect(W*0.5-38, fy-16, 76, 22);
+    ctx.fillStyle = '#ff5577';
+    ctx.fillRect(W*0.5-2, fy-34, 4, 18);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.moveTo(W*0.5+2, fy-34);
+    ctx.lineTo(W*0.5+26, fy-27);
+    ctx.lineTo(W*0.5+2, fy-20);
+    ctx.closePath();
+    ctx.fill();
+
+    for (const fs of Fortress.structures){
+      const hpPct = clamp(fs.hp / Math.max(1, fs.maxHp), 0, 1);
+      ctx.fillStyle = 'rgba(0,0,0,0.62)';
+      ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w, fs.h);
+      ctx.strokeStyle = fs.col;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w, fs.h);
+      ctx.fillStyle = fs.col;
+      ctx.globalAlpha = 0.28;
+      ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w*hpPct, 4);
+      ctx.globalAlpha = 0.9;
+      if (fs.type==='turret'){
+        ctx.beginPath();
+        ctx.arc(fs.x, fs.y-2, 6, 0, Math.PI*2);
+        ctx.stroke();
+      } else if (fs.type==='pulse'){
+        ctx.beginPath();
+        ctx.arc(fs.x, fs.y, 8 + Math.sin(Game.time*6)*2, 0, Math.PI*2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 0.85;
+    }
+    ctx.restore();
+  }
+
   function drawParticles(){
     if (!particles.length) return;
     if (PERF.additive) ctx.globalCompositeOperation='lighter';
@@ -13165,6 +13470,7 @@ function render(dt) {
 
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
+  drawFortress();
   drawShockwaves();
   drawParticles();
   drawBeams();
@@ -13269,6 +13575,7 @@ function render(dt) {
 
     Spawner.reset();
     WaveDirector.onWave(1);
+    Fortress.reset();
 
     ui.score.textContent='0';
     ui.wave.textContent='1';
@@ -13524,7 +13831,7 @@ applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
     forge: forge ? JSON.parse(JSON.stringify(forge)) : null,
     net,
   };
-  if (mode === 'survival') {
+  if (mode === 'survival' || mode === 'fortress') {
     const diffVal = document.getElementById('inpDiffMode')?.value || 1;
     DiffConfig.apply(diffVal);
   } else {
@@ -13591,6 +13898,17 @@ setupPlayerEmittersFromBuild(b);
       textPop(W/2, H/2 - 40, `SYSTEM WARP: WAVE ${startW}`, C.Y);
       spawnShockwave(W/2, H/2, C.P1, 400, 0.8);
     }
+  }
+
+  if (mode === 'fortress'){
+    Game.wave = Math.max(1, wave|0);
+    Game.time = (Game.wave - 1) * 14;
+    Game.score = Math.max(0, (Game.wave - 1) * 700);
+    Game.difficulty = 1 + (Game.wave - 1) * 0.12;
+    enemies.length = 0;
+    Fortress.start();
+    textPop(W*0.5, 92, 'FORTRESS MODE', '#7ef9c0');
+    spawnShockwave(W*0.5, 92, '#7ef9c0', 260, 0.55);
   }
 
   if (mode === 'duel'){
@@ -13708,6 +14026,7 @@ canvas.style.pointerEvents = 'auto';
   if (btnAutoPilot) btnAutoPilot.style.display = 'inline-block';
 
   Music.stop();
+  Fortress.updatePanel();
 }
 function mountOverlaysToBody(){
   for (const id of ['gameover','pausePanel']){
@@ -16083,6 +16402,12 @@ btnSurvival?.addEventListener('click', ()=>{
   startRun(cfg);
 });
 
+document.getElementById('btnStartFortress')?.addEventListener('click', ()=>{
+  const wave = parseInt(waveInput?.value) || 1;
+  const cfg = {mode:'fortress', wave};
+  startRun(cfg);
+});
+
 document.getElementById('btnStartDuel')?.addEventListener('click', ()=>{
   const cfg = {mode:'duel', wave:1};
   startRun(cfg);
@@ -16119,7 +16444,7 @@ ui.btnRestart?.addEventListener('click', () => {
   }
 
   // 判断当前模式是否支持跳关
-  const supportsWarp = (last.mode === 'survival' || last.mode === 'challenge');
+  const supportsWarp = (last.mode === 'survival' || last.mode === 'challenge' || last.mode === 'fortress');
 
   startRun({
     mode: last.mode || 'survival',
@@ -16136,6 +16461,18 @@ ui.btnBack?.addEventListener('click', ()=>{
 ui.btnPause?.addEventListener('click', ()=>{ if (Game.state==='playing'||Game.state==='paused') togglePause(); });
 ui.btnMute?.addEventListener('click', ()=>Game.mute());
 ui.btnRevive?.addEventListener('click', revive);
+ui.btnCompactUI?.addEventListener('click', ()=>{
+  const root = document.querySelector('.ui');
+  if (!root) return;
+  root.classList.toggle('compact');
+  ui.btnCompactUI.textContent = root.classList.contains('compact') ? 'UI: COMPACT' : 'UI: FULL';
+});
+
+ui.btnFortWall?.addEventListener('click', ()=>Fortress.selected='wall');
+ui.btnFortTurret?.addEventListener('click', ()=>Fortress.selected='turret');
+ui.btnFortShield?.addEventListener('click', ()=>Fortress.selected='shield');
+ui.btnFortPulse?.addEventListener('click', ()=>Fortress.selected='pulse');
+ui.btnFortBuild?.addEventListener('click', ()=>Fortress.placeSelected());
 
 document.getElementById('btnResumePause')?.addEventListener('click', ()=>{
   if (Game.state==='paused') togglePause();
