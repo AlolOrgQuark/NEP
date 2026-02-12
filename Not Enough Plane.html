@@ -1352,7 +1352,7 @@ input[type="checkbox"] {
   </select>
 </div>
 <details class="acc" style="margin-top:10px;">
-  <summary>联机 MULTIPLAYER <span class="muted">SURVIVAL / CHALLENGE / LAB / WORKSHOP</span></summary>
+  <summary>联机 MULTIPLAYER <span class="muted">WIP(RIP)</span></summary>
   <div class="acc-body" style="padding-top:8px;">
     <div class="field"><label>SERVER</label><input id="inpMpServer" type="text" maxlength="120" placeholder="ws://127.0.0.1:8787"></div>
     <div class="field"><label>ROOM</label><input id="inpMpRoom" type="text" maxlength="20" placeholder="房间号（大写字母/数字）"></div>
@@ -8975,11 +8975,12 @@ if (chance(0.75)){
         cd: baseEm.cd * 1.15,
         nextCd(o,dt){ return (baseEm.nextCd?.(o,dt) ?? 1) * 1.15; },
         fire(owner){
+          const prevOffset = owner?._emitAngleOffset || 0;
           for(const a of angles()){
-            owner._emitAngleOffset = a;
+            owner._emitAngleOffset = prevOffset + a;
             baseEm.fire(owner);
           }
-          owner._emitAngleOffset = 0;
+          owner._emitAngleOffset = prevOffset;
         }
       };
     },
@@ -9101,9 +9102,10 @@ if (chance(0.75)){
     },
     fire(owner){
       if (!owner) return;
-      owner._emitAngleOffset = (owner._emitAngleOffset||0) + Math.sin(phase)*arc;
+      const prevOffset = owner._emitAngleOffset || 0;
+      owner._emitAngleOffset = prevOffset + Math.sin(phase)*arc;
       baseEm.fire(owner);
-      owner._emitAngleOffset = 0;
+      owner._emitAngleOffset = prevOffset;
     }
   };
 },
@@ -9147,13 +9149,14 @@ if (chance(0.75)){
     nextCd(o,dt){ return (baseEm.nextCd?.(o,dt) ?? 1) * 0.85; },
     fire(owner){
       if (!owner) return;
+      const prevOffset = owner._emitAngleOffset || 0;
       const k = step / Math.max(1, steps - 1);
       const spread = 0.12 + k * maxSpread;
-      owner._emitAngleOffset = -spread * 0.5;
+      owner._emitAngleOffset = prevOffset - spread * 0.5;
       baseEm.fire(owner);
-      owner._emitAngleOffset = spread * 0.5;
+      owner._emitAngleOffset = prevOffset + spread * 0.5;
       baseEm.fire(owner);
-      owner._emitAngleOffset = 0;
+      owner._emitAngleOffset = prevOffset;
       step = (step + 1) % steps;
     }
   };
@@ -9175,11 +9178,12 @@ if (chance(0.75)){
     },
     fire(owner){
       if (!owner) return;
+      const prevOffset = owner._emitAngleOffset || 0;
       for(let i=0;i<arms;i++){
-        owner._emitAngleOffset = phase + i*(Math.PI*2/arms);
+        owner._emitAngleOffset = prevOffset + phase + i*(Math.PI*2/arms);
         baseEm.fire(owner);
       }
-      owner._emitAngleOffset = 0;
+      owner._emitAngleOffset = prevOffset;
     }
   };
 },
@@ -9196,9 +9200,10 @@ if (chance(0.75)){
         nextCd(o,dt){ return baseEm.nextCd?.(o,dt) ?? 1; },
         fire(owner){
           if (!owner) return;
-          owner._emitAngleOffset = (tick%2===0 ? offset : -offset);
+          const prevOffset = owner._emitAngleOffset || 0;
+          owner._emitAngleOffset = prevOffset + (tick%2===0 ? offset : -offset);
           baseEm.fire(owner);
-          owner._emitAngleOffset = 0;
+          owner._emitAngleOffset = prevOffset;
           tick++;
         }
       };
@@ -9219,12 +9224,13 @@ if (chance(0.75)){
           return (baseEm.nextCd?.(o,dt) ?? 1) * 1.6;
         },
         fire(owner){
+          const prevOffset = owner?._emitAngleOffset || 0;
           if (em._queue<=0) em._queue = layers - 1;
           else em._queue--;
           // 每层角度偏移制造旋转感
-          owner._emitAngleOffset = em._queue * 0.18;
+          owner._emitAngleOffset = prevOffset + em._queue * 0.18;
           baseEm.fire(owner);
-          owner._emitAngleOffset = 0;
+          owner._emitAngleOffset = prevOffset;
         }
       };
       return em;
@@ -9241,11 +9247,12 @@ if (chance(0.75)){
         cd: baseEm.cd * 1.3,
         nextCd(o,dt){ return (baseEm.nextCd?.(o,dt) ?? 1) * 1.3; },
         fire(owner){
+          const prevOffset = owner?._emitAngleOffset || 0;
           for(let i=0;i<count;i++){
-            owner._emitAngleOffset = (Math.random()-0.5) * spread;
+            owner._emitAngleOffset = prevOffset + (Math.random()-0.5) * spread;
             baseEm.fire(owner);
           }
-          owner._emitAngleOffset = 0;
+          owner._emitAngleOffset = prevOffset;
         }
       };
     },
@@ -9315,16 +9322,17 @@ if (chance(0.75)){
         cd: baseEm.cd * 0.75,
         nextCd(o,dt){ phase += (dt||0.016)*rotSpeed; return (baseEm.nextCd?.(o,dt) ?? 1) * 0.75; },
         fire(owner){
+          const prevOffset = owner?._emitAngleOffset || 0;
           const beforeP = bulletsP.length;
           const beforeE = bulletsE.length;
 
           // 螺旋臂 A：正相位偏移
-          owner._emitAngleOffset = Math.sin(phase) * 0.45;
+          owner._emitAngleOffset = prevOffset + Math.sin(phase) * 0.45;
           baseEm.fire(owner);
           // 螺旋臂 B：反相位偏移（对称，不加 PI）
-          owner._emitAngleOffset = -Math.sin(phase) * 0.45;
+          owner._emitAngleOffset = prevOffset - Math.sin(phase) * 0.45;
           baseEm.fire(owner);
-          owner._emitAngleOffset = 0;
+          owner._emitAngleOffset = prevOffset;
 
           // 给新生成的子弹加上螺旋运动属性
           for(const arr of [bulletsP, bulletsE]){
@@ -9356,16 +9364,17 @@ if (chance(0.75)){
         cd: baseEm.cd * 1.9,
         nextCd(o,dt){ phase += (dt||0.016) * spin; return (baseEm.nextCd?.(o,dt) ?? 1) * 1.9; },
         fire(owner){
+          const prevOffset = owner?._emitAngleOffset || 0;
           const beforeP = bulletsP.length, beforeE = bulletsE.length;
           for (let ring=0; ring<3; ring++){
             const off = ring * (Math.PI/petals);
             const per = petals - ring;
             for (let i=0;i<per;i++){
-              owner._emitAngleOffset = phase + off + i * (Math.PI*2/per);
+              owner._emitAngleOffset = prevOffset + phase + off + i * (Math.PI*2/per);
               baseEm.fire(owner);
             }
           }
-          owner._emitAngleOffset = 0;
+          owner._emitAngleOffset = prevOffset;
           for(const arr of [bulletsP, bulletsE]){
             const before = (arr===bulletsP)?beforeP:beforeE;
             for(let i=before;i<arr.length;i++){
@@ -9396,15 +9405,16 @@ if (chance(0.75)){
         cd: baseEm.cd * 1.55,
         nextCd(o,dt){ return (baseEm.nextCd?.(o,dt) ?? 1) * 1.55; },
         fire(owner){
+          const prevOffset = owner?._emitAngleOffset || 0;
           const beforeP = bulletsP.length, beforeE = bulletsE.length;
           for (let wave=0; wave<2; wave++){
             for (let i=0;i<lanes;i++){
               const t = lanes<=1 ? 0 : (i/(lanes-1)-0.5);
-              owner._emitAngleOffset = t * arc + (wave?0.14:-0.14) + Math.sin(tick*0.9)*0.08;
+              owner._emitAngleOffset = prevOffset + t * arc + (wave?0.14:-0.14) + Math.sin(tick*0.9)*0.08;
               baseEm.fire(owner);
             }
           }
-          owner._emitAngleOffset = 0;
+          owner._emitAngleOffset = prevOffset;
           tick++;
           for(const arr of [bulletsP, bulletsE]){
             const before = (arr===bulletsP)?beforeP:beforeE;
@@ -10253,6 +10263,9 @@ function spawnAt(o, a, sp, opt={}){
     o = o || ctx._cur; 
     if (!o) return null;
 
+    // 统一把 owner 偏移角叠加到所有 spawnAt 发射路径，保证 wrapper 可组合
+    a += (o._emitAngleOffset || 0);
+
     // 1. 优先获取本次发射指定的 mods (例如分形爆炸产生的内部词条)
     // 2. 加上 Context 提供的全局词条 (Bullet Affix)
     // 3. mergeMods 会自动处理数组合并与去重
@@ -10433,7 +10446,7 @@ function spawnAt(o, a, sp, opt={}){
         const beamCol = C.Y; // 激光固定黄色视觉
         
         // 计算最终角度：基础瞄准 + Owner偏移（支持复合包装器如旋转/镜像）
-        const finalA = aimA(o) + (o._emitAngleOffset || 0);
+        const finalA = aimA(o);
 
         // 计算射线终点 (长度1200足以穿透屏幕)
         const tx = o.x + Math.cos(finalA) * 1200;
@@ -14074,11 +14087,64 @@ const AutoPilot = {
     return best;
   },
 
+  _collectEmitterSpeeds(em, out, depth=0){
+    if (!em || depth > 5) return;
+    const sp = Number.isFinite(em.speed) ? em.speed : (Number.isFinite(em?.cfg?.speed) ? em.cfg.speed : NaN);
+    if (Number.isFinite(sp) && sp > 30) out.push(sp);
+    this._collectEmitterSpeeds(em._base, out, depth+1);
+    this._collectEmitterSpeeds(em._emA, out, depth+1);
+    this._collectEmitterSpeeds(em._emB, out, depth+1);
+  },
+
+  _estimatePlayerShotSpeed(){
+    const samples = [];
+    for (const em of (Player.emitters || [])) this._collectEmitterSpeeds(em, samples, 0);
+    if (!samples.length) return 520;
+    samples.sort((a,b)=>a-b);
+    const mid = samples[(samples.length/2)|0];
+    return clamp(mid, 180, 980);
+  },
+
   _predictTargetX(target, px, py){
-    const dy = Math.abs(target.y - py);
-    const tof = clamp(dy / 620, 0, 0.9);
-    const vx = (target.vx != null) ? target.vx : (target.mmx ? (target.mmx.vx || 0) : 0);
-    return clamp(target.x + vx * tof, 20, W - 20);
+    if (!target) return clamp(px, 20, W - 20);
+
+    const tx = Number.isFinite(target.x) ? target.x : px;
+    const ty = Number.isFinite(target.y) ? target.y : py;
+    const tvx = Number.isFinite(target.vx) ? target.vx : (target.mmx?.vx || 0);
+    const tvy = Number.isFinite(target.vy) ? target.vy : (target.mmx?.vy || 0);
+
+    const rx = tx - px;
+    const ry = ty - py;
+    const shotSpeed = this._estimatePlayerShotSpeed();
+
+    const a = (tvx*tvx + tvy*tvy) - shotSpeed*shotSpeed;
+    const b = 2 * (rx*tvx + ry*tvy);
+    const c = rx*rx + ry*ry;
+
+    let tof = NaN;
+    if (Math.abs(a) < 1e-6){
+      if (Math.abs(b) > 1e-6) tof = -c / b;
+    } else {
+      const disc = b*b - 4*a*c;
+      if (disc >= 0){
+        const sd = Math.sqrt(disc);
+        const t1 = (-b - sd) / (2*a);
+        const t2 = (-b + sd) / (2*a);
+        const ts = [t1, t2].filter(t=>Number.isFinite(t) && t > 0);
+        if (ts.length) tof = Math.min(...ts);
+      }
+    }
+
+    if (!Number.isFinite(tof) || tof <= 0){
+      const approxDist = Math.hypot(rx, ry);
+      tof = approxDist / Math.max(140, shotSpeed);
+    }
+
+    // 普通模式下优先真实拦截，堡垒模式仍限制预测幅度避免离旗太远
+    const maxTof = (Game.mode==='fortress') ? 0.95 : 1.35;
+    tof = clamp(tof, 0, maxTof);
+
+    return clamp(tx + tvx * tof, 20, W - 20);
   },
 };
 
@@ -14551,19 +14617,21 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
 
     for (const fs of Fortress.structures){
       const hpPct = clamp(fs.hp / Math.max(1, fs.maxHp), 0, 1);
+      const itemCfg = Fortress.catalog[fs.type] || null;
+      const itemCol = itemCfg?.col || '#d0f5ff';
       ctx.fillStyle = 'rgba(0,0,0,0.62)';
       ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w, fs.h);
-      ctx.strokeStyle = 'rgba(255,255,255,0.72)';
+      ctx.strokeStyle = itemCol;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w, fs.h);
-      ctx.fillStyle = 'rgba(255,255,255,0.24)';
+      ctx.fillStyle = 'rgba(255,255,255,0.20)';
       ctx.globalAlpha = 0.98;
       ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5-6, fs.w, 4);
-      ctx.fillStyle = 'rgba(255,255,255,0.78)';
+      ctx.fillStyle = itemCol;
       ctx.globalAlpha = 0.92;
       ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5-6, fs.w*hpPct, 4);
       ctx.globalAlpha = 0.96;
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.fillStyle = itemCol;
       ctx.font='700 10px "Consolas", monospace';
       ctx.textAlign='center';
       ctx.textBaseline='middle';
@@ -14592,7 +14660,7 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
         ctx.stroke();
         ctx.restore();
       } else if (fs.type==='beacon'){
-        ctx.strokeStyle = 'rgba(255,255,255,0.72)';
+        ctx.strokeStyle = itemCol;
         ctx.beginPath();
         ctx.arc(fs.x, fs.y, 6 + Math.sin(Game.time*7 + (fs.rot||0))*1.6, 0, Math.PI*2);
         ctx.stroke();
