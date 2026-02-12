@@ -1172,7 +1172,6 @@ input[type="checkbox"] {
 <button id="btnOption" class="mini-btn" style="display:none;border-color:var(--c-cyan);">OPTION</button>
 <button id="btnMute" class="mini-btn">AUDIO: ON</button>
 <button id="btnAutoPilot" class="mini-btn" style="border-color:var(--c-magenta); color:var(--c-magenta)">AI: OFF</button>
-<button id="btnCompactUI" class="mini-btn" style="border-color:rgba(255,255,255,0.3); color:#ddd">UI: FULL</button>
 <button id="btnPauseRetry" class="mini-btn" style="display:none; border-color:var(--c-yellow); color:var(--c-yellow)">RETRY</button>
       </div>
     </div>
@@ -1252,6 +1251,9 @@ input[type="checkbox"] {
           <button id="btnFortSlow" data-item="slow" class="mini-btn">减速塔 11</button>
           <button id="btnFortRepair" data-item="repair" class="mini-btn">维修机 13</button>
           <button id="btnFortFactory" data-item="factory" class="mini-btn" style="border-color:#9dffad;color:#9dffad">补给站 12</button>
+          <button id="btnFortSpinner" data-item="spinner" class="mini-btn" style="border-color:#92c7ff;color:#92c7ff">旋刃塔 15</button>
+          <button id="btnFortRam" data-item="ram" class="mini-btn" style="border-color:#ffcb66;color:#ffcb66">冲锋桩 14</button>
+          <button id="btnFortBeacon" data-item="beacon" class="mini-btn" style="border-color:#b8a6ff;color:#b8a6ff">指挥信标 10</button>
         </div>
         <div class="row" style="margin-top:4px">
           <button id="btnFortStartWave" class="mini-btn" style="border-color:var(--c-danger);color:var(--c-danger)">开始敌袭</button>
@@ -2715,7 +2717,98 @@ const addShake = (m, t=0.16) => {
       slow:{cost:11,w:34,h:30,hp:190,col:'#8ee7ff',type:'slow'},
       repair:{cost:13,w:40,h:28,hp:190,col:'#9dffad',type:'repair',cd:4.2},
       factory:{cost:12,w:48,h:26,hp:240,col:'#9dffad',type:'factory',cd:6.0},
+      spinner:{cost:15,w:42,h:24,hp:210,col:'#92c7ff',type:'spinner',cd:0.14,rot:0},
+      ram:{cost:14,w:52,h:22,hp:260,col:'#ffcb66',type:'ram',cd:3.4,rot:0},
+      beacon:{cost:10,w:32,h:32,hp:140,col:'#b8a6ff',type:'beacon',cd:2.8,rot:0},
     },
+    itemBehaviors:{
+      spinner:{
+        onCreate(st){ st.rot = st.rot || 0; st.spinBoost = 0; },
+        onPointerDown(st, ctx){
+          if (ctx.phase!=='assault') return false;
+          st.spinBoost = 1.4;
+          st.rot += Math.PI * 0.5;
+          sparks(st.x, st.y, 'glowP2', 7, 220);
+          return true;
+        },
+        onUpdate(st, dt){
+          st.rot += dt * (5.6 + st.spinBoost*9);
+          st.spinBoost = Math.max(0, st.spinBoost - dt*1.4);
+          st.cd -= dt;
+          if (st.cd<=0){
+            const t = findNearestEnemy(st.x, st.y, 260);
+            if (t){
+              const a = Math.atan2(t.y-st.y, t.x-st.x);
+              spawnBullet('P', st.x, st.y, Math.cos(a)*460, Math.sin(a)*460, {r:2.6,dmg:15+Game.wave*0.75,col:'#92c7ff',spr:'glowP2',life:1.0,mods:['PIERCE_LINE'],style:1,pierce:1});
+              st.cd = Math.max(0.05, 0.18 - st.spinBoost*0.05);
+            }
+          }
+          return true;
+        },
+      },
+      ram:{
+        onCreate(st){ st.rot = st.rot || 0; st.dashT = 0; st.baseX = st.x; st.baseY = st.y; },
+        onPointerDown(st, ctx){
+          if (ctx.phase!=='assault') return false;
+          const a = Math.atan2(ctx.world.y-st.y, ctx.world.x-st.x);
+          st.rot = a;
+          st.dashT = 0.35;
+          st.baseX = st.x; st.baseY = st.y;
+          spawnShockwave(st.x, st.y, '#ffcb66', 90, 0.18);
+          return true;
+        },
+        onUpdate(st, dt){
+          if (st.dashT>0){
+            st.dashT -= dt;
+            const sp = 240;
+            st.x += Math.cos(st.rot)*sp*dt;
+            st.y += Math.sin(st.rot)*sp*dt;
+            for (const e of enemies){
+              if (!e.alive) continue;
+              if (dist2(st.x,st.y,e.x,e.y) < 42*42) e.onHit?.(22 + Game.wave*0.85);
+            }
+            if (st.dashT<=0){
+              st.x = clamp((st.baseX + st.x)*0.5, 28, W-28);
+              st.y = clamp((st.baseY + st.y)*0.5, H*0.38, H-60);
+            }
+          }
+          return true;
+        },
+      },
+      beacon:{
+        onCreate(st){ st.rot = st.rot || 0; st.mode = st.mode || 0; },
+        onPointerDown(st, ctx){
+          if (ctx.phase!=='assault') return false;
+          st.mode = (st.mode + 1) % 3;
+          st.x = clamp(ctx.world.x, 24, W-24);
+          st.y = clamp(ctx.world.y, H*0.36, H-54);
+          st.rot += Math.PI*0.3;
+          textPop(st.x, st.y-24, ['火力','冻结','材料'][st.mode], '#b8a6ff');
+          return true;
+        },
+        onUpdate(st, dt){
+          st.cd -= dt;
+          if (st.cd>0) return true;
+          if (st.mode===0){
+            for (const fs of Fortress.structures){
+              if (fs.id===st.id) continue;
+              if (dist2(st.x,st.y,fs.x,fs.y) < 170*170) fs.cd = Math.max(0, (fs.cd||0) - 0.2);
+            }
+          } else if (st.mode===1){
+            for (const e of enemies){
+              if (!e.alive) continue;
+              if (dist2(st.x,st.y,e.x,e.y) < 180*180) e._freezeT = Math.max(e._freezeT||0, 0.45);
+            }
+          } else {
+            Fortress.stock += 1.2;
+          }
+          spawnShockwave(st.x, st.y, '#b8a6ff', 75, 0.18);
+          st.cd = 2.6;
+          return true;
+        },
+      },
+    },
+    getBehavior(type){ return this.itemBehaviors[type] || null; },
     reset(){
       this.phase='idle'; this.timer=0; this.stock=0; this.structures.length=0;
       this.flagMaxHp = 1200;
@@ -2746,7 +2839,7 @@ const addShake = (m, t=0.16) => {
       if (ui.btnFortStartWave) ui.btnFortStartWave.style.display = this.phase==='fortify' ? 'inline-block' : 'none';
     },
     syncSelectionUI(){
-      const map = ['barricade','wall','heavywall','bunker','shield','turret','gatling','sniper','missile','tesla','flame','mortar','dronepad','pulse','mine','slow','repair','factory'];
+      const map = Object.keys(this.catalog);
       for (const k of map){
         const el = document.querySelector(`#fortressBuildScroller [data-item="${k}"]`);
         if (el) el.classList.toggle('on', !this.sellMode && this.selected===k);
@@ -2793,6 +2886,7 @@ const addShake = (m, t=0.16) => {
       const y = clamp(pt.y, H*0.40, H-70);
       const id = this.sid++;
       const st = {id,x,y,w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,cd:cfg.cd||0,cost:cfg.cost};
+      this.getBehavior(st.type)?.onCreate?.(st, {fortress:this});
       this.structures.push(st);
       this.stock -= cfg.cost;
       this.undoStack.push({type:'place', id, refund:cfg.cost});
@@ -2808,6 +2902,21 @@ const addShake = (m, t=0.16) => {
         if (pt.x>=s.x-hw && pt.x<=s.x+hw && pt.y>=s.y-hh && pt.y<=s.y+hh) return i;
       }
       return -1;
+    },
+    handlePointerDown(screenX, screenY){
+      if (Game.mode!=='fortress' || Game.state!=='playing') return false;
+      const pt = this.toWorld(screenX, screenY);
+      const idx = this.pickStructure(screenX, screenY);
+      if (idx>=0){
+        const st = this.structures[idx];
+        const acted = this.getBehavior(st.type)?.onPointerDown?.(st, {fortress:this, phase:this.phase, world:pt}) || false;
+        if (acted){
+          this.updatePanel();
+          return true;
+        }
+      }
+      if (this.canBuild()) return this.placeAt(screenX, screenY);
+      return false;
     },
     sellAt(screenX, screenY){
       if (!this.canBuild()) return false;
@@ -2855,6 +2964,10 @@ const addShake = (m, t=0.16) => {
       let w = 0;
       for (const st of this.structures){
         if (st.hp<=0) continue;
+        if (this.getBehavior(st.type)?.onUpdate?.(st, dt, {fortress:this, phase:this.phase})){
+          this.structures[w++] = st;
+          continue;
+        }
         if (st.type==='turret'){
           st.cd -= dt;
           if (st.cd<=0){
@@ -3203,8 +3316,7 @@ function recoverLocalControl(){
     ensureAudio();
     checkDoubleTap();
 
-    if (Game.mode==='fortress' && Fortress.canBuild()){
-      Fortress.placeAt(e.clientX, e.clientY);
+    if (Game.mode==='fortress' && Fortress.handlePointerDown(e.clientX, e.clientY)){
       e.preventDefault?.();
       return;
     }
@@ -12424,7 +12536,7 @@ BG_Effect.init();
     // --- UI Updates (Adapted for Cyberpunk HUD) ---
 ui.score.textContent = formatValue(Game.score);
     if (Game.mode==='fortress'){
-      ui.wave.textContent = `FORT ${Game.wave}`;
+      ui.wave.textContent = `${Game.wave}`;
     } else {
       ui.wave.textContent = Game.wave;
     }
@@ -13412,11 +13524,35 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
         ctx.beginPath();
         ctx.arc(fs.x, fs.y-2, 6, 0, Math.PI*2);
         ctx.stroke();
+      } else if (fs.type==='spinner'){
+        ctx.save();
+        ctx.translate(fs.x, fs.y);
+        ctx.rotate(fs.rot||0);
+        ctx.beginPath();
+        ctx.moveTo(-9,0); ctx.lineTo(0,-8); ctx.lineTo(9,0); ctx.lineTo(0,8); ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      } else if (fs.type==='ram'){
+        ctx.save();
+        ctx.translate(fs.x, fs.y);
+        ctx.rotate(fs.rot||0);
+        ctx.strokeRect(-10,-4,20,8);
+        ctx.beginPath();
+        ctx.moveTo(10,-6); ctx.lineTo(16,0); ctx.lineTo(10,6);
+        ctx.stroke();
+        ctx.restore();
+      } else if (fs.type==='beacon'){
+        const modeCol = ['#8bf7ff','#9de4ff','#b8a6ff'][fs.mode||0] || '#b8a6ff';
+        ctx.strokeStyle = modeCol;
+        ctx.beginPath();
+        ctx.arc(fs.x, fs.y, 6 + Math.sin(Game.time*7 + (fs.rot||0))*1.6, 0, Math.PI*2);
+        ctx.stroke();
       } else if (fs.type==='pulse'){
         ctx.beginPath();
         ctx.arc(fs.x, fs.y, 8 + Math.sin(Game.time*6)*2, 0, Math.PI*2);
         ctx.stroke();
       }
+      Fortress.getBehavior(fs.type)?.onDraw?.(fs, ctx, {fortress:Fortress});
       ctx.globalAlpha = 0.85;
     }
     ctx.restore();
@@ -16760,24 +16896,9 @@ function toggleCompactHUD(e){
 }
 ui.btnCompactUI?.addEventListener('click', toggleCompactHUD, {passive:false});
 
-ui.btnFortBarricade?.addEventListener('click', ()=>Fortress.select('barricade'));
-ui.btnFortWall?.addEventListener('click', ()=>Fortress.select('wall'));
-ui.btnFortHeavyWall?.addEventListener('click', ()=>Fortress.select('heavywall'));
-ui.btnFortBunker?.addEventListener('click', ()=>Fortress.select('bunker'));
-ui.btnFortTurret?.addEventListener('click', ()=>Fortress.select('turret'));
-ui.btnFortGatling?.addEventListener('click', ()=>Fortress.select('gatling'));
-ui.btnFortMissile?.addEventListener('click', ()=>Fortress.select('missile'));
-ui.btnFortTesla?.addEventListener('click', ()=>Fortress.select('tesla'));
-ui.btnFortFlame?.addEventListener('click', ()=>Fortress.select('flame'));
-ui.btnFortMortar?.addEventListener('click', ()=>Fortress.select('mortar'));
-ui.btnFortDrone?.addEventListener('click', ()=>Fortress.select('dronepad'));
-ui.btnFortShield?.addEventListener('click', ()=>Fortress.select('shield'));
-ui.btnFortPulse?.addEventListener('click', ()=>Fortress.select('pulse'));
-ui.btnFortMine?.addEventListener('click', ()=>Fortress.select('mine'));
-ui.btnFortSlow?.addEventListener('click', ()=>Fortress.select('slow'));
-ui.btnFortRepair?.addEventListener('click', ()=>Fortress.select('repair'));
-ui.btnFortFactory?.addEventListener('click', ()=>Fortress.select('factory'));
-ui.btnFortSniper?.addEventListener('click', ()=>Fortress.select('sniper'));
+document.querySelectorAll('#fortressBuildScroller [data-item]').forEach((el)=>{
+  el.addEventListener('click', ()=>Fortress.select(el.dataset.item));
+});
 ui.btnFortSell?.addEventListener('click', ()=>Fortress.select(Fortress.sellMode ? Fortress.selected : 'sell'));
 ui.btnFortUndo?.addEventListener('click', ()=>Fortress.undo());
 ui.btnFortStartWave?.addEventListener('click', ()=>Fortress.beginAssault());
