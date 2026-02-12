@@ -2950,7 +2950,7 @@ const addShake = (m, t=0.16) => {
       if (this.phase!=='fortify') return;
       this.phase='assault';
       this.clearPreview();
-      this.spawnLeft = 12 + Math.floor(Game.wave*2.6);
+      this.spawnLeft = 14 + Math.floor(Game.wave*3.1);
       this.bossSpawned = false;
       WaveDirector.onWave(Game.wave);
       this.spawnCd = 0.25;
@@ -10073,6 +10073,53 @@ for (const em of e.emitters){
     SFX.bossWarn();
   }
 
+  function amplifyFortressEnemy(e, proto, d){
+    if (Game.mode!=='fortress' || !e || e.type==='BOSS') return;
+    const w = Game.wave || 1;
+    const hpMul = 1.12 + clamp((w-1)*0.018, 0, 0.38);
+    e.maxHp = Math.round(e.maxHp * hpMul);
+    e.hp = Math.min(e.maxHp, Math.round(e.hp * hpMul));
+    e.emCdMul = (e.emCdMul || 1) * 0.86;
+
+    const extraWaveMods = rollAffixes({
+      wave: Math.max(w+2, 6),
+      maxCount: (w<8?1:(w<14?2:3)),
+      forbidTags: new Set(['_internal'])
+    });
+    e.waveBulletMods = mergeMods(e.waveBulletMods || [], extraWaveMods).slice(0, 6);
+
+    if (Array.isArray(e.emitters)){
+      for (const em of e.emitters){
+        if (em?._composite && em._base?.mods) em._base.mods = mergeMods(e.waveBulletMods, em._base.mods).slice(0, 6);
+        if (em?.mods) em.mods = mergeMods(e.waveBulletMods, em.mods).slice(0, 6);
+      }
+    }
+
+    const wantEmitters = clamp(1 + Math.floor(w/4), 2, 4);
+    while ((e.emitters?.length || 0) < wantEmitters){
+      const keyPool = ['AIM','FAN','RING','SPIRAL','SHOTGUN','CROSS','FLOWER'];
+      const t = keyPool[randi(0, keyPool.length-1)];
+      const fac = EmitterCatalog[t] || EmitterCatalog.AIM;
+      const cfg = {
+        baseCd: lerp(1.25, 0.72, clamp((d-1)/10, 0, 1)),
+        speed: 220 + d*9 + w*3,
+        col: e.tint || e.baseCol || C.E6,
+        mods: mergeMods(e.waveBulletMods, [])
+      };
+      const em = fac(cfg);
+      if (em) e.emitters.push(em);
+      if ((e.emitters?.length || 0) >= wantEmitters) break;
+    }
+
+    if (w>=7 && e.emitters?.length && chance(0.45)){
+      const idx = randi(0, e.emitters.length-1);
+      if (!e.emitters[idx]?._composite){
+        const comp = CompositionRules.rollComposite(Math.max(w+1, 8), d*1.1);
+        if (comp) e.emitters[idx] = comp;
+      }
+    }
+  }
+
   // ================= Spawner =================
   const Spawner = {
     cd:0,
@@ -10087,17 +10134,17 @@ for (const em of e.emitters){
         const timeSlope = (t < BAL.diffSwitchT) ? BAL.diffTimeEarly : BAL.diffTimeLate;
         Game.difficulty = 1 + t*timeSlope + Game.score*BAL.diffScore;
 
-        const d = Game.difficulty;
+        const d = Game.difficulty * 1.14 + clamp((Game.wave-1)*0.03, 0, 0.55);
         const k = clamp((d-1)/9, 0, 1);
         const baseRate = lerp(BAL.spawnRateEarly, BAL.spawnRateLate, k);
 
         // fortress: 与 survival 同一套节奏，但额外受本波预算 spawnLeft 控制
         this.cd -= dt;
         if (this.cd<=0 && Fortress.spawnLeft>0){
-          this.cd = baseRate * DiffConfig.spawnRateMul * rand(0.72, 1.26);
+          this.cd = baseRate * DiffConfig.spawnRateMul * 0.86 * rand(0.68, 1.18);
 
           if (Game.bossAlive && chance(0.55)) return;
-          if (enemies.length >= 7 && !Game.bossAlive) return;
+          if (enemies.length >= 10 && !Game.bossAlive) return;
 
           const proto = WaveDirector.pick();
           const e = EnemyFactory.spawnFromProto(proto, d);
@@ -10113,6 +10160,7 @@ for (const em of e.emitters){
           e.emCdMul = (e.emCdMul || 1.0) * DiffConfig.fireCdMul;
           e.hp = e.maxHp;
           e.score = Math.round(e.score * proto.scoreMul);
+          amplifyFortressEnemy(e, proto, d);
 
           normalizeFortressSpawn(e);
           resolveSpawnOverlap(e, 12);
