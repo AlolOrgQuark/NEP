@@ -9091,19 +9091,16 @@ if (chance(0.75)){
   const speed = cfg.sweepSpeed ?? 1.2;
   const arc   = cfg.sweepArc   ?? Math.PI*0.6;
   const baseEm = baseFactory(cfg.baseCfg || cfg);
-  let phase = 0;
   return {
     type:`ROTATE_SWEEP<${baseEm.type||'?'}>`, _baseType:baseEm.type,
     _composite:'ROTATE_SWEEP', _base:baseEm,
     cd: baseEm.cd,
-    nextCd(o,dt){ 
-      phase += (dt||0.016)*speed; 
-      return baseEm.nextCd?.(o,dt) ?? 1; 
-    },
+    nextCd(o,dt){ return baseEm.nextCd?.(o,dt) ?? 1; },
     fire(owner){
       if (!owner) return;
       const prevOffset = owner._emitAngleOffset || 0;
-      owner._emitAngleOffset = prevOffset + Math.sin(phase)*arc;
+      const sweepPhase = Game.time * speed;
+      owner._emitAngleOffset = prevOffset + Math.sin(sweepPhase)*arc;
       baseEm.fire(owner);
       owner._emitAngleOffset = prevOffset;
     }
@@ -13353,6 +13350,64 @@ const AutoPilot = {
     this.setActive(!this.active);
   },
 
+  _fortTrySellFor(itemType, preferredSacrifice=[]){
+    const cfg = Fortress.catalog[itemType];
+    if (!cfg) return false;
+    const need = cfg.cost - Fortress.stock;
+    if (need <= 0) return false;
+
+    const sacSet = new Set(preferredSacrifice);
+    const candidates = Fortress.structures
+      .filter(st => st.hp>0)
+      .map(st => {
+        const c = Fortress.catalog[st.type];
+        const refund = Math.max(1, Math.floor((st.cost||c?.cost||6)*0.6));
+        const hpPct = clamp(st.hp / Math.max(1, st.maxHp||1), 0, 1);
+        const pref = sacSet.has(st.type) ? 0 : 1;
+        const score = pref*1000 + hpPct*100 + (st.cost||c?.cost||0);
+        return {st, refund, score};
+      })
+      .filter(it => it.refund > 0)
+      .sort((a,b)=>a.score-b.score);
+
+    for (const it of candidates){
+      if (Fortress.sellAt(it.st.x, it.st.y)) return true;
+    }
+    return false;
+  },
+
+  _fortPlaceGuardForHealer(rows, slots){
+    const healer = Fortress.structures.find(st=>st.hp>0 && st.type==='repairplayer');
+    if (!healer) return false;
+
+    const guards = [
+      {x:healer.x, y:clamp(healer.y-38, rows[2]-18, rows[0]+20)},
+      {x:clamp(healer.x-52, 36, W-36), y:clamp(healer.y-8, rows[1]-16, rows[0]+22)},
+      {x:clamp(healer.x+52, 36, W-36), y:clamp(healer.y-8, rows[1]-16, rows[0]+22)}
+    ];
+
+    const guardNeed = guards.find(g => !Fortress.structures.some(st => st.hp>0 && ['barricade','wall','heavywall','bunker','shield'].includes(st.type) && dist2(st.x, st.y, g.x, g.y) < 52*52));
+    if (!guardNeed) return false;
+
+    const pick = (Fortress.stock >= (Fortress.catalog.heavywall?.cost||999)) ? 'heavywall'
+      : (Fortress.stock >= (Fortress.catalog.wall?.cost||999)) ? 'wall'
+      : (Fortress.stock >= (Fortress.catalog.barricade?.cost||999)) ? 'barricade'
+      : null;
+
+    if (!pick){
+      if (this._fortTrySellFor('wall', ['mine','slow','taunt','factory'])) return true;
+      return false;
+    }
+
+    Fortress.selected = pick;
+    if (Fortress.placeAt(guardNeed.x, guardNeed.y)) return true;
+    for (const sx of slots){
+      Fortress.selected = pick;
+      if (Fortress.placeAt(sx, guardNeed.y)) return true;
+    }
+    return false;
+  },
+
   _autoFortressBuild(dt){
     if (Game.mode!=='fortress' || Fortress.phase!=='fortify' || !Fortress.canBuild()) return;
     this._fortBuildCd = Math.max(0, (this._fortBuildCd||0) - dt);
@@ -13365,6 +13420,14 @@ const AutoPilot = {
 
     const hpRatio = Player.maxHp>0 ? (Player.hp/Player.maxHp) : 1;
     const flagRatio = Fortress.flagMaxHp>0 ? (Fortress.flagHp/Fortress.flagMaxHp) : 1;
+    // 残血时优先建立“回血站”（医疗站+前置墙）
+    if ((byType.repairplayer||0) < 1 && hpRatio < 0.90){
+      const needStock = (Fortress.catalog.repairplayer?.cost||12) - Fortress.stock;
+      if (needStock > 0 && this._fortTrySellFor('repairplayer', ['mine','slow','factory','taunt','barricade'])){
+        this._fortBuildCd = 0.08;
+        return;
+      }
+    }
 
     if ((byType.repairplayer||0) < 1 && hpRatio < 0.82){
       const cfg = Fortress.catalog.repairplayer;
@@ -13391,6 +13454,11 @@ const AutoPilot = {
     const baseY = H - 132;
     const rows = [baseY, baseY - 58, baseY - 108];
     const slots = [0.18,0.32,0.46,0.54,0.68,0.82].map(k=>W*k);
+
+    if (this._fortPlaceGuardForHealer(rows, slots)){
+      this._fortBuildCd = 0.10;
+      return;
+    }
 
     // 先用低成本墙体封住空档，避免因高价钢壁导致漏防（仅补到基础防线，不无限堆）
     const curDef = Fortress.structures.filter(st=>st.hp>0 && ['barricade','wall','heavywall','bunker','shield'].includes(st.type)).length;
@@ -13468,6 +13536,13 @@ const AutoPilot = {
     }
 
     const curOff = Fortress.structures.filter(s=>s.hp>0 && ['turret','gatling','sniper','missile','tesla','flame','mortar','dronepad','pulse'].includes(s.type)).length;
+    if (curOff < 2){
+      const targetAtk = (Fortress.stock >= (Fortress.catalog.missile?.cost||999)) ? 'missile' : 'turret';
+      if (this._fortTrySellFor(targetAtk, ['barricade','mine','slow','factory','taunt'])){
+        this._fortBuildCd = 0.10;
+        return;
+      }
+    }
     if (curOff===0){
       const firstAtk = (Fortress.stock >= (Fortress.catalog.turret?.cost||999)) ? 'turret' : ((Fortress.stock >= (Fortress.catalog.gatling?.cost||999)) ? 'gatling' : null);
       if (firstAtk){
@@ -13711,6 +13786,27 @@ const AutoPilot = {
 
   // ========================= 决策：采样候选点 + 全仿真评分 =========================
 
+  _pickSupplyPoint(px, py){
+    if (!supplies.length) return null;
+    let best = null;
+    let bestScore = -1e18;
+    const hpRatio = Player.maxHp>0 ? (Player.hp/Player.maxHp) : 1;
+    for (const s of supplies){
+      if (!s || s.dead) continue;
+      const d = Math.hypot((s.x||0)-px, (s.y||0)-py);
+      if (d > 520) continue;
+      let score = 420 - d;
+      if (hpRatio < 0.55) score += 85;
+      if ((s.key||'') === 'HEAL') score += 120;
+      if ((s.key||'') === 'SHIELD') score += 70;
+      // 屏幕底部补给更容易顺手吃到
+      score += clamp(((s.y||0)-H*0.45)/H, -0.2, 0.3) * 55;
+      if (score > bestScore){ bestScore = score; best = s; }
+    }
+    if (!best || bestScore < -40) return null;
+    return { x:clamp(best.x, 18, W-18), y:clamp(best.y, 52, H-28) };
+  },
+
   _decideGoal(){
     const C = this.CONFIG;
     const px = Player.x, py = Player.y;
@@ -13754,7 +13850,7 @@ const AutoPilot = {
 
     if (C.ATTACK_ENABLE){
       // 用当前点的 score 粗测环境安全
-      const curScore = this._scoreCandidate(px, py, bullets, 0, null, idealY);
+      const curScore = this._scoreCandidate(px, py, bullets, 0, null, idealY, null);
 
       if (curScore < C.SAFE_SCORE_GATE) this._safeT += (1 / C.THINK_HZ);
       else this._safeT = Math.max(0, this._safeT - (2.0 / C.THINK_HZ));
@@ -13772,6 +13868,12 @@ const AutoPilot = {
       }
     }
 
+    const supplyPt = this._pickSupplyPoint(px, py);
+    if (supplyPt){
+      cand.push({x:supplyPt.x, y:supplyPt.y});
+      cand.push({x:supplyPt.x, y:clamp(supplyPt.y + 24, 40, H-22)});
+    }
+
     // 4) 评分选最优
     let best = cand[0];
     let bestScore = 1e18;
@@ -13780,7 +13882,7 @@ const AutoPilot = {
       const x = clamp(p.x, 16, W - 16);
       const y = clamp(p.y, 40, H - 22);
 
-      const score = this._scoreCandidate(x, y, bullets, predX, null, idealY);
+      const score = this._scoreCandidate(x, y, bullets, predX, null, idealY, supplyPt);
       if (score < bestScore){
         bestScore = score;
         best = {x, y};
@@ -13821,7 +13923,7 @@ const AutoPilot = {
   },
 
   // 对候选点 (x,y) 打分：越小越好
-  _scoreCandidate(x, y, bullets, predX, _unused, idealY){
+  _scoreCandidate(x, y, bullets, predX, _unused, idealY, supplyPt){
     const C = this.CONFIG;
 
     let score = 0;
@@ -13854,6 +13956,12 @@ const AutoPilot = {
       score -= (1 / (dx + 50)) * C.ATTACK_X_W;
       // 维持理想 Y：加分（偏离惩罚）
       score += dy * 0.0035 * C.IDEAL_Y_W;
+    }
+
+    // F) 补给奖励：在安全前提下主动接近可拾取补给
+    if (supplyPt){
+      const sd = Math.hypot(x - supplyPt.x, y - supplyPt.y);
+      score -= 1.6 / (sd + 30);
     }
 
     return score;
