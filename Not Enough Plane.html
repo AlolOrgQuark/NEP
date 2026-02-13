@@ -2796,6 +2796,7 @@ const addShake = (m, t=0.16) => {
     stock:0,
     flagHp:1000,
     flagMaxHp:1000,
+    flagInvulnT:0,
     selected:'wall',
     structures:[],
     spawnCd:0,
@@ -2950,6 +2951,7 @@ const addShake = (m, t=0.16) => {
       this.phase='idle'; this.timer=0; this.stock=0; this.structures.length=0;
       this.flagMaxHp = 1200;
       this.flagHp = this.flagMaxHp;
+      this.flagInvulnT = 0;
       this.selected='barricade';
       this.spawnCd=0; this.spawnLeft=0; this.sid=1;
       this.undoStack.length=0;
@@ -3232,6 +3234,35 @@ const addShake = (m, t=0.16) => {
       if (best) return best;
       return this.pickStrategicTarget(x,y,maxD);
     },
+
+    getDuelOffenseTarget(st, x,y,maxD=99999){
+      if (Game.mode!=='fortress_duel' || !Multiplayer?.peers?.size) return null;
+      const peer = [...Multiplayer.peers.values()].find(p=>p && p.alive!==false) || [...Multiplayer.peers.values()][0];
+      if (!peer) return null;
+      const pf = Multiplayer.projectedPeerFortress?.(peer);
+      const pp = Multiplayer.projectedPeer?.(peer);
+      if (!pf && !pp) return null;
+
+      const canHitFlag = !!pf && dist2(x,y,pf.flagX,pf.flagY) <= maxD*maxD;
+      if (canHitFlag) return {x:pf.flagX, y:pf.flagY, type:'flag'};
+
+      const laneIdx = Math.abs((st?.id || 0) % 3);
+      const laneX = [W*0.24, W*0.50, W*0.76][laneIdx];
+      let best = null, bestScore = -1e18;
+      for (const fs of (pf?.structures || [])){
+        if (!fs || (fs.hp||0)<=0) continue;
+        const d2 = dist2(x,y,fs.x,fs.y);
+        if (d2 > maxD*maxD) continue;
+        const laneW = 1 / (1 + Math.abs(fs.x - laneX)*0.02);
+        const hpW = 1 + (1 - clamp((fs.hp||1)/Math.max(1,fs.maxHp||1),0,1))*1.25;
+        const score = laneW*1.4 + hpW + (1/(1+Math.sqrt(d2)*0.01));
+        if (score > bestScore){ bestScore = score; best = fs; }
+      }
+      if (best) return {...best, type:'structure'};
+      if (pp && dist2(x,y,pp.x,pp.y) <= maxD*maxD) return {x:pp.x, y:pp.y, type:'player'};
+      if (pf) return {x:pf.flagX, y:pf.flagY, type:'flag'};
+      return pp ? {x:pp.x, y:pp.y, type:'player'} : null;
+    },
     getEnemyTarget(x,y,maxD=99999){
       if (Game.mode==='fortress' || Game.mode==='lab'){
         const taunt = this.findTauntTarget(x,y,maxD);
@@ -3326,6 +3357,7 @@ const addShake = (m, t=0.16) => {
     },
     hitFlag(dmg){
       if (Game.mode==='lab') return;
+      if ((this.flagInvulnT||0) > 0) return;
       this.flagHp = Math.max(0, this.flagHp - dmg);
       if (this.flagHp<=0 && Player.alive){
         if (TimeMachine.enabled && TimeMachine.rewind('flag')) return;
@@ -3337,6 +3369,7 @@ const addShake = (m, t=0.16) => {
     },
     update(dt){
       if (Game.mode!=='fortress' && Game.mode!=='lab' && Game.mode!=='fortress_duel') return;
+      if ((this.flagInvulnT||0) > 0) this.flagInvulnT = Math.max(0, this.flagInvulnT - dt);
       if (Game.mode==='fortress_duel'){
         const netFollower = !!(Game.lastStart?.net && Multiplayer.isActive?.() && Multiplayer.leaderId?.() !== Multiplayer.localId);
         if (!netFollower){
@@ -3373,7 +3406,7 @@ const addShake = (m, t=0.16) => {
         if (st.type==='turret'){
           st.cd -= dt;
           if (st.cd<=0){
-            const t = findNearestEnemy(st.x, st.y, 500);
+            const t = (Game.mode==='fortress_duel') ? this.getDuelOffenseTarget(st, st.x, st.y, 500) : findNearestEnemy(st.x, st.y, 500);
             if (t){
               const lead = predictEnemyPos(st.x, st.y, t, 520) || t;
               const a = Math.atan2(lead.y-st.y, lead.x-st.x);
@@ -3384,7 +3417,7 @@ const addShake = (m, t=0.16) => {
         } else if (st.type==='gatling'){
           st.cd -= dt;
           if (st.cd<=0){
-            const t = findNearestEnemy(st.x, st.y, 520);
+            const t = (Game.mode==='fortress_duel') ? this.getDuelOffenseTarget(st, st.x, st.y, 520) : findNearestEnemy(st.x, st.y, 520);
             if (t){
               const lead = predictEnemyPos(st.x, st.y, t, 560) || t;
               const base = Math.atan2(lead.y-st.y, lead.x-st.x);
@@ -3398,7 +3431,7 @@ const addShake = (m, t=0.16) => {
         } else if (st.type==='missile'){
           st.cd -= dt;
           if (st.cd<=0){
-            const t = findNearestEnemy(st.x, st.y, 760);
+            const t = (Game.mode==='fortress_duel') ? this.getDuelOffenseTarget(st, st.x, st.y, 760) : findNearestEnemy(st.x, st.y, 760);
             if (t){
               const lead = predictEnemyPos(st.x, st.y, t, 320) || t;
               const a = Math.atan2(lead.y-st.y, lead.x-st.x);
@@ -3410,7 +3443,7 @@ const addShake = (m, t=0.16) => {
         } else if (st.type==='tesla'){
           st.cd -= dt;
           if (st.cd<=0){
-            const t = findNearestEnemy(st.x, st.y, 340);
+            const t = (Game.mode==='fortress_duel') ? this.getDuelOffenseTarget(st, st.x, st.y, 340) : findNearestEnemy(st.x, st.y, 340);
             if (t){
               const lead = predictEnemyPos(st.x, st.y, t, 760) || t;
               spawnBeam(st.x, st.y-6, lead.x, lead.y, 5, 0.12, 20 + Game.wave*1.1, '#9dd7ff');
@@ -3432,7 +3465,7 @@ const addShake = (m, t=0.16) => {
         } else if (st.type==='mortar'){
           st.cd -= dt;
           if (st.cd<=0){
-            const t = findNearestEnemy(st.x, st.y, 800);
+            const t = (Game.mode==='fortress_duel') ? this.getDuelOffenseTarget(st, st.x, st.y, 800) : findNearestEnemy(st.x, st.y, 800);
             if (t){
               const lead = predictEnemyPos(st.x, st.y, t, 340) || t;
               const a = Math.atan2(lead.y-st.y, lead.x-st.x);
@@ -3444,7 +3477,7 @@ const addShake = (m, t=0.16) => {
         } else if (st.type==='dronepad'){
           st.cd -= dt;
           if (st.cd<=0){
-            const t = findNearestEnemy(st.x, st.y, 680);
+            const t = (Game.mode==='fortress_duel') ? this.getDuelOffenseTarget(st, st.x, st.y, 680) : findNearestEnemy(st.x, st.y, 680);
             if (t){
               for (let i=0;i<2;i++){
                 const lead = predictEnemyPos(st.x, st.y, t, 340) || t;
@@ -3458,7 +3491,7 @@ const addShake = (m, t=0.16) => {
         } else if (st.type==='sniper'){
           st.cd -= dt;
           if (st.cd<=0){
-            const t = findNearestEnemy(st.x, st.y, 760);
+            const t = (Game.mode==='fortress_duel') ? this.getDuelOffenseTarget(st, st.x, st.y, 760) : findNearestEnemy(st.x, st.y, 760);
             if (t){
               const lead = predictEnemyPos(st.x, st.y, t, 900) || t;
               const a = Math.atan2(lead.y-st.y, lead.x-st.x);
@@ -13213,7 +13246,8 @@ BG_Effect.init();
       this.heartbeatCd -= dt;
       this.stateCd -= dt;
       if (this.heartbeatCd <= 0){ this.heartbeatCd = 0.8; this.sendServer({type:'hello', nick:this.nick}); }
-      if (Game.state === 'playing' && this.stateCd <= 0){
+      const netKeepAliveState = !!(Game.lastStart?.net && (Game.mode==='fortress_duel' || Game.mode==='workshop') && (Game.state==='paused' || Game.state==='over'));
+      if ((Game.state === 'playing' || netKeepAliveState) && this.stateCd <= 0){
         this.stateCd = 1/24;
         this.sendServer({
           type:'input_state',
@@ -13367,29 +13401,27 @@ BG_Effect.init();
       for (const peer of this.peers.values()){
         if (peer.alive === false) continue;
         const pp = this.projectedPeer(peer);
-        if (!hitCircle(b.x,b.y,b.r, pp.x,pp.y, Player.r)) {
-          if (Game.mode==='fortress_duel'){
-            const pf = this.projectedPeerFortress(peer);
-            if (pf){
-              let hitSt = null;
-              for (const st of pf.structures){
-                if ((st.hp||0)<=0) continue;
-                if (circleRectOverlap(b.x,b.y,b.r||2, st)){ hitSt = st; break; }
-              }
-              if (hitSt){
-                if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; } else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
-                this.sendServer({type:'peer_hit', dmg:Math.max(1, b.dmg||1), kind:'structure', sid:hitSt.id});
-                return true;
-              }
-              if (Math.abs(b.x - pf.flagX) < 52 && Math.abs(b.y - pf.flagY) < 28){
-                if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; } else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
-                this.sendServer({type:'peer_hit', dmg:Math.max(1, b.dmg||1), kind:'flag'});
-                return true;
-              }
+        if (Game.mode==='fortress_duel'){
+          const pf = this.projectedPeerFortress(peer);
+          if (pf && Math.abs(b.x - pf.flagX) < 52 && Math.abs(b.y - pf.flagY) < 28){
+            if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; } else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
+            this.sendServer({type:'peer_hit', dmg:Math.max(1, b.dmg||1), kind:'flag'});
+            return true;
+          }
+          if (pf){
+            let hitSt = null;
+            for (const st of pf.structures){
+              if ((st.hp||0)<=0) continue;
+              if (circleRectOverlap(b.x,b.y,b.r||2, st)){ hitSt = st; break; }
+            }
+            if (hitSt){
+              if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; } else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
+              this.sendServer({type:'peer_hit', dmg:Math.max(1, b.dmg||1), kind:'structure', sid:hitSt.id});
+              return true;
             }
           }
-          continue;
         }
+        if (!hitCircle(b.x,b.y,b.r, pp.x,pp.y, Player.r)) continue;
         sparks(b.x,b.y,'glowP2', 8, 220);
         if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; }
         else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
@@ -16754,7 +16786,7 @@ function togglePause(){
   function revive(){
     if (Game.continues<=0 || Game.state!=='over') return;
 
-    const isFlagFail = (Game.mode==='fortress' && Game.failReason==='flag');
+    const isFlagFail = ((Game.mode==='fortress' || Game.mode==='fortress_duel') && Game.failReason==='flag');
     Game.continues--;
 
     Player.alive=true;
@@ -16766,6 +16798,7 @@ function togglePause(){
       Player.x = snap.x ?? Player.x;
       Player.y = snap.y ?? Player.y;
       Fortress.flagHp = Fortress.flagMaxHp;
+      Fortress.flagInvulnT = 5.0;
       Fortress.updatePanel();
     } else {
       Player.hp = Math.max(1, Math.floor(Player.maxHp*BAL.continueHP));
@@ -16810,11 +16843,12 @@ function step(now){
   // 应用游戏速率
   const finalDt = dt * TimeMachine.speed;
 
-  if (Game.state === 'playing') {
+  const netKeepRunning = !!(Game.lastStart?.net && Multiplayer?.isActive?.() && (Game.mode==='fortress_duel' || Game.mode==='workshop') && (Game.state==='paused' || Game.state==='over'));
+  if (Game.state === 'playing' || netKeepRunning) {
     update(finalDt); // 使用变速后的 dt
     
     // [插入] TAS 录制
-    if (TimeMachine.enabled) {
+    if (TimeMachine.enabled && Game.state === 'playing') {
       TimeMachine.record();
     }
   }
