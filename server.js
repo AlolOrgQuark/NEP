@@ -100,6 +100,14 @@ function leaveRoom(ws, reason = 'left') {
 
   assignLeader(room);
 
+  if (room.match.active && (room.match.mode === 'workshop' || room.match.mode === 'fortress_duel') && room.players.size < 2) {
+    room.match.active = false;
+    room.pendingStartCfg = null;
+    room.runtime = null;
+    room.world = null;
+    room.worldVersion += 1;
+  }
+
   if (room.members.size === 0) {
     rooms.delete(room.name);
   } else {
@@ -165,9 +173,30 @@ function joinRoom(ws, roomName) {
   });
 }
 
-function onPrepare(room, c, msg) {
+function onPrepare(ws, room, c, msg) {
   const p = room.players.get(c.id);
   if (!p) return;
+  const reqMode = String(msg?.cfg?.mode || '');
+  if (room.match.active && room.match.mode && room.match.mode !== 'workshop' && room.match.mode !== 'fortress_duel' && (!reqMode || reqMode === room.match.mode)) {
+    p.prepared = false;
+    p.prepareCfg = null;
+    p.buildA = null;
+    safeSend(ws, {
+      type: 'room_event',
+      room: room.name,
+      event: 'start_match',
+      starterId: room.leaderId || c.id,
+      cfg: {
+        mode: room.match.mode,
+        wave: Math.max(1, clipNum(room.match.wave, 1) | 0),
+      },
+    });
+    broadcastRoomEvent(room, 'prepared_updated', {
+      prepared: [...room.players.values()].filter((x) => x.prepared).map((x) => x.id),
+      leaderId: room.leaderId,
+    });
+    return;
+  }
   p.prepared = true;
   p.prepareCfg = msg.cfg || null;
   p.buildA = msg.buildA || null;
@@ -313,7 +342,7 @@ function handleMessage(ws, msg) {
   }
 
   if (msg.type === 'prepare') {
-    onPrepare(room, c, msg);
+    onPrepare(ws, room, c, msg);
     return;
   }
 
@@ -358,11 +387,16 @@ function roomTick() {
       if (c?.id) socketByPlayerId.set(c.id, { ws, client: c });
     }
 
+    let roomRosterChanged = false;
     for (const [pid, p] of room.players.entries()) {
       const playerConn = socketByPlayerId.get(pid);
       const seenAt = Math.max(p.lastInputAt || 0, playerConn?.client?.lastSeenAt || 0);
       if (now - seenAt > PLAYER_TIMEOUT_MS) {
         room.players.delete(pid);
+        roomRosterChanged = true;
+        for (const peerWs of room.members) {
+          safeSend(peerWs, { type: 'peer_left', peerId: pid, reason: 'timeout' });
+        }
         const staleWs = playerConn?.ws;
         if (staleWs) {
           try {
@@ -372,6 +406,20 @@ function roomTick() {
           }
         }
       }
+    }
+    if (roomRosterChanged) {
+      assignLeader(room);
+      if (room.match.active && (room.match.mode === 'workshop' || room.match.mode === 'fortress_duel') && room.players.size < 2) {
+        room.match.active = false;
+        room.pendingStartCfg = null;
+        room.runtime = null;
+        room.world = null;
+        room.worldVersion += 1;
+      }
+      broadcastRoomEvent(room, 'prepared_updated', {
+        prepared: [...room.players.values()].filter((x) => x.prepared).map((x) => x.id),
+        leaderId: room.leaderId,
+      });
     }
 
     if (room.match.active && room.runtime && room.match.mode !== 'workshop' && room.match.mode !== 'fortress_duel') {
