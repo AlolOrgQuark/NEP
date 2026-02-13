@@ -13210,7 +13210,9 @@ BG_Effect.init();
         const peer = this.peers.get(msg.peerId);
         if (peer){
           this.peers.delete(msg.peerId);
-          if ((peer.prepared || this.localPrepared || (Game.lastStart && Game.lastStart.net))) this.onPeerDisconnected(peer.nick);
+          const isStrictDuel = !!(Game.lastStart?.net && (Game.mode==='workshop' || Game.mode==='fortress_duel'));
+          if (isStrictDuel && Game.state !== 'menu') this.onPeerDisconnected(peer.nick);
+          else this.clearRemoteTransientState();
         }
         this.refreshStatus();
         return;
