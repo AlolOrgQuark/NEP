@@ -11963,6 +11963,7 @@ function grantPlayerEmitter(){
 }
 
   function firePlayer(dt){
+    if (!Player.alive) return;
     if (Game.mode==='fortress_duel' && Fortress.phase!=='assault') return;
     Player.fireCd -= dt;
     if (Player.fireCd>0) return;
@@ -13252,7 +13253,7 @@ BG_Effect.init();
         this.sendServer({
           type:'input_state',
           nick:this.nick,
-          state:{ x: Player.x, y: Player.y, nx: clamp(Player.x/Math.max(1,W),-0.2,1.2), ny: clamp(Player.y/Math.max(1,H),-0.2,1.2), vw:Math.max(1,W|0), vh:Math.max(1,H|0), hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState(), fortress: (Game.mode==='fortress_duel') ? {phase:Fortress.phase, duelTimer:Fortress.duelTimer||0, duelRound:Fortress.duelRound||1, flagHp:Fortress.flagHp, flagMaxHp:Fortress.flagMaxHp, structures:Fortress.structures.map(st=>({id:st.id,x:st.x,y:st.y,nx:clamp(st.x/Math.max(1,W),-0.2,1.2),ny:clamp(st.y/Math.max(1,H),-0.2,1.2),w:st.w,h:st.h,nw:st.w/Math.max(1,W),nh:st.h/Math.max(1,H),hp:st.hp,maxHp:st.maxHp,col:st.col,type:st.type}))} : null }
+          state:{ x: Player.x, y: Player.y, nx: clamp(Player.x/Math.max(1,W),-0.2,1.2), ny: clamp(Player.y/Math.max(1,H),-0.2,1.2), vw:Math.max(1,W|0), vh:Math.max(1,H|0), hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState(), fortress: (Game.mode==='fortress_duel') ? {phase:Fortress.phase, duelTimer:Fortress.duelTimer||0, duelRound:Fortress.duelRound||1, flagHp:Fortress.flagHp, flagMaxHp:Fortress.flagMaxHp, flagInvulnT:Fortress.flagInvulnT||0, structures:Fortress.structures.map(st=>({id:st.id,x:st.x,y:st.y,nx:clamp(st.x/Math.max(1,W),-0.2,1.2),ny:clamp(st.y/Math.max(1,H),-0.2,1.2),w:st.w,h:st.h,nw:st.w/Math.max(1,W),nh:st.h/Math.max(1,H),hp:st.hp,maxHp:st.maxHp,col:st.col,type:st.type}))} : null }
         });
       }
       // Server-authoritative world simulation: clients no longer relay world snapshots.
@@ -13320,6 +13321,13 @@ BG_Effect.init();
             ctx.lineTo(pf.flagX+1.5, baseY-16);
             ctx.closePath();
             ctx.fill();
+            if ((pf.flagInvulnT||0) > 0){
+              ctx.strokeStyle='rgba(120,220,255,0.95)';
+              ctx.lineWidth=2;
+              ctx.beginPath();
+              ctx.arc(pf.flagX, pf.flagY-8, 24 + Math.sin(Game.time*7)*1.2, 0, Math.PI*2);
+              ctx.stroke();
+            }
             const fPct = clamp((pf.flagHp||1)/Math.max(1,pf.flagMaxHp||1),0,1);
             const bw=120, bh=6, bx=pf.flagX-bw*0.5, by=pf.flagY-34;
             ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(bx,by,bw,bh);
@@ -13364,6 +13372,7 @@ BG_Effect.init();
       return {
         flagHp: f.flagHp || 1,
         flagMaxHp: f.flagMaxHp || 1,
+        flagInvulnT: Math.max(0, Number(f.flagInvulnT)||0),
         flagX: W*0.5,
         flagY: 62,
         structures
@@ -13405,7 +13414,11 @@ BG_Effect.init();
           const pf = this.projectedPeerFortress(peer);
           if (pf && Math.abs(b.x - pf.flagX) < 52 && Math.abs(b.y - pf.flagY) < 28){
             if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; } else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
-            this.sendServer({type:'peer_hit', dmg:Math.max(1, b.dmg||1), kind:'flag'});
+            if ((pf.flagInvulnT||0) <= 0){
+              this.sendServer({type:'peer_hit', dmg:Math.max(1, b.dmg||1), kind:'flag'});
+            } else {
+              sparks(pf.flagX, pf.flagY, 'glowP2', 5, 140);
+            }
             return true;
           }
           if (pf){
@@ -15465,6 +15478,18 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
       ctx.fillRect(W*0.5-8, fy-30, 16, 10);
     }
 
+    if ((Fortress.flagInvulnT||0) > 0){
+      ctx.strokeStyle='rgba(120,220,255,0.95)';
+      ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.arc(W*0.5, fy-22, 28 + Math.sin(Game.time*7)*1.4, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.fillStyle='rgba(160,220,255,0.95)';
+      ctx.font='700 10px "Consolas", monospace';
+      ctx.textAlign='center';
+      ctx.fillText(`INVULN ${(Fortress.flagInvulnT||0).toFixed(1)}s`, W*0.5, fy-64);
+    }
+
     const barW = 170, barH = 8, barX = W*0.5 - barW*0.5, barY = fy - 54;
     if (Game.mode!=='lab' && Game.mode!=='fortress_duel'){
       const flagPct = clamp(Fortress.flagHp / Math.max(1, Fortress.flagMaxHp), 0, 1);
@@ -16786,7 +16811,7 @@ function togglePause(){
   function revive(){
     if (Game.continues<=0 || Game.state!=='over') return;
 
-    const isFlagFail = ((Game.mode==='fortress' || Game.mode==='fortress_duel') && Game.failReason==='flag');
+    const isFlagFail = ((Game.mode==='fortress' || Game.mode==='fortress_duel') && (Game.failReason==='flag' || Fortress.flagHp<=0));
     Game.continues--;
 
     Player.alive=true;

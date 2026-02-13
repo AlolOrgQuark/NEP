@@ -294,6 +294,7 @@ function handleMessage(ws, msg) {
           duelRound: Math.max(1, clipNum(s.fortress.duelRound, 1) | 0),
           flagHp: clipNum(s.fortress.flagHp, 1),
           flagMaxHp: clipNum(s.fortress.flagMaxHp, 1),
+          flagInvulnT: Math.max(0, clipNum(s.fortress.flagInvulnT, 0)),
           structures: Array.isArray(s.fortress.structures) ? s.fortress.structures.slice(0, 80).map((st)=>({
             id: clipNum(st?.id, 0)|0, x: clipNum(st?.x, 0), y: clipNum(st?.y, 0),
             nx: clipNum(st?.nx, 0.5), ny: clipNum(st?.ny, 0.75),
