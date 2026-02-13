@@ -13066,24 +13066,29 @@ BG_Effect.init();
     projectedPeer(peer){
       if (!peer) return null;
       const srcW = Math.max(1, peer.vw || W), srcH = Math.max(1, peer.vh || H);
-      const px = (peer.nx != null) ? (peer.nx * W) : ((peer.x ?? W*0.5) * (W/srcW));
-      const py = (peer.ny != null) ? (peer.ny * H) : ((peer.y ?? H*0.75) * (H/srcH));
+      const npx = (peer.nx != null) ? clamp(peer.nx, -0.2, 1.2) : null;
+      const npy = (peer.ny != null) ? clamp(peer.ny, -0.2, 1.2) : null;
+      const px = (npx != null) ? (npx * W) : ((peer.x ?? W*0.5) * (W/srcW));
+      const py = (npy != null) ? (npy * H) : ((peer.y ?? H*0.75) * (H/srcH));
       const workshopMirror = (Game.mode === 'workshop');
       const duelMirror = (Game.mode === 'fortress_duel');
+      const mappedY = workshopMirror ? (H - py) : (duelMirror ? ((1 - (npy != null ? npy : (py/Math.max(1,H)))) * H) : py);
       return {
         ...peer,
         x: workshopMirror ? (W - px) : px,
-        y: (workshopMirror || duelMirror) ? (H - py) : py,
+        y: mappedY,
         bullets: (peer.smoothBullets || []).map((b, i)=>{
-          const bx = (b.nx != null) ? (b.nx * W) : ((b.x ?? 0) * (W/srcW));
-          const by = (b.ny != null) ? (b.ny * H) : ((b.y ?? 0) * (H/srcH));
+          const bnx = (b.nx != null) ? clamp(b.nx, -0.25, 1.25) : null;
+          const bny = (b.ny != null) ? clamp(b.ny, -0.25, 1.25) : null;
+          const bx = (bnx != null) ? (bnx * W) : ((b.x ?? 0) * (W/srcW));
+          const by = (bny != null) ? (bny * H) : ((b.y ?? 0) * (H/srcH));
           const bvx = (b.nvx != null) ? (b.nvx * W) : ((b.vx ?? 0) * (W/srcW));
           const bvy = (b.nvy != null) ? (b.nvy * H) : ((b.vy ?? 0) * (H/srcH));
           return {
             ...b,
             id: `${peer.id}:${i}:${(b.t||0).toFixed(2)}`,
             x: workshopMirror ? (W - bx) : bx,
-            y: (workshopMirror || duelMirror) ? (H - by) : by,
+            y: workshopMirror ? (H - by) : (duelMirror ? ((1 - (bny != null ? bny : (by/Math.max(1,H)))) * H) : by),
             vx: workshopMirror ? -bvx : bvx,
             vy: (workshopMirror || duelMirror) ? -bvy : bvy,
           };
@@ -13096,7 +13101,7 @@ BG_Effect.init();
       const vw = Math.max(1, W|0), vh = Math.max(1, H|0);
       for (const b of bulletsP){
         if (!b.alive) continue;
-        out.push({x:b.x, y:b.y, nx:b.x/vw, ny:b.y/vh, vx:b.vx, vy:b.vy, nvx:b.vx/vw, nvy:b.vy/vh, r:b.r, col:b.col, dmg:b.dmg, t:b.t, spr:b.spr, style:b.style, _phaseAlpha:b._phaseAlpha, _phaseVisible:b._phaseVisible});
+        out.push({x:b.x, y:b.y, nx:clamp(b.x/vw,-0.25,1.25), ny:clamp(b.y/vh,-0.25,1.25), vx:b.vx, vy:b.vy, nvx:b.vx/vw, nvy:b.vy/vh, r:b.r, col:b.col, dmg:b.dmg, t:b.t, spr:b.spr, style:b.style, _phaseAlpha:b._phaseAlpha, _phaseVisible:b._phaseVisible});
         if (out.length >= 90) break;
       }
       return out;
@@ -13190,7 +13195,7 @@ BG_Effect.init();
         this.sendServer({
           type:'input_state',
           nick:this.nick,
-          state:{ x: Player.x, y: Player.y, nx: Player.x/Math.max(1,W), ny: Player.y/Math.max(1,H), vw:Math.max(1,W|0), vh:Math.max(1,H|0), hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState(), fortress: (Game.mode==='fortress_duel') ? {flagHp:Fortress.flagHp, flagMaxHp:Fortress.flagMaxHp, structures:Fortress.structures.map(st=>({id:st.id,x:st.x,y:st.y,nx:st.x/Math.max(1,W),ny:st.y/Math.max(1,H),w:st.w,h:st.h,nw:st.w/Math.max(1,W),nh:st.h/Math.max(1,H),hp:st.hp,maxHp:st.maxHp,col:st.col,type:st.type}))} : null }
+          state:{ x: Player.x, y: Player.y, nx: clamp(Player.x/Math.max(1,W),-0.2,1.2), ny: clamp(Player.y/Math.max(1,H),-0.2,1.2), vw:Math.max(1,W|0), vh:Math.max(1,H|0), hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState(), fortress: (Game.mode==='fortress_duel') ? {flagHp:Fortress.flagHp, flagMaxHp:Fortress.flagMaxHp, structures:Fortress.structures.map(st=>({id:st.id,x:st.x,y:st.y,nx:clamp(st.x/Math.max(1,W),-0.2,1.2),ny:clamp(st.y/Math.max(1,H),-0.2,1.2),w:st.w,h:st.h,nw:st.w/Math.max(1,W),nh:st.h/Math.max(1,H),hp:st.hp,maxHp:st.maxHp,col:st.col,type:st.type}))} : null }
         });
       }
       // Server-authoritative world simulation: clients no longer relay world snapshots.
