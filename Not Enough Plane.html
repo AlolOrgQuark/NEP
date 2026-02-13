@@ -13339,6 +13339,27 @@ BG_Effect.init();
               ctx.arc(pf.flagX, pf.flagY-8, 24 + Math.sin(Game.time*7)*1.2, 0, Math.PI*2);
               ctx.stroke();
             }
+            const baseY = pf.flagY;
+            ctx.fillStyle = 'rgba(10,20,40,0.75)';
+            ctx.fillRect(pf.flagX-26, baseY-12, 52, 16);
+            ctx.strokeStyle = 'rgba(255,80,110,0.8)';
+            ctx.strokeRect(pf.flagX-26, baseY-12, 52, 16);
+            ctx.fillStyle = '#ff5577';
+            ctx.fillRect(pf.flagX-1.5, baseY-26, 3, 14);
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.moveTo(pf.flagX+1.5, baseY-26);
+            ctx.lineTo(pf.flagX+14, baseY-21);
+            ctx.lineTo(pf.flagX+1.5, baseY-16);
+            ctx.closePath();
+            ctx.fill();
+            if ((pf.flagInvulnT||0) > 0){
+              ctx.strokeStyle='rgba(120,220,255,0.95)';
+              ctx.lineWidth=2;
+              ctx.beginPath();
+              ctx.arc(pf.flagX, pf.flagY-8, 24 + Math.sin(Game.time*7)*1.2, 0, Math.PI*2);
+              ctx.stroke();
+            }
             const fPct = clamp((pf.flagHp||1)/Math.max(1,pf.flagMaxHp||1),0,1);
             const bw=120, bh=6, bx=pf.flagX-bw*0.5, by=pf.flagY-34;
             ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(bx,by,bw,bh);
