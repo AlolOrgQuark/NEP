@@ -3016,6 +3016,11 @@ const addShake = (m, t=0.16) => {
 
       if (Game.mode==='fortress_duel'){
         this.phase='assault';
+        Game.wave = (Game.wave|0) + 1;
+        if (Game.wave>0 && Game.wave%5===0){
+          Player.bomb = Math.min(3, (Player.bomb||0) + 1);
+          textPop(W*0.5, H*0.12, `BOMB +1 (W${Game.wave})`, C.Y);
+        }
         this.duelTimer = 60;
         this.spawnLeft = 0;
         this.bossSpawned = false;
@@ -6031,6 +6036,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
     EMIT:{
   spr:'glowY', col:C.Y, name:'EMIT',
   apply(){
+    if (Game.mode==='fortress_duel') return;
     if (!grantPlayerEmitter()){
       addXP(10);
     }
@@ -6038,11 +6044,13 @@ function refreshDNAAfterFire(beforeP, beforeE){
 },
 
 COMPOSITE:{ spr:'glowY', col:C.Y, name:'COMP', apply(){
+      if (Game.mode==='fortress_duel') return;
       grantPlayerComposite();
       SFX.pickup();
     } },
 
     MOD:{ spr:'glowP2', col:C.P2, name:'MOD', apply(){
+      if (Game.mode==='fortress_duel') return;
       Player.mods++;
 
       // 约 45% 给玩家子弹词条（gunMods）；否则给数值成长
@@ -6097,6 +6105,7 @@ COMPOSITE:{ spr:'glowY', col:C.Y, name:'COMP', apply(){
 
   // ================= Leveling (no cap) =================
   function grantPlayerGunMod(){
+    if (Game.mode==='fortress_duel') return;
     // 玩家词条黑名单：禁止波浪和螺旋，保证玩家弹道是直线的（或追踪的），避免“乱飘”
     const banned = ['WAVE', 'SPIN', 'PHASE_SHIFT'];
     
@@ -6141,6 +6150,7 @@ COMPOSITE:{ spr:'glowY', col:C.Y, name:'COMP', apply(){
   }
 
   function addXP(v){
+    if (Game.mode==='fortress_duel') return;
     Player.xp += v;
     while(Player.xp >= Player.xpNeed){
       Player.xp -= Player.xpNeed;
@@ -11888,6 +11898,7 @@ if (e._emitters?.length){
 }
 
 function grantPlayerComposite(){
+    if (Game.mode==='fortress_duel') return;
     if (!Player.emitters?.length) {
       // 没有 emitter，先给一个基础的
       grantPlayerEmitter();
@@ -11950,6 +11961,7 @@ function grantPlayerComposite(){
   }
 
 function grantPlayerEmitter(){
+  if (Game.mode==='fortress_duel') return false;
   const keys = Object.keys(PlayerEmitterCatalog);
   if (!keys.length) return false;
 
@@ -12065,6 +12077,61 @@ function grantPlayerEmitter(){
     if (Player.bomb<=0) return;
     Player.bomb--;
     ui.bombText.textContent = Player.bomb;
+
+    const sx = Player.x, sy = Player.y;
+    const shockR = (Game.mode==='fortress_duel') ? 260 : 520;
+
+    // 对战模式：改为冲击波直达判定；其余模式保留原炸屏
+    if (Game.mode==='fortress_duel' && Multiplayer?.isActive?.()){
+      const lineRectHit = (ax,ay,bx,by, st)=>{
+        const steps = Math.max(8, Math.ceil(Math.hypot(bx-ax, by-ay) / 10));
+        const l = st.x - st.w*0.5, r = st.x + st.w*0.5, t = st.y - st.h*0.5, b = st.y + st.h*0.5;
+        for (let i=0;i<=steps;i++){
+          const k = i/steps;
+          const px = ax + (bx-ax)*k, py = ay + (by-ay)*k;
+          if (px>=l && px<=r && py>=t && py<=b) return true;
+        }
+        return false;
+      };
+      const blockedByStruct = (ax,ay,bx,by, structures, ignoreId=null)=>{
+        for (const st of (structures||[])){
+          if (!st || (st.hp||0)<=0) continue;
+          if (ignoreId!=null && st.id===ignoreId) continue;
+          if (lineRectHit(ax,ay,bx,by, st)) return true;
+        }
+        return false;
+      };
+
+      for (const peer of Multiplayer.peers.values()){
+        const pp = Multiplayer.projectedPeer(peer);
+        const pf = Multiplayer.projectedPeerFortress?.(peer);
+        if (pf){
+          for (const st of (pf.structures||[])){
+            if ((st.hp||0)<=0) continue;
+            if (Math.hypot(st.x-sx, st.y-sy) > shockR) continue;
+            if (blockedByStruct(sx,sy,st.x,st.y,pf.structures, st.id)) continue;
+            Multiplayer.sendServer({type:'peer_hit', dmg:Math.max(1, (st.hp||1)*0.5), kind:'structure', sid:st.id});
+          }
+          if ((pf.flagInvulnT||0)<=0 && Math.hypot(pf.flagX-sx, pf.flagY-sy) <= shockR){
+            if (!blockedByStruct(sx,sy,pf.flagX,pf.flagY,pf.structures,null)){
+              Multiplayer.sendServer({type:'peer_hit', dmg:Math.max(1, (pf.flagHp||1)*0.5), kind:'flag'});
+            }
+          }
+        }
+        if (pp && peer.alive!==false && Math.hypot(pp.x-sx, pp.y-sy) <= shockR){
+          if (!blockedByStruct(sx,sy,pp.x,pp.y,pf?.structures||[],null)){
+            Multiplayer.sendServer({type:'peer_hit', dmg:Math.max(1, (pp.hp||1)*0.5), kind:'player_half'});
+          }
+        }
+      }
+
+      sparks(Player.x, Player.y, 'glowY', 70, 720);
+      spawnShockwave(Player.x, Player.y, C.Y, shockR, 0.72);
+      addShake(16,0.36);
+      textPop(Player.x, Player.y-18, 'SHOCKWAVE', C.Y);
+      SFX.bomb?.();
+      return;
+    }
 
     for(const b of bulletsE) b.alive=false;
     beams.length = 0;
@@ -13055,10 +13122,16 @@ BG_Effect.init();
       } else if (msg.event === 'start_match' && msg.cfg){
         this.startPreparedMatch(msg.cfg, msg.starterId || this.roomLeaderId || this.localId);
       } else if (msg.event === 'peer_hit'){
-        if ((Game.mode === 'workshop' || Game.mode==='fortress_duel') && Game.state === 'playing' && Player.alive && (msg.kind||'player')==='player'){
+        if ((Game.mode === 'workshop' || Game.mode==='fortress_duel') && Game.state === 'playing' && Player.alive){
           const peer = this.peers.get(msg.from);
-          onPlayerHit(Math.max(1, msg.dmg || 1), 0);
-          textPop(Player.x, Player.y - 28, `HIT BY ${peer?.nick || 'PILOT'}`, C.R);
+          const kind = (msg.kind||'player');
+          if (kind==='player'){
+            onPlayerHit(Math.max(1, msg.dmg || 1), 0);
+            textPop(Player.x, Player.y - 28, `HIT BY ${peer?.nick || 'PILOT'}`, C.R);
+          } else if (kind==='player_half'){
+            Player.hp = Math.max(1, Player.hp * 0.5);
+            textPop(Player.x, Player.y - 28, `SHOCK HALF HP`, C.E1);
+          }
         }
         if (Game.mode==='fortress_duel' && (msg.kind==='flag' || msg.kind==='structure')){
           if (msg.kind==='flag'){
@@ -13111,6 +13184,13 @@ BG_Effect.init();
           const phase = (lf.phase==='assault' || lf.phase==='fortify') ? lf.phase : Fortress.phase;
           const prevPhase = Fortress.phase;
           Fortress.phase = phase;
+          const oldWave = Game.wave|0;
+          const syncedWave = Math.max(1, Number(lf.wave) || oldWave || 1);
+          Game.wave = syncedWave;
+          if (syncedWave > oldWave && syncedWave%5===0){
+            Player.bomb = Math.min(3, (Player.bomb||0) + 1);
+            textPop(W*0.5, H*0.12, `BOMB +1 (W${syncedWave})`, C.Y);
+          }
           Fortress.duelTimer = Math.max(0, Number(lf.duelTimer) || 0);
           Fortress.duelRound = Math.max(1, Number(lf.duelRound) || Fortress.duelRound || 1);
           if (prevPhase==='assault' && phase==='fortify'){
@@ -13283,7 +13363,7 @@ BG_Effect.init();
         this.sendServer({
           type:'input_state',
           nick:this.nick,
-          state:{ x: Player.x, y: Player.y, nx: clamp(Player.x/Math.max(1,W),-0.2,1.2), ny: clamp(Player.y/Math.max(1,H),-0.2,1.2), vw:Math.max(1,W|0), vh:Math.max(1,H|0), hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState(), fortress: (Game.mode==='fortress_duel') ? {phase:Fortress.phase, duelTimer:Fortress.duelTimer||0, duelRound:Fortress.duelRound||1, flagHp:Fortress.flagHp, flagMaxHp:Fortress.flagMaxHp, flagInvulnT:Fortress.flagInvulnT||0, structures:Fortress.structures.map(st=>({id:st.id,x:st.x,y:st.y,nx:clamp(st.x/Math.max(1,W),-0.2,1.2),ny:clamp(st.y/Math.max(1,H),-0.2,1.2),w:st.w,h:st.h,nw:st.w/Math.max(1,W),nh:st.h/Math.max(1,H),hp:st.hp,maxHp:st.maxHp,col:st.col,type:st.type}))} : null }
+          state:{ x: Player.x, y: Player.y, nx: clamp(Player.x/Math.max(1,W),-0.2,1.2), ny: clamp(Player.y/Math.max(1,H),-0.2,1.2), vw:Math.max(1,W|0), vh:Math.max(1,H|0), hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState(), fortress: (Game.mode==='fortress_duel') ? {phase:Fortress.phase, wave:Game.wave|0, duelTimer:Fortress.duelTimer||0, duelRound:Fortress.duelRound||1, flagHp:Fortress.flagHp, flagMaxHp:Fortress.flagMaxHp, flagInvulnT:Fortress.flagInvulnT||0, structures:Fortress.structures.map(st=>({id:st.id,x:st.x,y:st.y,nx:clamp(st.x/Math.max(1,W),-0.2,1.2),ny:clamp(st.y/Math.max(1,H),-0.2,1.2),w:st.w,h:st.h,nw:st.w/Math.max(1,W),nh:st.h/Math.max(1,H),hp:st.hp,maxHp:st.maxHp,col:st.col,type:st.type}))} : null }
         });
       }
       // Server-authoritative world simulation: clients no longer relay world snapshots.
@@ -16870,7 +16950,7 @@ function togglePause(){
     Player.alive=true;
     const snap = Game.failSnapshot || {};
     if (needPlayerReboot){
-      Player.hp = Math.max(1, snap.hp ?? Math.floor(Player.maxHp*BAL.continueHP));
+      Player.hp = Player.maxHp;
       Player.invuln = Math.max(snap.invuln ?? 0, BAL.continueInvuln);
       Player.shield = Math.max(snap.shield ?? 0, 12.0);
       Player.x = snap.x ?? Player.x;
