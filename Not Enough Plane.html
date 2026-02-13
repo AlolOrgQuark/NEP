@@ -3047,10 +3047,23 @@ const addShake = (m, t=0.16) => {
       spawnShockwave(W*0.5, H*0.16, C.E1, 240, 0.45);
       this.updatePanel();
     },
+    onEnterFortifyEffects(){
+      // assault -> fortify 时立即清弹并给玩家无敌，避免残留伤害
+      for (const b of bulletsP) b.alive = false;
+      for (const b of bulletsE) b.alive = false;
+      beams.length = 0;
+      Player.invuln = Math.max(Player.invuln||0, 2.5);
+      if (Multiplayer?.peers?.size){
+        for (const peer of Multiplayer.peers.values()){
+          if (Array.isArray(peer.smoothBullets)) peer.smoothBullets.length = 0;
+        }
+      }
+    },
     beginFortify(){
       if (Game.mode==='lab') return;
       if (Game.mode==='fortress_duel'){
         this.phase='fortify';
+        this.onEnterFortifyEffects();
         this.duelRound = (this.duelRound||1) + 1;
         this.duelTimer = 35;
         this.stock += 28;
@@ -13089,9 +13102,11 @@ BG_Effect.init();
         const lf = leader?.state?.fortress;
         if (lf && this.roomLeaderId !== this.localId){
           const phase = (lf.phase==='assault' || lf.phase==='fortify') ? lf.phase : Fortress.phase;
+          const prevPhase = Fortress.phase;
           Fortress.phase = phase;
           Fortress.duelTimer = Math.max(0, Number(lf.duelTimer) || 0);
           Fortress.duelRound = Math.max(1, Number(lf.duelRound) || Fortress.duelRound || 1);
+          if (prevPhase==='assault' && phase==='fortify') Fortress.onEnterFortifyEffects?.();
         }
       }
       this.refreshStatus();
@@ -13274,25 +13289,26 @@ BG_Effect.init();
       ctx.save();
       ctx.globalCompositeOperation = PERF.additive ? 'lighter' : 'source-over';
       for (const peer of this.peers.values()){
-        if (peer.alive === false) continue;
         const pp = this.projectedPeer(peer);
         const rx = pp.x, ry = pp.y;
-        ctx.save();
-        ctx.translate(rx, ry);
-        if (Game.mode==='workshop' || Game.mode==='fortress_duel') ctx.rotate(Math.PI);
-        ctx.strokeStyle = C.P2;
-        ctx.fillStyle = 'rgba(179,108,255,0.16)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0,-18); ctx.lineTo(-8,10); ctx.lineTo(0,15); ctx.lineTo(8,10); ctx.closePath();
-        ctx.fill(); ctx.stroke();
-        drawGlow(Spr.glowP2, 0, 15, 0.85, 0.7);
-        ctx.restore();
+        if (peer.alive !== false){
+          ctx.save();
+          ctx.translate(rx, ry);
+          if (Game.mode==='workshop' || Game.mode==='fortress_duel') ctx.rotate(Math.PI);
+          ctx.strokeStyle = C.P2;
+          ctx.fillStyle = 'rgba(179,108,255,0.16)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(0,-18); ctx.lineTo(-8,10); ctx.lineTo(0,15); ctx.lineTo(8,10); ctx.closePath();
+          ctx.fill(); ctx.stroke();
+          drawGlow(Spr.glowP2, 0, 15, 0.85, 0.7);
+          ctx.restore();
+        }
         ctx.fillStyle = '#E7D8FF';
         ctx.font = '700 10px "Consolas", monospace';
         ctx.textAlign = 'center';
         ctx.fillText(`${peer.nick}  HP:${Math.max(0, Math.ceil(peer.hp||0))} SHD:${(peer.shield||0).toFixed(1)}`, rx, ry - 24);
-        if ((peer.shield||0) > 0){
+        if ((peer.shield||0) > 0 && peer.alive !== false){
           ctx.strokeStyle = 'rgba(179,108,255,0.8)';
           ctx.lineWidth = 1.5;
           ctx.beginPath();
@@ -13316,6 +13332,11 @@ BG_Effect.init();
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
               ctx.fillText(nm, st.x, st.y);
+              const hpPct = clamp((st.hp||0)/Math.max(1,st.maxHp||1),0,1);
+              ctx.fillStyle = 'rgba(0,0,0,0.55)';
+              ctx.fillRect(st.x-st.w*0.5, st.y-st.h*0.5-6, st.w, 4);
+              ctx.fillStyle = 'rgba(255,130,130,0.95)';
+              ctx.fillRect(st.x-st.w*0.5, st.y-st.h*0.5-6, st.w*hpPct, 4);
               ctx.fillStyle = 'rgba(255,80,80,0.14)';
             }
             const baseY = pf.flagY;
@@ -13446,6 +13467,7 @@ BG_Effect.init();
           }
         }
         if (!hitCircle(b.x,b.y,b.r, pp.x,pp.y, Player.r)) continue;
+        if ((pp.invuln||0) > 0) continue;
         sparks(b.x,b.y,'glowP2', 8, 220);
         if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; }
         else { killBullet(b, 'hit', {childMods: propagateMods(b.mods)}); }
