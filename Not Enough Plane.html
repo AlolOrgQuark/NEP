@@ -2831,7 +2831,7 @@ const addShake = (m, t=0.16) => {
       mortar:{cost:17,w:44,h:28,hp:520,col:'#d7d7ff',type:'mortar',cd:1.3},
       dronepad:{cost:16,w:42,h:26,hp:480,col:'#8bf7ff',type:'dronepad',cd:1.35},
       pulse:{cost:12,w:36,h:36,hp:380,col:'#ffd56d',type:'pulse',cd:2.2},
-      mine:{cost:8,w:24,h:24,hp:170,col:'#f2ff80',type:'mine'},
+      mine:{cost:8,w:24,h:24,hp:8800,col:'#f2ff80',type:'mine'},
       slow:{cost:11,w:34,h:30,hp:380,col:'#8ee7ff',type:'slow'},
       repair:{cost:13,w:40,h:28,hp:390,col:'#9dffad',type:'repair',cd:4.2},
       repairplayer:{cost:12,w:38,h:26,hp:360,col:'#9deeff',type:'repairplayer',cd:2.8},
@@ -3144,6 +3144,7 @@ const addShake = (m, t=0.16) => {
         return;
       }
       this.phase='fortify';
+      this.onEnterFortifyEffects();
       const gain = 10 + Math.floor(Game.wave*2.6);
       this.stock += gain;
       Game.wave += 1;
@@ -3179,6 +3180,7 @@ const addShake = (m, t=0.16) => {
     },
     setPreview(screenX, screenY, pointerId=null){
       if (!this.canBuild() || this.sellMode) return false;
+      if (this.selected==='mine' && Game.mode==='fortress_duel' && Game.lastStart?.net) return false;
       const cfg = this.catalog[this.selected];
       if (!cfg || this.stock < cfg.cost) return false;
       const p = this.resolvePlacementPoint(screenX, screenY);
@@ -3189,6 +3191,7 @@ const addShake = (m, t=0.16) => {
     placeAt(screenX, screenY){
       if (!this.canBuild()) return false;
       if (this.sellMode) return this.sellAt(screenX, screenY);
+      if (this.selected==='mine' && Game.mode==='fortress_duel' && Game.lastStart?.net) return false;
       const cfg = this.catalog[this.selected];
       if (!cfg || this.stock < cfg.cost) return false;
       const p = this.resolvePlacementPoint(screenX, screenY);
@@ -11933,7 +11936,12 @@ function setupPlayerEmittersFromBuild(build){
   }
 }
 
+function isFortressPrepPhase(){
+  return (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress?.phase==='fortify';
+}
+
 function updatePlayerEmitters(dt){
+  if (isFortressPrepPhase()) return;
   if (!Player.emitters?.length) return;
   for(const em of Player.emitters){
     em.cd -= dt;
@@ -12088,7 +12096,7 @@ function grantPlayerEmitter(){
 
   function firePlayer(dt){
     if (!Player.alive) return;
-    if (Game.mode==='fortress_duel' && Fortress.phase!=='assault') return;
+    if (isFortressPrepPhase()) return;
     Player.fireCd -= dt;
     if (Player.fireCd>0) return;
 
@@ -14252,6 +14260,10 @@ const AutoPilot = {
     // 你说要“强制设定忽略 lerp”，这里给你一个安全阀：
     // 想完全瞬移就设成 Infinity。
     MAX_TELEPORT_PER_TICK: 99999,
+
+    // 堡垒建造随机探索（可控）
+    FORT_RANDOMNESS: 0.26,
+    FORT_EXPLORE_RATE: 0.34,
   },
 
   setActive(on){
@@ -14434,6 +14446,28 @@ const AutoPilot = {
     return false;
   },
 
+  _fortWithExploration(plan, byType){
+    const rnd = clamp(this.CONFIG.FORT_RANDOMNESS || 0, 0, 0.75);
+    if (rnd <= 0 || !Array.isArray(plan) || plan.length < 3) return plan;
+    if (Math.random() > (this.CONFIG.FORT_EXPLORE_RATE || 0.3)) return plan;
+
+    const candidates = plan.filter(step => {
+      const cfg = Fortress.catalog[step.type];
+      const have = byType[step.type] || 0;
+      return cfg && Fortress.stock >= cfg.cost && have < step.max;
+    });
+    if (!candidates.length) return plan;
+
+    const pick = candidates[(Math.random() * candidates.length) | 0];
+    const copy = plan.slice();
+    const idx = copy.findIndex(v => v.type === pick.type);
+    if (idx <= 0) return copy;
+    copy.splice(idx, 1);
+    const shift = 1 + ((Math.random() * Math.max(1, Math.floor(5 * rnd))) | 0);
+    copy.splice(Math.min(copy.length, shift), 0, pick);
+    return copy;
+  },
+
   _autoFortressBuild(dt){
     if (Game.mode!=='fortress' || Fortress.phase!=='fortify' || !Fortress.canBuild()) return;
     if (this._fortPhaseSeen !== Fortress.phase){
@@ -14512,7 +14546,7 @@ const AutoPilot = {
       }
     }
 
-    const plan = [
+    const planBase = [
       {type:'barricade', max:7, y:rows[0]},
       {type:'wall', max:6, y:rows[0]},
       {type:'heavywall', max:3, y:rows[1]},
@@ -14549,9 +14583,11 @@ const AutoPilot = {
     }
     const wantOffense = (offN < 3) || (offN < Math.max(2, Math.floor((offN+defN)*0.35)));
 
+    const plan = this._fortWithExploration(planBase, byType);
     for (const step of plan){
       const have = byType[step.type] || 0;
       if (have >= step.max) continue;
+      if (step.type==='mine' && Game.mode==='fortress_duel' && Game.lastStart?.net) continue;
       const cfg = Fortress.catalog[step.type];
       if (!cfg || Fortress.stock < cfg.cost) continue;
       if (wantOffense && defenseSet.has(step.type) && !['repair','repairplayer','repairfield'].includes(step.type)) continue; // 优先补攻击位，但维修站不降级
@@ -16715,6 +16751,7 @@ setupPlayerEmittersFromBuild(b);
     Game.difficulty = 1 + (Game.wave - 1) * 0.12;
     enemies.length = 0;
     Fortress.start();
+    Fortress.onEnterFortifyEffects?.();
 
     // fortress warp：同步给予玩家升级与补给，避免只有波数变化
     if (startW > 1){
@@ -16771,6 +16808,7 @@ if (mode === 'fortress_duel'){
     enemies.length = 0;
     Fortress.start();
     Fortress.phase = 'fortify';
+    Fortress.onEnterFortifyEffects?.();
     Fortress.duelTimer = 35;
     Fortress.stock = 38;
     Fortress.flagMaxHp = 1200;
@@ -16801,6 +16839,7 @@ if (mode === 'lab'){
     Fortress.start();
     Fortress.stock = 999999;
     Fortress.phase = 'fortify';
+    Fortress.onEnterFortifyEffects?.();
     Fortress.labLockedAssault = false;
     Fortress.labForgeSpawned = false;
     Fortress.labForgeSpec = forge || JSON.parse(localStorage.getItem(LS_FORGE) || 'null');
