@@ -13060,7 +13060,7 @@ BG_Effect.init();
           onPlayerHit(Math.max(1, msg.dmg || 1), 0);
           textPop(Player.x, Player.y - 28, `HIT BY ${peer?.nick || 'PILOT'}`, C.R);
         }
-        if (Game.mode==='fortress_duel' && Game.state==='playing' && (msg.kind==='flag' || msg.kind==='structure')){
+        if (Game.mode==='fortress_duel' && (msg.kind==='flag' || msg.kind==='structure')){
           if (msg.kind==='flag'){
             Fortress.hitFlag(Math.max(1, msg.dmg||1));
           } else if (msg.kind==='structure'){
@@ -13451,7 +13451,6 @@ BG_Effect.init();
     tryHitWorkshopPeerByBullet(b){
       if (!this.room || (Game.mode !== 'workshop' && Game.mode!=='fortress_duel') || !b || !b.alive) return false;
       for (const peer of this.peers.values()){
-        if (peer.alive === false) continue;
         const pp = this.projectedPeer(peer);
         if (Game.mode==='fortress_duel'){
           const pf = this.projectedPeerFortress(peer);
@@ -13477,6 +13476,7 @@ BG_Effect.init();
             }
           }
         }
+        if (peer.alive === false) continue;
         if (!hitCircle(b.x,b.y,b.r, pp.x,pp.y, Player.r)) continue;
         if ((pp.invuln||0) > 0) continue;
         sparks(b.x,b.y,'glowP2', 8, 220);
@@ -13492,7 +13492,6 @@ BG_Effect.init();
 // ================= Main update =================
   function update(dt){
     BG_Effect.update(dt);
-    Multiplayer.update(dt);
     Multiplayer.applyPeerBulletPressure?.(dt);
     Game.time += dt;
 
@@ -16924,6 +16923,8 @@ function step(now){
 
   // 应用游戏速率
   const finalDt = dt * TimeMachine.speed;
+  // 网络心跳/房间状态在所有界面都保持更新，避免大厅/菜单超时掉线
+  Multiplayer.update(finalDt);
 
   const netKeepRunning = !!(Game.lastStart?.net && Multiplayer?.isActive?.() && (Game.mode==='fortress_duel' || Game.mode==='workshop') && (Game.state==='paused' || Game.state==='over'));
   if (Game.state === 'playing' || netKeepRunning) {
