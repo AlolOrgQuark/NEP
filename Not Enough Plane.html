@@ -10465,6 +10465,10 @@ for (const em of e.emitters){
           if (d2p < bestD){ bestD = d2p; best = {x:pp.x,y:pp.y,vx:pp.vx||0,vy:pp.vy||0,alive:true,r:Player.r||16,type:'PEER'}; }
         }
         const pf = Multiplayer.projectedPeerFortress?.(peer);
+        if (pf){
+          const d2f = dist2(x,y,pf.flagX,pf.flagY);
+          if (d2f < bestD){ bestD = d2f; best = {x:pf.flagX,y:pf.flagY,vx:0,vy:0,alive:true,r:22,type:'PEER_FLAG'}; }
+        }
         if (pf?.structures?.length){
           for (const st of pf.structures){
             if ((st.hp||0)<=0) continue;
@@ -13306,6 +13310,34 @@ BG_Effect.init();
               if ((st.hp||0)<=0) continue;
               ctx.fillRect(st.x-st.w*0.5, st.y-st.h*0.5, st.w, st.h);
               ctx.strokeRect(st.x-st.w*0.5, st.y-st.h*0.5, st.w, st.h);
+              const nm = ({barricade:'木障',wall:'钢壁',heavywall:'合金墙',bunker:'堡垒墙',shield:'棱镜盾',turret:'炮塔',gatling:'加特林',sniper:'狙击塔',missile:'导弹井',tesla:'特斯拉',flame:'喷火塔',mortar:'迫击炮',dronepad:'无人机坪',pulse:'脉冲器',mine:'地雷',slow:'减速塔',repair:'旗帜修',repairplayer:'医疗站',repairfield:'工程站',factory:'补给站',spinner:'旋刃塔',ram:'冲锋桩',beacon:'信标',taunt:'诱敌堡'})[st.type] || st.type;
+              ctx.fillStyle = 'rgba(255,220,220,0.95)';
+              ctx.font = '700 9px "Consolas", monospace';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(nm, st.x, st.y);
+              ctx.fillStyle = 'rgba(255,80,80,0.14)';
+            }
+            const baseY = pf.flagY;
+            ctx.fillStyle = 'rgba(10,20,40,0.75)';
+            ctx.fillRect(pf.flagX-26, baseY-12, 52, 16);
+            ctx.strokeStyle = 'rgba(255,80,110,0.8)';
+            ctx.strokeRect(pf.flagX-26, baseY-12, 52, 16);
+            ctx.fillStyle = '#ff5577';
+            ctx.fillRect(pf.flagX-1.5, baseY-26, 3, 14);
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.moveTo(pf.flagX+1.5, baseY-26);
+            ctx.lineTo(pf.flagX+14, baseY-21);
+            ctx.lineTo(pf.flagX+1.5, baseY-16);
+            ctx.closePath();
+            ctx.fill();
+            if ((pf.flagInvulnT||0) > 0){
+              ctx.strokeStyle='rgba(120,220,255,0.95)';
+              ctx.lineWidth=2;
+              ctx.beginPath();
+              ctx.arc(pf.flagX, pf.flagY-8, 24 + Math.sin(Game.time*7)*1.2, 0, Math.PI*2);
+              ctx.stroke();
             }
             const baseY = pf.flagY;
             ctx.fillStyle = 'rgba(10,20,40,0.75)';
@@ -16439,7 +16471,7 @@ if (mode === 'fortress_duel'){
     Fortress.phase = 'fortify';
     Fortress.duelTimer = 35;
     Fortress.stock = 38;
-    Fortress.flagMaxHp = 620;
+    Fortress.flagMaxHp = 1200;
     Fortress.flagHp = Fortress.flagMaxHp;
     Fortress.updatePanel();
 
@@ -16812,20 +16844,24 @@ function togglePause(){
     if (Game.continues<=0 || Game.state!=='over') return;
 
     const isFlagFail = ((Game.mode==='fortress' || Game.mode==='fortress_duel') && (Game.failReason==='flag' || Fortress.flagHp<=0));
+    const needPlayerReboot = !Player.alive || Player.hp<=0;
     Game.continues--;
 
     Player.alive=true;
-    if (isFlagFail){
-      const snap = Game.failSnapshot || {};
-      Player.hp = Math.max(1, snap.hp ?? Player.hp);
-      Player.shield = (snap.shield ?? Player.shield);
-      Player.invuln = Math.max(snap.invuln ?? 0, 1.2);
+    const snap = Game.failSnapshot || {};
+    if (needPlayerReboot){
+      Player.hp = Math.max(1, snap.hp ?? Math.floor(Player.maxHp*BAL.continueHP));
+      Player.invuln = Math.max(snap.invuln ?? 0, BAL.continueInvuln);
+      Player.shield = Math.max(snap.shield ?? 0, 12.0);
       Player.x = snap.x ?? Player.x;
       Player.y = snap.y ?? Player.y;
+    }
+    if (isFlagFail){
       Fortress.flagHp = Fortress.flagMaxHp;
       Fortress.flagInvulnT = 5.0;
       Fortress.updatePanel();
-    } else {
+    }
+    if (!needPlayerReboot && !isFlagFail){
       Player.hp = Math.max(1, Math.floor(Player.maxHp*BAL.continueHP));
       Player.invuln = BAL.continueInvuln;
       Player.shield = Math.max(Player.shield, 12.0); // Full shield on revive
