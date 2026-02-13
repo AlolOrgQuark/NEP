@@ -13496,13 +13496,14 @@ BG_Effect.init();
 
     update(dt){
       if (!this.connected || !this.room) return;
+      const inNetRun = !!Game.lastStart?.net;
       this.heartbeatCd -= dt;
       this.stateCd -= dt;
       if (this.heartbeatCd <= 0){ this.heartbeatCd = 0.8; this.sendServer({type:'hello', nick:this.nick}); }
-      const netKeepAliveState = !!(Game.lastStart?.net && (Game.mode==='fortress_duel' || Game.mode==='workshop') && (Game.state==='paused' || Game.state==='over'));
+      const netKeepAliveState = !!(inNetRun && (Game.mode==='fortress_duel' || Game.mode==='workshop') && (Game.state==='paused' || Game.state==='over'));
       if ((Game.state === 'playing' || netKeepAliveState) && this.stateCd <= 0){
         this.stateCd = 1/24;
-        this.sendServer({
+        if (inNetRun) this.sendServer({
           type:'input_state',
           nick:this.nick,
           state:{ x: Player.x, y: Player.y, nx: clamp(Player.x/Math.max(1,W),-0.2,1.2), ny: clamp(Player.y/Math.max(1,H),-0.2,1.2), vw:Math.max(1,W|0), vh:Math.max(1,H|0), hp: Player.hp, hpMax: Player.maxHp, alive: Player.alive, shield: Player.shield, invuln: Player.invuln, score: Game.score, wave: Game.wave, bullets: this.collectLocalBulletState(), fortress: (Game.mode==='fortress_duel') ? {phase:Fortress.phase, wave:Game.wave|0, duelTimer:Fortress.duelTimer||0, duelRound:Fortress.duelRound||1, flagHp:Fortress.flagHp, flagMaxHp:Fortress.flagMaxHp, flagInvulnT:Fortress.flagInvulnT||0, structures:Fortress.structures.map(st=>({id:st.id,x:st.x,y:st.y,nx:clamp(st.x/Math.max(1,W),-0.2,1.2),ny:clamp(st.y/Math.max(1,H),-0.2,1.2),w:st.w,h:st.h,nw:st.w/Math.max(1,W),nh:st.h/Math.max(1,H),hp:st.hp,maxHp:st.maxHp,col:st.col,type:st.type}))} : null }
@@ -13518,6 +13519,7 @@ BG_Effect.init();
     },
 
     drawPeers(){
+      if (!Game.lastStart?.net) return;
       if (!this.room || !this.peers.size) return;
       ctx.save();
       ctx.globalCompositeOperation = PERF.additive ? 'lighter' : 'source-over';
@@ -13605,6 +13607,7 @@ BG_Effect.init();
     },
 
     drawPeerBullets(){
+      if (!Game.lastStart?.net) return;
       if (!this.room || !this.peers.size) return;
       ctx.save();
       if (PERF.additive) ctx.globalCompositeOperation='lighter';
