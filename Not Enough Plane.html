@@ -1973,6 +1973,8 @@ input[type="checkbox"] {
     btnFortStartWave: $('btnFortStartWave'),
     btnFortSell: $('btnFortSell'),
     btnFortUndo: $('btnFortUndo'),
+    btnFortExportLayout: $('btnFortExportLayout'),
+    btnFortImportLayout: $('btnFortImportLayout'),
 
     inpMpServer: $('inpMpServer'),
     inpMpRoom: $('inpMpRoom'),
@@ -2991,7 +2993,17 @@ const addShake = (m, t=0.16) => {
         : (this.phase==='fortify' ? '准备阶段：选择物品后点画布放置' : `守城阶段 余敌:${this.spawnLeft}`);
       ui.fortressPhase.textContent = phaseText;
       ui.fortressMat.textContent = `材料 ${Math.floor(this.stock)}`;
-      ui.fortressCore.textContent = (Game.mode==='lab') ? 'LAB: 无旗帜 / 无限材料' : ((Game.mode==='fortress_duel') ? `我方旗帜 ${(this.flagHp/this.flagMaxHp*100).toFixed(0)}%` : `旗帜 ${(this.flagHp/this.flagMaxHp*100).toFixed(0)}%`); 
+      if (ui.fortressCore){
+        if (Game.mode==='lab'){
+          ui.fortressCore.textContent = '';
+          ui.fortressCore.style.display = 'none';
+        } else {
+          ui.fortressCore.style.display = 'inline-block';
+          ui.fortressCore.textContent = (Game.mode==='fortress_duel')
+            ? `我方旗帜 ${(this.flagHp/this.flagMaxHp*100).toFixed(0)}%`
+            : `旗帜 ${(this.flagHp/this.flagMaxHp*100).toFixed(0)}%`;
+        }
+      }
       if (ui.btnFortStartWave) ui.btnFortStartWave.style.display = (Game.mode==='fortress_duel') ? 'none' : (this.phase==='fortify' ? 'inline-block' : 'none');
       if (ui.btnFortRepairFlag){
         ui.btnFortRepairFlag.style.display = (Game.mode!=='lab' && this.phase==='fortify') ? 'inline-block' : 'none';
@@ -3191,7 +3203,22 @@ const addShake = (m, t=0.16) => {
       sparks(x,y,'glowP', 8, 180);
       this.clearPreview();
       this.updatePanel();
+      this.snapshotLabLayout();
       return true;
+    },
+    pickShieldInterceptor(x,y,r=2){
+      let best = null;
+      let bestD2 = Infinity;
+      for (const st of this.structures){
+        if (!st || st.hp<=0 || st.type!=='shield') continue;
+        const rr = Math.max(st.w*0.68, st.h*1.95, 28) + r;
+        const d2 = dist2(x,y,st.x,st.y);
+        if (d2 <= rr*rr && d2 < bestD2){
+          best = st;
+          bestD2 = d2;
+        }
+      }
+      return best;
     },
     pickStructure(screenX, screenY){
       const pt = this.toWorld(screenX, screenY);
@@ -12370,6 +12397,15 @@ if (b.homing > 0){
       }
 
       if ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && b.team==='E' && !b.fortressSafe){
+        const shieldHit = Fortress.pickShieldInterceptor(b.x, b.y, b.r||2);
+        if (shieldHit){
+          const absorb = Math.max(4, (b.dmg||10) * 0.58);
+          shieldHit.hp -= absorb;
+          sparks(b.x,b.y,'glowP2', 8, 220);
+          spawnShockwave(shieldHit.x, shieldHit.y, '#b36cff', 42, 0.14);
+          killBullet(b, 'shield', {childMods: []});
+          continue;
+        }
         let blocked = false;
         for (const fs of Fortress.structures){
           if (fs.hp<=0) continue;
@@ -13207,8 +13243,10 @@ BG_Effect.init();
             sparks(fxX, fxY, 'glowY', 42, 520);
             SFX.bomb?.();
           } else if (kind==='flag_destroyed_fx'){
-            const fxX = Number.isFinite(msg.x) ? msg.x : W*0.5;
-            const fxY = Number.isFinite(msg.y) ? msg.y : H-52;
+            const srcPeer = this.peers.get(msg.from);
+            const pf = srcPeer ? this.projectedPeerFortress(srcPeer) : null;
+            const fxX = Number.isFinite(msg.x) ? msg.x : (pf?.flagX ?? W*0.5);
+            const fxY = Number.isFinite(msg.y) ? msg.y : (pf?.flagY ?? H-52);
             const fxR = Math.max(120, Number(msg.r)||260);
             spawnShockwave(fxX, fxY, C.E1, fxR, 0.85);
             sparks(fxX, fxY, 'glowE2', 62, 760);
@@ -15685,11 +15723,13 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
 
     const fy = H - 44;
     ctx.save();
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle = 'rgba(10,20,40,0.75)';
-    ctx.fillRect(W*0.5-38, fy-16, 76, 22);
-    ctx.strokeStyle = 'rgba(255,80,110,0.8)';
-    ctx.strokeRect(W*0.5-38, fy-16, 76, 22);
+    if (Game.mode!=='lab'){
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = 'rgba(10,20,40,0.75)';
+      ctx.fillRect(W*0.5-38, fy-16, 76, 22);
+      ctx.strokeStyle = 'rgba(255,80,110,0.8)';
+      ctx.strokeRect(W*0.5-38, fy-16, 76, 22);
+    }
     if (Game.mode!=='lab' && Game.mode!=='fortress_duel'){
       ctx.fillStyle = '#ff5577';
       ctx.fillRect(W*0.5-2, fy-34, 4, 18);
@@ -15733,8 +15773,7 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
     ctx.textAlign='center';
     ctx.textBaseline='bottom';
     ctx.fillStyle='#fff';
-    if (Game.mode==='lab') ctx.fillText('LAB 无旗帜（仅工事实验）', W*0.5, barY-2);
-    else ctx.fillText(`FLAG ${Math.ceil(Fortress.flagHp)}/${Math.ceil(Fortress.flagMaxHp)}`, W*0.5, barY-2);
+    if (Game.mode!=='lab') ctx.fillText(`FLAG ${Math.ceil(Fortress.flagHp)}/${Math.ceil(Fortress.flagMaxHp)}`, W*0.5, barY-2);
 
     for (const fs of Fortress.structures){
       const hpPct = clamp(fs.hp / Math.max(1, fs.maxHp), 0, 1);
