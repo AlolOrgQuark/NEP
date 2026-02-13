@@ -1183,13 +1183,13 @@ input[type="checkbox"] {
     <div class="card-title">SYSTEM CONFIG</div>
     
     <!-- 游戏速率滑条 -->
-    <div class="field">
+    <div class="field" id="optSpeedField">
       <label>GAME SPEED: <span id="valSpeed" class="c-p1">1.0</span>x</label>
       <input id="inpSpeed" type="range" min="0.1" max="2.0" step="0.1" value="1.0">
     </div>
 
     <!-- TAS 模式开关 -->
-    <div class="field" style="margin-top:10px">
+    <div class="field" id="optTasField" style="margin-top:10px">
       <label style="display:flex;justify-content:space-between;align-items:center">
         <span>TAS MODE (AUTO REWIND)</span>
         <input id="inpTas" type="checkbox" style="width:20px;height:20px;">
@@ -13339,27 +13339,6 @@ BG_Effect.init();
               ctx.arc(pf.flagX, pf.flagY-8, 24 + Math.sin(Game.time*7)*1.2, 0, Math.PI*2);
               ctx.stroke();
             }
-            const baseY = pf.flagY;
-            ctx.fillStyle = 'rgba(10,20,40,0.75)';
-            ctx.fillRect(pf.flagX-26, baseY-12, 52, 16);
-            ctx.strokeStyle = 'rgba(255,80,110,0.8)';
-            ctx.strokeRect(pf.flagX-26, baseY-12, 52, 16);
-            ctx.fillStyle = '#ff5577';
-            ctx.fillRect(pf.flagX-1.5, baseY-26, 3, 14);
-            ctx.fillStyle = '#fff';
-            ctx.beginPath();
-            ctx.moveTo(pf.flagX+1.5, baseY-26);
-            ctx.lineTo(pf.flagX+14, baseY-21);
-            ctx.lineTo(pf.flagX+1.5, baseY-16);
-            ctx.closePath();
-            ctx.fill();
-            if ((pf.flagInvulnT||0) > 0){
-              ctx.strokeStyle='rgba(120,220,255,0.95)';
-              ctx.lineWidth=2;
-              ctx.beginPath();
-              ctx.arc(pf.flagX, pf.flagY-8, 24 + Math.sin(Game.time*7)*1.2, 0, Math.PI*2);
-              ctx.stroke();
-            }
             const fPct = clamp((pf.flagHp||1)/Math.max(1,pf.flagMaxHp||1),0,1);
             const bw=120, bh=6, bx=pf.flagX-bw*0.5, by=pf.flagY-34;
             ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(bx,by,bw,bh);
@@ -15305,6 +15284,7 @@ if (frame.fortress && (Game.mode==='fortress' || Game.mode==='lab' || Game.mode=
   Fortress.previewPointerId = frame.fortress.previewPointerId ?? null;
   Fortress.syncSelectionUI();
   Fortress.updatePanel();
+  syncAutoPilotBtnVisibility();
 }
 
     textPop(Player.x, Player.y - 40, "TAS: TIMELINE REBUILT", C.P1);
@@ -16553,6 +16533,7 @@ canvas.style.pointerEvents = 'auto';
   ui.over.classList.remove('show');
 canvas.style.pointerEvents = 'auto';
   if (mode==='fortress' || mode==='lab' || mode==='fortress_duel') Fortress.updatePanel();
+  syncAutoPilotBtnVisibility();
 
   if (audioOn){
     ensureAudio();
@@ -16560,6 +16541,13 @@ canvas.style.pointerEvents = 'auto';
     Music.useTrack(idx);
     Music.start();
   }
+}
+
+  function syncAutoPilotBtnVisibility(){
+  const btnAutoPilot = document.getElementById('btnAutoPilot');
+  if (!btnAutoPilot) return;
+  const hideInNetFortressDuel = (Game.mode==='fortress_duel' && !!Game.lastStart?.net);
+  btnAutoPilot.style.display = hideInNetFortressDuel ? 'none' : 'inline-block';
 }
 
   function toMenu(){
@@ -16583,7 +16571,7 @@ canvas.style.pointerEvents = 'auto';
   if (btnPauseRetry) btnPauseRetry.style.display = 'none';
   ui.btnOption.style.display = 'none';
   // [新增] 强制重置 AI 按钮为可见，确保下局游戏正常显示
-  if (btnAutoPilot) btnAutoPilot.style.display = 'inline-block';
+  syncAutoPilotBtnVisibility();
 
   Music.stop();
   Fortress.updatePanel();
@@ -16833,7 +16821,7 @@ function togglePause(){
     if (btnMute) btnMute.style.display = 'inline-block';   // 恢复音频按钮
     if (btnPauseRetry) btnPauseRetry.style.display = 'none'; // 隐藏重试按钮
     // [新增] 恢复游戏时显示 AI 按钮
-    if (btnAutoPilot) btnAutoPilot.style.display = 'inline-block';
+    syncAutoPilotBtnVisibility();
     
     Music.setPaused(false);
     return;
@@ -19177,6 +19165,8 @@ document.getElementById('btnResumePause')?.addEventListener('click', ()=>{
   const inpSpeed = document.getElementById('inpSpeed');
   const valSpeed = document.getElementById('valSpeed');
   const inpTas = document.getElementById('inpTas');
+  const optSpeedField = document.getElementById('optSpeedField');
+  const optTasField = document.getElementById('optTasField');
 
   // 打开 Option 面板
   btnOpt?.addEventListener('click', () => {
@@ -19186,6 +19176,9 @@ document.getElementById('btnResumePause')?.addEventListener('click', ()=>{
       // 我们需要隐藏默认的 PausePanel，显示 OptionPanel
       document.getElementById('pausePanel').style.display = 'none'; 
     }
+    const isNetMode = !!Game.lastStart?.net;
+    if (optSpeedField) optSpeedField.style.display = isNetMode ? 'none' : '';
+    if (optTasField) optTasField.style.display = isNetMode ? 'none' : '';
     showOverlay('optionPanel', true);
   });
 
