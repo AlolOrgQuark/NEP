@@ -338,6 +338,9 @@ function handleMessage(ws, msg) {
         dmg: clipNum(msg.dmg, 1),
         kind: (msg.kind || 'player').toString().slice(0,24),
         sid: clipNum(msg.sid, 0)|0,
+        x: clipNum(msg.x, 0),
+        y: clipNum(msg.y, 0),
+        r: clipNum(msg.r, 0),
       });
     }
   }

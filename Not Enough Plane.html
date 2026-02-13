@@ -3378,6 +3378,9 @@ const addShake = (m, t=0.16) => {
       if ((this.flagInvulnT||0) > 0) return;
       this.flagHp = Math.max(0, this.flagHp - dmg);
       if (this.flagHp<=0 && Player.alive){
+        spawnShockwave(W*0.5, H-52, C.E1, 260, 0.85);
+        sparks(W*0.5, H-52, 'glowE2', 62, 760);
+        beep({f:130,t:0.32,g:0.06,type:'sawtooth',slide:0.55});
         if (TimeMachine.enabled && TimeMachine.rewind('flag')) return;
         Game.failReason = 'flag';
         Game.failSnapshot = { hp: Player.hp, shield: Player.shield, invuln: Player.invuln, x: Player.x, y: Player.y };
@@ -12083,6 +12086,7 @@ function grantPlayerEmitter(){
 
     // 对战模式：改为冲击波直达判定；其余模式保留原炸屏
     if (Game.mode==='fortress_duel' && Multiplayer?.isActive?.()){
+      Multiplayer.sendServer({type:'peer_hit', kind:'bomb_shock', dmg:1, x:sx, y:sy, r:shockR});
       const lineRectHit = (ax,ay,bx,by, st)=>{
         const steps = Math.max(8, Math.ceil(Math.hypot(bx-ax, by-ay) / 10));
         const l = st.x - st.w*0.5, r = st.x + st.w*0.5, t = st.y - st.h*0.5, b = st.y + st.h*0.5;
@@ -12114,7 +12118,13 @@ function grantPlayerEmitter(){
           }
           if ((pf.flagInvulnT||0)<=0 && Math.hypot(pf.flagX-sx, pf.flagY-sy) <= shockR){
             if (!blockedByStruct(sx,sy,pf.flagX,pf.flagY,pf.structures,null)){
-              Multiplayer.sendServer({type:'peer_hit', dmg:Math.max(1, (pf.flagHp||1)*0.5), kind:'flag'});
+              const fdmg = Math.max(1, (pf.flagHp||1)*0.5);
+              Multiplayer.sendServer({type:'peer_hit', dmg:fdmg, kind:'flag'});
+              if (fdmg >= (pf.flagHp||1)){
+                spawnShockwave(pf.flagX, pf.flagY, C.E1, 220, 0.75);
+                sparks(pf.flagX, pf.flagY, 'glowE2', 46, 620);
+                beep({f:160,t:0.25,g:0.05,type:'sawtooth',slide:0.6});
+              }
             }
           }
         }
@@ -13129,8 +13139,15 @@ BG_Effect.init();
             onPlayerHit(Math.max(1, msg.dmg || 1), 0);
             textPop(Player.x, Player.y - 28, `HIT BY ${peer?.nick || 'PILOT'}`, C.R);
           } else if (kind==='player_half'){
-            Player.hp = Math.max(1, Player.hp * 0.5);
+            Player.hp = Math.max(1, Player.hp - Math.max(1, msg.dmg||0));
             textPop(Player.x, Player.y - 28, `SHOCK HALF HP`, C.E1);
+          } else if (kind==='bomb_shock'){
+            const fxX = Number.isFinite(msg.x) ? msg.x : W*0.5;
+            const fxY = Number.isFinite(msg.y) ? msg.y : H*0.5;
+            const fxR = Math.max(80, Number(msg.r)||260);
+            spawnShockwave(fxX, fxY, C.Y, fxR, 0.72);
+            sparks(fxX, fxY, 'glowY', 42, 520);
+            SFX.bomb?.();
           }
         }
         if (Game.mode==='fortress_duel' && (msg.kind==='flag' || msg.kind==='structure')){
@@ -13470,6 +13487,7 @@ BG_Effect.init();
       for (const peer of this.peers.values()){
         const pp = this.projectedPeer(peer);
         for (const b of pp.bullets){
+          if (b._blockedUntil && b._blockedUntil > Game.time) continue;
           if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
           drawBulletVisual(b);
         }
@@ -13478,7 +13496,26 @@ BG_Effect.init();
       ctx.restore();
     },
 
-    
+    resolvePeerBulletInterception(){
+      if (!this.room || Game.mode!=='fortress_duel' || Game.state!=='playing') return;
+      if (!bulletsP.length || !this.peers.size) return;
+      for (const peer of this.peers.values()){
+        const pp = this.projectedPeer(peer);
+        const src = Array.isArray(peer.smoothBullets) ? peer.smoothBullets : [];
+        for (let i=0; i<pp.bullets.length; i++){
+          const eb = pp.bullets[i];
+          if (!eb || eb._blockedUntil > Game.time) continue;
+          for (const pb of bulletsP){
+            if (!pb?.alive || pb._phaseGhost) continue;
+            if (!hitCircle(pb.x,pb.y,pb.r||2, eb.x,eb.y, eb.r||2)) continue;
+            killBullet(pb, 'hit', {childMods: propagateMods(pb.mods)});
+            if (src[i]) src[i]._blockedUntil = Game.time + 0.14;
+            sparks(eb.x, eb.y, 'glowP2', 4, 140);
+            break;
+          }
+        }
+      }
+    },
 
     projectedPeerFortress(peer){
       const pp = this.projectedPeer(peer);
@@ -13643,6 +13680,7 @@ BG_Effect.init();
 
     updateBullets(dt, bulletsP);
     updateBullets(dt, bulletsE);
+    Multiplayer.resolvePeerBulletInterception?.();
 
     // enemies
     for(const e of enemies){
