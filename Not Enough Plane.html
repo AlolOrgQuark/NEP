@@ -1231,6 +1231,7 @@ input[type="checkbox"] {
           <span class="mono" id="fortressCore" style="font-size:12px;color:var(--c-danger)">FLAG 100%</span>
         </div>
         <div id="fortressBuildScroller">
+          <button id="btnFortNone" data-item="none" class="mini-btn">空</button>
           <button id="btnFortBarricade" data-item="barricade" class="mini-btn on">木障 3</button>
           <button id="btnFortWall" data-item="wall" class="mini-btn">钢壁 6</button>
           <button id="btnFortHeavyWall" data-item="heavywall" class="mini-btn">合金墙 11</button>
@@ -1261,6 +1262,8 @@ input[type="checkbox"] {
           <button id="btnFortRepairFlag" class="mini-btn" style="border-color:#ff7fa1;color:#ff7fa1">修旗 6</button>
           <button id="btnFortSell" class="mini-btn" style="border-color:#ffb347;color:#ffb347">SELL</button>
           <button id="btnFortUndo" class="mini-btn">UNDO</button>
+          <button id="btnFortExportLayout" class="mini-btn" style="display:none;border-color:#9deeff;color:#9deeff">导出阵型</button>
+          <button id="btnFortImportLayout" class="mini-btn" style="display:none;border-color:#9deeff;color:#9deeff">导入阵型</button>
         </div>
       </div>
 
@@ -2994,6 +2997,9 @@ const addShake = (m, t=0.16) => {
         ui.btnFortRepairFlag.style.display = (Game.mode!=='lab' && this.phase==='fortify') ? 'inline-block' : 'none';
         ui.btnFortRepairFlag.disabled = this.stock < 6 || this.flagHp >= this.flagMaxHp;
       }
+      const canLabIO = (Game.mode==='lab' && this.phase==='fortify');
+      if (ui.btnFortExportLayout) ui.btnFortExportLayout.style.display = canLabIO ? 'inline-block' : 'none';
+      if (ui.btnFortImportLayout) ui.btnFortImportLayout.style.display = canLabIO ? 'inline-block' : 'none';
     },
     syncSelectionUI(){
       const map = Object.keys(this.catalog);
@@ -3008,6 +3014,55 @@ const addShake = (m, t=0.16) => {
       if (!this.sellMode) this.selected = item;
       this.clearPreview();
       this.syncSelectionUI();
+    },
+    snapshotLabLayout(){
+      if (Game.mode!=='lab') return;
+      this._labSavedLayout = this.structures.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y}));
+    },
+    applyLabLayout(layout){
+      if (!Array.isArray(layout)) return false;
+      this.structures.length = 0;
+      this.sid = 1;
+      for (const it of layout){
+        const cfg = this.catalog[it?.type];
+        if (!cfg) continue;
+        this.structures.push({
+          id:this.sid++, x:clamp(+it.x||W*0.5, 30, W-30), y:clamp(+it.y||H*0.6, H*0.4, H-70),
+          w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,cd:cfg.cd||0,cost:cfg.cost
+        });
+      }
+      this.snapshotLabLayout();
+      this.updatePanel();
+      this.snapshotLabLayout();
+      return true;
+    },
+    async exportLabLayout(){
+      if (Game.mode!=='lab') return false;
+      this.snapshotLabLayout();
+      const payload = JSON.stringify({type:'lab_layout', layout:this._labSavedLayout||[]});
+      let ok=false;
+      try { await navigator.clipboard.writeText(payload); ok=true; } catch(_){}
+      if (!ok){
+        const ta=document.createElement('textarea'); ta.value=payload; ta.style.position='fixed'; ta.style.left='-9999px';
+        document.body.appendChild(ta); ta.select();
+        try{ ok=document.execCommand('copy'); }catch(_){ ok=false; }
+        ta.remove();
+      }
+      if (ok) textPop(W*0.5,H*0.2,'阵型已复制',C.P2); else alert(payload);
+      return ok;
+    },
+    async importLabLayout(){
+      if (Game.mode!=='lab') return false;
+      let txt='';
+      try{ txt=await navigator.clipboard.readText(); }catch(_){}
+      if (!txt){ txt = prompt('粘贴阵型 JSON'); if (!txt) return false; }
+      try{
+        const obj = JSON.parse(txt);
+        const layout = Array.isArray(obj) ? obj : obj.layout;
+        if (!this.applyLabLayout(layout)) throw new Error('invalid layout');
+        textPop(W*0.5,H*0.2,'阵型已导入',C.P2);
+        return true;
+      }catch(err){ alert('导入失败: '+(err?.message||err)); return false; }
     },
     beginAssault(){
       if (this.phase!=='fortify') return;
@@ -3357,6 +3412,7 @@ const addShake = (m, t=0.16) => {
       this.undoStack.push({type:'sell', structure:st, index:idx, refund});
       sparks(st.x,st.y,'glowY', 6, 140);
       this.updatePanel();
+      this.snapshotLabLayout();
       return true;
     },
     undo(){
@@ -3372,6 +3428,7 @@ const addShake = (m, t=0.16) => {
         this.structures.splice(idx,0,a.structure);
       }
       this.updatePanel();
+      this.snapshotLabLayout();
     },
     hitFlag(dmg){
       if (Game.mode==='lab') return;
@@ -3381,6 +3438,7 @@ const addShake = (m, t=0.16) => {
         spawnShockwave(W*0.5, H-52, C.E1, 260, 0.85);
         sparks(W*0.5, H-52, 'glowE2', 62, 760);
         beep({f:130,t:0.32,g:0.06,type:'sawtooth',slide:0.55});
+        if (Game.mode==='fortress_duel' && Game.lastStart?.net && Multiplayer?.isActive?.()) Multiplayer.sendServer({type:'peer_hit', kind:'flag_destroyed_fx', dmg:1, x:W*0.5, y:H-52, r:260});
         if (TimeMachine.enabled && TimeMachine.rewind('flag')) return;
         Game.failReason = 'flag';
         Game.failSnapshot = { hp: Player.hp, shield: Player.shield, invuln: Player.invuln, x: Player.x, y: Player.y };
@@ -13148,6 +13206,13 @@ BG_Effect.init();
             spawnShockwave(fxX, fxY, C.Y, fxR, 0.72);
             sparks(fxX, fxY, 'glowY', 42, 520);
             SFX.bomb?.();
+          } else if (kind==='flag_destroyed_fx'){
+            const fxX = Number.isFinite(msg.x) ? msg.x : W*0.5;
+            const fxY = Number.isFinite(msg.y) ? msg.y : H-52;
+            const fxR = Math.max(120, Number(msg.r)||260);
+            spawnShockwave(fxX, fxY, C.E1, fxR, 0.85);
+            sparks(fxX, fxY, 'glowE2', 62, 760);
+            beep({f:130,t:0.32,g:0.06,type:'sawtooth',slide:0.55});
           }
         }
         if (Game.mode==='fortress_duel' && (msg.kind==='flag' || msg.kind==='structure')){
@@ -16456,7 +16521,10 @@ applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
   return e;
 }
 
-  function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild=null} = {}){
+  function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild=null, keepLabLayout=false} = {}){
+  const savedLabLayout = (keepLabLayout && mode==='lab')
+    ? deepClone(Fortress?._labSavedLayout || Fortress?.structures?.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y})) || [])
+    : null;
   // 1. Reset
   resetGame();
   recoverLocalControl();
@@ -16632,6 +16700,8 @@ if (mode === 'lab'){
     Fortress.labLockedAssault = false;
     Fortress.labForgeSpawned = false;
     Fortress.labForgeSpec = forge || JSON.parse(localStorage.getItem(LS_FORGE) || 'null');
+    if (savedLabLayout?.length) Fortress.applyLabLayout(savedLabLayout);
+    else Fortress.snapshotLabLayout();
     Fortress.updatePanel();
 
     textPop(W*0.5, 92, 'LAB FORTRESS PREP', C.P2);
@@ -19232,6 +19302,7 @@ ui.btnRestart?.addEventListener('click', () => {
   const supportsWarp = (last.mode === 'survival' || last.mode === 'challenge' || last.mode === 'fortress');
 
   startRun({
+    keepLabLayout: (last.mode==='lab'),
     mode: last.mode || 'survival',
     // 如果支持跳关，就读取死亡界面的 ui.inpWave 输入框。
     // 否则（比如 Duel 模式），就回到该模式的起始波次 1。
@@ -19299,6 +19370,8 @@ ui.btnFortSell?.addEventListener('click', ()=>Fortress.select(Fortress.sellMode 
 ui.btnFortUndo?.addEventListener('click', ()=>Fortress.undo());
 ui.btnFortStartWave?.addEventListener('click', ()=>Fortress.beginAssault());
 ui.btnFortRepairFlag?.addEventListener('click', ()=>Fortress.repairFlag(6, 180));
+ui.btnFortExportLayout?.addEventListener('click', ()=>Fortress.exportLabLayout());
+ui.btnFortImportLayout?.addEventListener('click', ()=>Fortress.importLabLayout());
 
 document.addEventListener('pointerdown', (e)=>{
   if ((Game.mode!=='fortress' && Game.mode!=='lab' && Game.mode!=='fortress_duel') || !Fortress.preview) return;
@@ -19397,6 +19470,7 @@ document.getElementById('btnPauseRetry')?.addEventListener('click', () => {
   }
 
   startRun({
+    keepLabLayout: (last.mode==='lab'),
     mode: last.mode || 'survival',
     wave: (last.mode === 'survival') ? (parseInt(ui.inpWave.value) || 1) : (last.wave || 1),
     forge: currentForge
