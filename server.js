@@ -276,6 +276,10 @@ function handleMessage(ws, msg) {
       p.state = {
         x: clipNum(s.x, 360),
         y: clipNum(s.y, 980),
+        nx: clipNum(s.nx, 0.5),
+        ny: clipNum(s.ny, 0.75),
+        vw: Math.max(1, clipNum(s.vw, 720) | 0),
+        vh: Math.max(1, clipNum(s.vh, 1280) | 0),
         hp: clipNum(s.hp, 100),
         hpMax: clipNum(s.hpMax, 100),
         alive: Boolean(s.alive !== false),
@@ -285,11 +289,17 @@ function handleMessage(ws, msg) {
         wave: clipNum(s.wave, 1),
         bullets: Array.isArray(s.bullets) ? s.bullets.slice(0, 120) : [],
         fortress: (s.fortress && typeof s.fortress === 'object') ? {
+          phase: String(s.fortress.phase || 'fortify').slice(0, 16),
+          duelTimer: clipNum(s.fortress.duelTimer, 0),
+          duelRound: Math.max(1, clipNum(s.fortress.duelRound, 1) | 0),
           flagHp: clipNum(s.fortress.flagHp, 1),
           flagMaxHp: clipNum(s.fortress.flagMaxHp, 1),
+          flagInvulnT: Math.max(0, clipNum(s.fortress.flagInvulnT, 0)),
           structures: Array.isArray(s.fortress.structures) ? s.fortress.structures.slice(0, 80).map((st)=>({
             id: clipNum(st?.id, 0)|0, x: clipNum(st?.x, 0), y: clipNum(st?.y, 0),
+            nx: clipNum(st?.nx, 0.5), ny: clipNum(st?.ny, 0.75),
             w: clipNum(st?.w, 20), h: clipNum(st?.h, 20),
+            nw: clipNum(st?.nw, 0.03), nh: clipNum(st?.nh, 0.02),
             hp: clipNum(st?.hp, 0), maxHp: clipNum(st?.maxHp, 1),
             col: String(st?.col || '#fff').slice(0,20), type: String(st?.type || '').slice(0,24)
           })) : []
