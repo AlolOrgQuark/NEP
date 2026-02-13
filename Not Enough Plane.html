@@ -14346,7 +14346,7 @@ const AutoPilot = {
     if (type==='sniper' || type==='mortar' || type==='missile') return {x:(have%2?left:right), y:rows[2]-4};
     if (type==='gatling' || type==='flame' || type==='spinner' || type==='ram') return {x:lane, y:rows[0]-6};
     if (type==='tesla' || type==='pulse' || type==='dronepad' || type==='beacon') return {x:lane, y:rows[1]-4};
-    if (type==='mine' || type==='slow') return {x:slots[(have*3+2)%slots.length] || lane, y:rows[0]+14};
+    if (type==='mine' || type==='slow') return {x:slots[(have*2+1)%slots.length] || lane, y:rows[2]-14};
     if (type==='factory' || type==='repairfield') return {x:(have%2?left:right), y:rows[2]+6};
     if (type==='taunt') return {x:center, y:rows[2]-10};
     return {x:lane, y:rows[1]};
@@ -14463,7 +14463,7 @@ const AutoPilot = {
       const cfg = Fortress.catalog.repairplayer;
       if (cfg && Fortress.stock >= cfg.cost){
         Fortress.selected = 'repairplayer';
-        if (this._fortTryPlaceSmart('mine', clamp(Player.x, 44, W-44), clamp(Player.y + 34, H*0.52, H-72), 4)){
+        if (this._fortTryPlaceSmart('repairplayer', clamp(Player.x, 44, W-44), clamp(Player.y + 34, H*0.52, H-72), 4)){
           this._fortBuildCd = 0.12;
           return;
         }
@@ -14474,7 +14474,7 @@ const AutoPilot = {
       const cfg = Fortress.catalog.repair;
       if (cfg && Fortress.stock >= cfg.cost){
         Fortress.selected = 'repair';
-        if (this._fortTryPlaceSmart('repairplayer', W*0.5, H-112, 5)){
+        if (this._fortTryPlaceSmart('repair', W*0.5, H-112, 5)){
           this._fortBuildCd = 0.12;
           return;
         }
@@ -14490,18 +14490,23 @@ const AutoPilot = {
       return;
     }
 
-    // 先用低成本墙体封住空档，避免因高价钢壁导致漏防（仅补到基础防线，不无限堆）
-    const curDef = Fortress.structures.filter(st=>st.hp>0 && ['barricade','wall','heavywall','bunker','shield'].includes(st.type)).length;
-    const laneOpen = slots.map(x => !Fortress.structures.some(st=>st.hp>0 && Math.abs(st.x-x) < (st.w*0.55 + 10) && st.y > H*0.48));
-    const openIdx = laneOpen.findIndex(v=>v);
-    if (openIdx>=0 && curDef < 3){
+    // 先封住所有前线通道，不再只补左半边少量钢壁
+    const laneOpen = slots.map(x => !Fortress.structures.some(st=>st.hp>0 && ['barricade','wall','heavywall','bunker','shield'].includes(st.type) && Math.abs(st.x-x) < (st.w*0.55 + 12) && st.y > H*0.46));
+    const openLanes = [];
+    for (let i=0;i<laneOpen.length;i++) if (laneOpen[i]) openLanes.push(i);
+    if (openLanes.length){
+      const order = openLanes.sort((a,b)=>Math.abs(a-(slots.length-1)/2)-Math.abs(b-(slots.length-1)/2));
       const low = Fortress.catalog.barricade;
       const mid = Fortress.catalog.wall;
-      const pick = (Fortress.stock >= (mid?.cost||999)) ? 'wall' : ((Fortress.stock >= (low?.cost||999)) ? 'barricade' : null);
+      const high = Fortress.catalog.heavywall;
+      const pick = (Fortress.stock >= (high?.cost||999)) ? 'heavywall'
+        : (Fortress.stock >= (mid?.cost||999)) ? 'wall'
+        : (Fortress.stock >= (low?.cost||999)) ? 'barricade' : null;
       if (pick){
         Fortress.selected = pick;
-        if (this._fortTryPlaceSmart(pick, slots[openIdx], baseY+6, 4)){
-          this._fortBuildCd = 0.12;
+        const idx = order[0];
+        if (this._fortTryPlaceSmart(pick, slots[idx], baseY+4, 6)){
+          this._fortBuildCd = 0.10;
           return;
         }
       }
@@ -14509,24 +14514,24 @@ const AutoPilot = {
 
     const plan = [
       {type:'barricade', max:7, y:rows[0]},
-      {type:'wall', max:4, y:rows[0]},
-      {type:'heavywall', max:2, y:rows[1]},
+      {type:'wall', max:6, y:rows[0]},
+      {type:'heavywall', max:3, y:rows[1]},
       {type:'bunker', max:1, y:rows[2]},
       {type:'shield', max:2, y:rows[1]},
+      {type:'repairplayer', max:2, y:rows[1]},
+      {type:'repair', max:2, y:rows[1]},
+      {type:'repairfield', max:2, y:rows[2]},
       {type:'turret', max:4, y:rows[1]},
       {type:'gatling', max:3, y:rows[0]},
+      {type:'tesla', max:2, y:rows[1]},
       {type:'sniper', max:2, y:rows[2]},
       {type:'missile', max:1, y:rows[2]},
-      {type:'tesla', max:2, y:rows[1]},
       {type:'flame', max:2, y:rows[0]},
       {type:'mortar', max:1, y:rows[2]},
       {type:'dronepad', max:1, y:rows[1]},
       {type:'pulse', max:1, y:rows[1]},
-      {type:'mine', max:4, y:rows[0]},
-      {type:'slow', max:2, y:rows[1]},
-      {type:'repairfield', max:1, y:rows[2]},
-      {type:'repair', max:1, y:rows[1]},
-      {type:'repairplayer', max:1, y:rows[1]},
+      {type:'mine', max:5, y:rows[2]},
+      {type:'slow', max:3, y:rows[2]},
       {type:'factory', max:1, y:rows[1]},
       {type:'spinner', max:1, y:rows[1]},
       {type:'ram', max:1, y:rows[1]},
@@ -14549,7 +14554,7 @@ const AutoPilot = {
       if (have >= step.max) continue;
       const cfg = Fortress.catalog[step.type];
       if (!cfg || Fortress.stock < cfg.cost) continue;
-      if (wantOffense && defenseSet.has(step.type)) continue; // 优先补攻击位
+      if (wantOffense && defenseSet.has(step.type) && !['repair','repairplayer','repairfield'].includes(step.type)) continue; // 优先补攻击位，但维修站不降级
       Fortress.selected = step.type;
       const p = this._fortPreferredPlacement(step.type, have, rows, slots);
       const x = p.x;
@@ -16870,7 +16875,10 @@ canvas.style.pointerEvents = 'auto';
 }
 
 function toMenu(){
+  const wasNetRun = !!Game.lastStart?.net;
   Multiplayer.cancelPrepare(false);
+  if (wasNetRun && Multiplayer.isActive?.()) Multiplayer.leaveRoom(true);
+  Multiplayer.clearRemoteTransientState?.();
   clearAllProjectiles();
   showOverlay('gameover', false);
   showOverlay('pausePanel', false);
