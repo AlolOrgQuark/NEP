@@ -10470,26 +10470,33 @@ for (const em of e.emitters){
     }
 
     if (Game.mode==='fortress_duel' && Multiplayer?.peers?.size){
+      let bestFlag = null, bestFlagD = maxD*maxD;
+      let bestPeer = null, bestPeerD = maxD*maxD;
+      let bestStruct = null, bestStructD = maxD*maxD;
       for (const peer of Multiplayer.peers.values()){
-        if (peer.alive === false) continue;
-        const pp = Multiplayer.projectedPeer(peer);
-        if (pp){
-          const d2p = dist2(x,y,pp.x,pp.y);
-          if (d2p < bestD){ bestD = d2p; best = {x:pp.x,y:pp.y,vx:pp.vx||0,vy:pp.vy||0,alive:true,r:Player.r||16,type:'PEER'}; }
-        }
         const pf = Multiplayer.projectedPeerFortress?.(peer);
         if (pf){
           const d2f = dist2(x,y,pf.flagX,pf.flagY);
-          if (d2f < bestD){ bestD = d2f; best = {x:pf.flagX,y:pf.flagY,vx:0,vy:0,alive:true,r:22,type:'PEER_FLAG'}; }
+          if (d2f < bestFlagD){ bestFlagD = d2f; bestFlag = {x:pf.flagX,y:pf.flagY,vx:0,vy:0,alive:true,r:22,type:'PEER_FLAG'}; }
         }
+
+        const pp = Multiplayer.projectedPeer(peer);
+        if (pp && peer.alive !== false){
+          const d2p = dist2(x,y,pp.x,pp.y);
+          if (d2p < bestPeerD){ bestPeerD = d2p; bestPeer = {x:pp.x,y:pp.y,vx:pp.vx||0,vy:pp.vy||0,alive:true,r:Player.r||16,type:'PEER'}; }
+        }
+
         if (pf?.structures?.length){
           for (const st of pf.structures){
             if ((st.hp||0)<=0) continue;
             const d2s = dist2(x,y,st.x,st.y);
-            if (d2s < bestD){ bestD = d2s; best = {x:st.x,y:st.y,vx:0,vy:0,alive:true,r:Math.max(st.w||20,st.h||20)*0.35,type:'PEER_STRUCT'}; }
+            if (d2s < bestStructD){ bestStructD = d2s; bestStruct = {x:st.x,y:st.y,vx:0,vy:0,alive:true,r:Math.max(st.w||20,st.h||20)*0.35,type:'PEER_STRUCT'}; }
           }
         }
       }
+      if (bestFlag) return bestFlag;
+      if (bestPeer) return bestPeer;
+      if (bestStruct) return bestStruct;
     }
     return best;
   }
@@ -13106,7 +13113,11 @@ BG_Effect.init();
           Fortress.phase = phase;
           Fortress.duelTimer = Math.max(0, Number(lf.duelTimer) || 0);
           Fortress.duelRound = Math.max(1, Number(lf.duelRound) || Fortress.duelRound || 1);
-          if (prevPhase==='assault' && phase==='fortify') Fortress.onEnterFortifyEffects?.();
+          if (prevPhase==='assault' && phase==='fortify'){
+            Fortress.onEnterFortifyEffects?.();
+            Fortress.stock += 28;
+            Fortress.updatePanel?.();
+          }
         }
       }
       this.refreshStatus();
