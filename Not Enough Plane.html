@@ -13234,6 +13234,10 @@ BG_Effect.init();
         for (const p of this.peers.values()) p.prepared = prepared.has(p.id);
         this.refreshStatus();
       } else if (msg.event === 'start_match' && msg.cfg){
+        if (!this.localPrepared && !this.waitingStart) {
+          this.setStatus('房间已开局（你未准备）');
+          return;
+        }
         this.startPreparedMatch(msg.cfg, msg.starterId || this.roomLeaderId || this.localId);
       } else if (msg.event === 'peer_hit'){
         if ((Game.mode === 'workshop' || Game.mode==='fortress_duel') && Game.state === 'playing' && Player.alive){
@@ -13292,6 +13296,7 @@ BG_Effect.init();
 
     applyRoomState(msg){
       if (!msg || !this.room || msg.room !== this.room) return;
+      const inNetRun = !!Game.lastStart?.net;
       const seq = Number(msg.seq) || 0;
       if (seq && seq <= this.lastRoomSeq) return;
       this.lastRoomSeq = Math.max(this.lastRoomSeq, seq);
@@ -13306,16 +13311,21 @@ BG_Effect.init();
         peer.nick = item.nick || peer.nick;
         peer.lastSeen = now;
         peer.prepared = !!item.prepared;
-        if (item.state){
+        if (item.state && inNetRun){
           Object.assign(peer, item.state);
           peer.netBullets = Array.isArray(item.state.bullets) ? item.state.bullets.slice(0, 120) : [];
           peer.smoothBullets = this.smoothBulletState(peer, peer.netBullets);
           peer.netFortress = item.state.fortress || null;
+        } else {
+          peer.netBullets = [];
+          peer.smoothBullets = [];
+          peer.netFortress = null;
+          peer.alive = false;
         }
         this.peers.set(item.id, peer);
       }
       for (const id of [...this.peers.keys()]) if (!incoming.has(id)) this.peers.delete(id);
-      if (msg.world){
+      if (msg.world && inNetRun){
         this.lastWorldVersion = Math.max(this.lastWorldVersion, Number(msg.worldVersion) || 0);
         this.applyWorldState(msg.world, msg.serverTime || 0, !!msg.fullState);
       }
@@ -13464,6 +13474,7 @@ BG_Effect.init();
 
     startPreparedMatch(cfg, starterId){
       if (!cfg) return;
+      this.clearRemoteTransientState();
       const starter = (starterId === this.localId) ? this.nick : (this.peers.get(starterId)?.nick || 'PILOT');
       const netCfg = deepClone(cfg);
       if (netCfg.mode === 'workshop') netCfg.opponentBuild = this.getWorkshopOpponentBuild();
@@ -13480,6 +13491,15 @@ BG_Effect.init();
       this.leaveRoom(false);
       toMenu();
       textPop(W*0.5, 120, `对手掉线 · 已退房`, C.R);
+    },
+
+    clearRemoteTransientState(){
+      for (const peer of this.peers.values()){
+        peer.alive = false;
+        peer.netBullets = [];
+        peer.smoothBullets = [];
+        peer.netFortress = null;
+      }
     },
 
     refreshStatus(){
@@ -16623,6 +16643,7 @@ applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
   Camera.targetZoom = 1.0;
   Game.mode = mode;
   Game.lastStart = {mode, wave, forge: forge ? JSON.parse(JSON.stringify(forge)) : null, net};
+  if (!net) Multiplayer.clearRemoteTransientState?.();
   
   const b = clampBuild(deepClone(Builds.A));
 Player.maxHp = b.maxHp; Player.hp = b.maxHp;
