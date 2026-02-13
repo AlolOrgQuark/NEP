@@ -289,6 +289,9 @@ function handleMessage(ws, msg) {
         wave: clipNum(s.wave, 1),
         bullets: Array.isArray(s.bullets) ? s.bullets.slice(0, 120) : [],
         fortress: (s.fortress && typeof s.fortress === 'object') ? {
+          phase: String(s.fortress.phase || 'fortify').slice(0, 16),
+          duelTimer: clipNum(s.fortress.duelTimer, 0),
+          duelRound: Math.max(1, clipNum(s.fortress.duelRound, 1) | 0),
           flagHp: clipNum(s.fortress.flagHp, 1),
           flagMaxHp: clipNum(s.fortress.flagMaxHp, 1),
           structures: Array.isArray(s.fortress.structures) ? s.fortress.structures.slice(0, 80).map((st)=>({
