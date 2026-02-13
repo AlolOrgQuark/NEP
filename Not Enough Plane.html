@@ -2979,7 +2979,7 @@ const addShake = (m, t=0.16) => {
     updatePanel(){
       if (!ui.fortressPanel) return;
       const on = (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Game.state==='playing';
-      ui.fortressPanel.style.display = (on && (this.phase==='fortify' || Game.mode==='lab' || Game.mode==='fortress_duel')) ? 'block' : 'none';
+      ui.fortressPanel.style.display = (on && this.phase==='fortify') ? 'block' : 'none';
       if (!on) return;
       const phaseText = (Game.mode==='fortress_duel')
         ? (this.phase==='fortify' ? `对战准备 ${Math.ceil(this.duelTimer||0)}s` : `对战敌袭 ${Math.ceil(this.duelTimer||0)}s`)
@@ -3259,7 +3259,7 @@ const addShake = (m, t=0.16) => {
         this.clearPreview();
       }
       const idx = this.pickStructure(screenX, screenY);
-      if (idx>=0){
+      if (idx>=0 && this.phase==='assault'){
         const st = this.structures[idx];
         const acted = this.getBehavior(st.type)?.onPointerDown?.(st, {fortress:this, phase:this.phase, world:pt}) || false;
         if (acted){
@@ -3667,6 +3667,10 @@ const Input = {
   let lastTapT = 0;
   function checkDoubleTap(){
     if (Game.state !== 'playing') return;
+    if ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress?.phase==='fortify'){
+      lastTapT = performance.now();
+      return;
+    }
     const now = performance.now();
     if (now - lastTapT < 260) useBomb();
     lastTapT = now;
@@ -3723,16 +3727,18 @@ function updateDragInput(cx, cy) {
 
 // 联机场景下如果出现 pointer capture 丢失，允许一键恢复本地输入
 function recoverLocalControl(){
+  const px = Number.isFinite(Player?.x) ? Player.x : (W*0.5);
+  const py = Number.isFinite(Player?.y) ? Player.y : (H*0.75);
   Input.active = (!IS_TOUCH && inputMode === 'mouse');
   Input.pid = null;
   Joy.active = false;
   Joy.pid = null;
   Joy.dx = 0;
   Joy.dy = 0;
-  Input.tx = Player.x;
-  Input.ty = Player.y;p
-  Input.px = Player.x;
-  Input.py = Player.y;
+  Input.tx = px;
+  Input.ty = py;
+  Input.px = px;
+  Input.py = py;
   joyUpdateVisual();
 }
 
@@ -13054,7 +13060,11 @@ BG_Effect.init();
         const ny = old ? lerp(old.y, ty, 0.7) : ty;
         next.push({
           key, alive:true, x:nx, y:ny,
+          nx:(src.nx != null) ? src.nx : null,
+          ny:(src.ny != null) ? src.ny : null,
           vx:src.vx ?? (old?.vx || 0), vy:src.vy ?? (old?.vy || 0),
+          nvx:(src.nvx != null) ? src.nvx : null,
+          nvy:(src.nvy != null) ? src.nvy : null,
           r:src.r ?? 3, col:src.col || C.P2, dmg:src.dmg ?? 8,
           spr:src.spr || 'glowP2', style:src.style ?? 1, team:'P',
           t:src.t || now, _phaseAlpha: src._phaseAlpha, _phaseVisible: src._phaseVisible,
@@ -13294,7 +13304,7 @@ BG_Effect.init();
         flagHp: f.flagHp || 1,
         flagMaxHp: f.flagMaxHp || 1,
         flagX: W*0.5,
-        flagY: H-62,
+        flagY: 62,
         structures
       };
     },
