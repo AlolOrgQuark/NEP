@@ -847,7 +847,7 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 #unitBattleModal:not(.show){ display:none !important; }
 #unitBattleModal.show{ display:flex; }
 #unitBattleModal.visible{ opacity:1; pointer-events:auto; }
-#unitBattleModal .ub-modal-card{ width:min(780px,94vw); max-height:min(86vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.92), rgba(24,8,40,.9)); border:1px solid rgba(130,229,255,.42); box-shadow:0 18px 50px rgba(0,0,0,.55); padding:14px; border-radius:12px; transform:translateY(18px) scale(.96); opacity:0; transition:transform .26s cubic-bezier(.2,.9,.2,1), opacity .26s ease; }
+#unitBattleModal .ub-modal-card{ width:min(780px,94vw); max-height:min(86vh,860px); overflow:auto; overflow-x:hidden; background:linear-gradient(160deg, rgba(8,16,34,.92), rgba(24,8,40,.9)); border:1px solid rgba(130,229,255,.42); box-shadow:0 18px 50px rgba(0,0,0,.55); padding:14px; border-radius:12px; transform:translateY(18px) scale(.96); opacity:0; transition:transform .26s cubic-bezier(.2,.9,.2,1), opacity .26s ease; }
 #unitBattleModal.visible .ub-modal-card{ transform:translateY(0) scale(1); opacity:1; }
 #unitBattleModal textarea{ min-height:180px; }
 .ub-unit-card{ position:relative; flex:0 0 auto; width:86px; border:1px solid rgba(157,238,255,.35); border-radius:10px; padding:4px; background:rgba(0,0,0,.24); display:flex; flex-direction:column; gap:4px; align-items:center; }
@@ -875,6 +875,7 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 #textPromptModal .card{ width:min(860px,96vw); max-height:min(86vh,900px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.95), rgba(24,8,40,.93)); border:1px solid rgba(157,238,255,.42); border-radius:12px; padding:12px; transform:translateY(18px) scale(.96); opacity:0; transition:transform .24s cubic-bezier(.2,.9,.2,1),opacity .24s ease; }
 #textPromptModal.visible .card{ transform:translateY(0) scale(1); opacity:1; }
 #textPromptModal textarea{ min-height:380px; font:600 12px/1.35 var(--font-mono); }
+body.modal-lock-scroll{ overflow:hidden; }
 
 .ub-winner-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 .ub-winner-item{ position:relative; width:120px; border:1px solid rgba(255,210,138,.45); border-radius:10px; padding:6px; background:rgba(0,0,0,.24); cursor:pointer; }
@@ -9026,11 +9027,51 @@ drawEnemyGenericBody(ctx, e, b, col, R0, rot, Game.time);
   }
 
   // ================= Emitter System (弹幕组模块化) =================
+  function materializeEmitterSpec(emSpec){
+    if (!emSpec) return null;
+
+    if (typeof emSpec.nextCd === 'function' && typeof emSpec.fire === 'function'){
+      return emSpec;
+    }
+
+    if (emSpec.type === '_COMPOSITE'){
+      const ci = emSpec._compositeInstance;
+      if (ci && typeof ci.nextCd === 'function' && typeof ci.fire === 'function') return ci;
+      if (ci){
+        try{
+          const ser = (ci.isWrapper || ci.wrapperType) ? ci : serializeEmitterRecursive(ci);
+          const rebuilt = deserializeEmitterRecursive(ser);
+          if (rebuilt && typeof rebuilt.nextCd === 'function' && typeof rebuilt.fire === 'function') return rebuilt;
+        }catch(_){ }
+      }
+      // final fallback: try cfg as base emitter
+      const cfg = emSpec.cfg || {};
+      const baseFactory = EmitterCatalog[cfg.type || 'AIM'] || EmitterCatalog.AIM;
+      return baseFactory(cfg);
+    }
+
+    if (emSpec.isWrapper || emSpec.wrapperType){
+      try{
+        const rebuilt = deserializeEmitterRecursive(emSpec);
+        if (rebuilt && typeof rebuilt.nextCd === 'function' && typeof rebuilt.fire === 'function') return rebuilt;
+      }catch(_){ }
+    }
+
+    const factory = EmitterCatalog[emSpec.type] || EmitterCatalog.AIM;
+    return factory(emSpec.cfg || emSpec);
+  }
+
   // 一个敌人可以带多个 emitters；每个 emitter 内部可以随机叠加 bullet affixes
   function updateEmitters(owner, dt){
     if (!owner.emitters?.length) return;
-    for (const em of owner.emitters){
-      em.cd -= dt;
+    for (let i=0; i<owner.emitters.length; i++){
+      let em = owner.emitters[i];
+      if (!em || typeof em.nextCd!=='function' || typeof em.fire!=='function'){
+        em = materializeEmitterSpec(em);
+        owner.emitters[i] = em;
+      }
+      if (!em || typeof em.nextCd!=='function' || typeof em.fire!=='function') continue;
+      em.cd = (+em.cd || 0) - dt;
       if (em.cd>0) continue;
       em.cd = em.nextCd(owner, dt) * (owner.emCdMul || 1);
 
@@ -9847,19 +9888,7 @@ function spawnEnemyCoreFromSpecs(spec, d){
   e._protoMoveKeys = moveKeys; // 存储完整的移动模式列表
   e._protoMoveKey = initialMoveKey;
 
-  e.emitters = (spec.emitters||[]).map(em => {
-    let instance;
-    if (em.type === '_COMPOSITE' && em._compositeInstance) {
-      instance = em._compositeInstance;
-    } else {
-      const factory = EmitterCatalog[em.type];
-      instance = factory ? factory(em.cfg || {}) : EmitterCatalog.AIM(em.cfg||{});
-    }
-
-    
-    
-    return instance;
-  });
+  e.emitters = (spec.emitters||[]).map(em => materializeEmitterSpec(em)).filter(Boolean);
 
   // --- 核心修正：只有在需要时才附加和配置混合器 ---
   if (moveKeys.length > 1) {
@@ -9881,10 +9910,7 @@ function spawnEnemyCoreFromSpecs(spec, d){
       const e = MoveCatalog[moveKeys[0]](d);
       e.baseCol = proto.baseCol;
       e.body = genEnemyBody(proto.bodySeed ^ ((e.x*1000)|0) ^ ((e.y*1000)|0));
-      e.emitters = proto.emitters.map(em => {
-        if (em.type === '_COMPOSITE' && em._compositeInstance) return em._compositeInstance;
-        return EmitterCatalog[em.type]?.(em.cfg) ?? EmitterCatalog.AIM(em.cfg||{});
-      });
+      e.emitters = proto.emitters.map(em => materializeEmitterSpec(em)).filter(Boolean);
       // keep proto specs for cloning / orbiter, etc.
 e._protoMoveKey = moveKeys[0];
 e._protoMoveKeys = moveKeys;
@@ -20587,6 +20613,7 @@ document.getElementById('btnStartUnitBattle')?.addEventListener('click', ()=>{
   const m = document.getElementById('unitBattleModal');
   if (!m) return;
   m.classList.add('show');
+  document.body.classList.add('modal-lock-scroll');
   UnitBattle.ensureDefaultTeam();
   UnitBattle.autoFillRandomTeamsIfEmpty();
   UnitBattle.refreshList();
@@ -21073,6 +21100,7 @@ function closeUnitBattleModal(){
   const m = document.getElementById('unitBattleModal');
   if (!m) return;
   m.classList.remove('visible');
+  document.body.classList.remove('modal-lock-scroll');
   setTimeout(()=>{ m.classList.remove('show'); closeUbImportModal(); closeUbWinnerModal(); UnitBattle.refreshList(); }, 240);
 }
 document.getElementById('btnUbClose')?.addEventListener('click', closeUnitBattleModal);
