@@ -825,6 +825,28 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 .drawer .file-row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .drawer input[type="file"]{ color:rgba(255,255,255,0.8); font-family:var(--font-mono); }
 
+/* ================= DEV MODE ================= */
+.dev-panel{
+  position:fixed;
+  right:12px;
+  top:max(56px, env(safe-area-inset-top));
+  width:min(320px, 92vw);
+  max-height:min(72vh, 640px);
+  overflow:auto;
+  padding:10px;
+  z-index:60;
+  pointer-events:auto;
+  display:none;
+}
+.dev-panel.show{ display:block; }
+.dev-grid{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.dev-grid label{ font-size:11px; opacity:0.8; }
+.dev-grid input,.dev-grid select{ width:100%; }
+.dev-row{ display:flex; gap:6px; flex-wrap:wrap; margin:6px 0; }
+.dev-row .mini-btn{ flex:1; min-width:90px; }
+.dev-hint{ font-size:11px; opacity:0.75; line-height:1.4; }
+.dev-badge{ font-size:11px; color:var(--c-yellow); margin-left:8px; }
+
 /* ================= VIEW SWITCH (menu vs game) ================= */
 /* 关键：不要隐藏 #wrap（menu 在里面），只压暗 canvas */
 body[data-view="menu"] #wrap{
@@ -1327,7 +1349,7 @@ input[type="checkbox"] {
   <div class="menu-shell cyber-panel">
     <div class="menu-topbar">
       <div class="brand">
-        <div class="title">NEON ELECTRIC PLANE</div>
+        <div class="title" id="menuGameTitle">NEON ELECTRIC PLANE</div>
         <div class="sub">NEP · v1.0</div>
       </div>
       <div class="menu-nav">
@@ -1750,6 +1772,30 @@ input[type="checkbox"] {
 </div>
 
 <!-- Import/Export Drawer -->
+<div id="devPanel" class="dev-panel cyber-panel" aria-hidden="true">
+  <div class="card-title">DEVELOPER MODE <span class="dev-badge" id="devBadge">OFF</span></div>
+  <div class="dev-row">
+    <button id="btnDevPause" class="mini-btn">TIME: RUN</button>
+    <button id="btnDevPredict" class="mini-btn">PREDICT: OFF</button>
+    <button id="btnDevClose" class="mini-btn">CLOSE</button>
+  </div>
+  <div class="dev-hint">点击场上对象选中；可直接编辑坐标、速度、半径、血量。再次点击游戏名可开/关开发者模式。</div>
+  <div class="dev-row"><div class="muted mono" id="devSelType">SELECT: NONE</div></div>
+  <div class="dev-grid">
+    <label>X<input id="devX" type="number" step="1"></label>
+    <label>Y<input id="devY" type="number" step="1"></label>
+    <label>VX<input id="devVx" type="number" step="1"></label>
+    <label>VY<input id="devVy" type="number" step="1"></label>
+    <label>R<input id="devR" type="number" step="0.1"></label>
+    <label>HP<input id="devHp" type="number" step="1"></label>
+  </div>
+  <div class="dev-row">
+    <button id="btnDevApply" class="mini-btn">APPLY</button>
+    <button id="btnDevNudgeStop" class="mini-btn">STOP OBJ</button>
+    <button id="btnDevKill" class="mini-btn">KILL OBJ</button>
+  </div>
+</div>
+
 <div class="drawer" id="ioDrawer" aria-hidden="true">
   <div class="drawer-top">
     <div class="t">IMPORT / EXPORT</div>
@@ -1985,6 +2031,23 @@ input[type="checkbox"] {
     btnMpStart: $('btnMpStart'),
     inpMpMode: $('inpMpMode'),
     mpStatus: $('mpStatus'),
+
+    menuGameTitle: $('menuGameTitle'),
+    devPanel: $('devPanel'),
+    devBadge: $('devBadge'),
+    btnDevPause: $('btnDevPause'),
+    btnDevPredict: $('btnDevPredict'),
+    btnDevClose: $('btnDevClose'),
+    btnDevApply: $('btnDevApply'),
+    btnDevNudgeStop: $('btnDevNudgeStop'),
+    btnDevKill: $('btnDevKill'),
+    devSelType: $('devSelType'),
+    devX: $('devX'),
+    devY: $('devY'),
+    devVx: $('devVx'),
+    devVy: $('devVy'),
+    devR: $('devR'),
+    devHp: $('devHp'),
   };
 
   // ================= Audio =================
@@ -2773,6 +2836,9 @@ const addShake = (m, t=0.16) => {
     failReason: '',
     failSnapshot: null,
     mode: 'survival',      // 'survival' | 'duel' | 'lab' | 'fortress' | 'fortress_duel'
+    devMode:false,
+    devFrozen:false,
+    devPredict:false,
     lastStart: { mode:'survival', wave:1 },
     mute(){
       audioOn = !audioOn;
@@ -3889,6 +3955,13 @@ function recoverLocalControl(){
 
   canvas.addEventListener('pointerdown', (e) => {
     if (Game.state !== 'playing') return;
+    if (Game.devMode){
+      const z = Camera.zoom || 1;
+      const cx = W/2, cy = H/2;
+      const wx = (e.clientX - cx) / z + cx;
+      const wy = (e.clientY - cy) / z + cy;
+      DevTools.pickAt(wx, wy);
+    }
     ensureAudio();
     checkDoubleTap();
 
@@ -14202,6 +14275,110 @@ ui.score.textContent = formatValue(Game.score);
   }
   
   
+const DevTools = {
+  clickCount: 0,
+  clickTimer: null,
+  selected: null,
+  selectedType: '',
+  toggleMode(){
+    Game.devMode = !Game.devMode;
+    if (!Game.devMode){
+      this.selected = null;
+      this.selectedType = '';
+      Game.devFrozen = false;
+    }
+    this.syncPanel();
+    textPop(W*0.5, H*0.28, Game.devMode ? 'DEV MODE ON' : 'DEV MODE OFF', Game.devMode ? C.Y : C.W);
+  },
+  titleTap(){
+    this.clickCount++;
+    clearTimeout(this.clickTimer);
+    this.clickTimer = setTimeout(()=>{ this.clickCount = 0; }, 800);
+    if (this.clickCount >= 7){
+      this.clickCount = 0;
+      this.toggleMode();
+    }
+  },
+  syncPanel(){
+    if (!ui.devPanel) return;
+    ui.devPanel.classList.toggle('show', !!Game.devMode);
+    ui.devPanel.setAttribute('aria-hidden', Game.devMode ? 'false' : 'true');
+    if (ui.devBadge) ui.devBadge.textContent = Game.devMode ? 'ON' : 'OFF';
+    if (ui.btnDevPause) ui.btnDevPause.textContent = Game.devFrozen ? 'TIME: STOP' : 'TIME: RUN';
+    if (ui.btnDevPredict) ui.btnDevPredict.textContent = 'PREDICT: ' + (Game.devPredict ? 'ON' : 'OFF');
+    if (ui.devSelType) ui.devSelType.textContent = 'SELECT: ' + (this.selectedType || 'NONE');
+    this.refreshInputs();
+  },
+  refreshInputs(){
+    const o = this.selected;
+    const set = (el, v)=>{ if (el) el.value = Number.isFinite(v) ? String(Math.round(v*100)/100) : ''; };
+    if (!o){ set(ui.devX, NaN); set(ui.devY, NaN); set(ui.devVx, NaN); set(ui.devVy, NaN); set(ui.devR, NaN); set(ui.devHp, NaN); return; }
+    set(ui.devX, o.x); set(ui.devY, o.y); set(ui.devVx, o.vx); set(ui.devVy, o.vy); set(ui.devR, o.r);
+    set(ui.devHp, Number.isFinite(o.hp) ? o.hp : (o.flagHp));
+  },
+  applyInputs(){
+    const o = this.selected; if (!o) return;
+    const num = (el)=> Number(el?.value);
+    const set = (k,v)=>{ if (Number.isFinite(v) && (k in o)) o[k]=v; };
+    set('x', num(ui.devX)); set('y', num(ui.devY)); set('vx', num(ui.devVx)); set('vy', num(ui.devVy)); set('r', Math.max(1, num(ui.devR)));
+    const hp = num(ui.devHp);
+    if (Number.isFinite(hp)){
+      if ('hp' in o) o.hp = hp;
+      else if (o===Fortress) o.flagHp = hp;
+    }
+  },
+  pickAt(x,y){
+    let best=null, bestType='', bestD=1e9;
+    const tryPick = (obj, type, ox='x', oy='y', rr='r')=>{
+      if (!obj) return;
+      const px=obj[ox], py=obj[oy], r=Math.max(8, obj[rr]||10);
+      if (!Number.isFinite(px)||!Number.isFinite(py)) return;
+      const d=Math.hypot(px-x, py-y);
+      if (d<r+18 && d<bestD){ best=obj; bestType=type; bestD=d; }
+    };
+    tryPick(Player, 'PLAYER');
+    for (const e of enemies) if (e.alive) tryPick(e, 'ENEMY');
+    for (const b of bulletsP) if (b.alive) tryPick(b, 'BULLET_P');
+    for (const b of bulletsE) if (b.alive) tryPick(b, 'BULLET_E');
+    for (const s of supplies) if (!s.dead) tryPick(s, 'SUPPLY');
+    for (const st of Fortress.structures) if (st.hp>0) tryPick(st, 'FORT');
+    const fx=W*0.5, fy=H*0.18;
+    if (Math.hypot(fx-x, fy-y) < 50){ best=Fortress; bestType='FLAG'; }
+    this.selected = best;
+    this.selectedType = bestType;
+    this.syncPanel();
+  },
+  drawOverlay(){
+    if (!Game.devMode) return;
+    ctx.save();
+    if (Game.devPredict && Player?.alive){
+      const pts=[]; let px=Player.x, py=Player.y;
+      let vx=(Number.isFinite(Player.vx)?Player.vx:0), vy=(Number.isFinite(Player.vy)?Player.vy:-60);
+      for (let i=0;i<40;i++){
+        px += vx*0.06; py += vy*0.06;
+        pts.push([px,py]);
+      }
+      ctx.strokeStyle='rgba(255,176,32,0.92)';
+      ctx.lineWidth=2;
+      ctx.setLineDash([7,5]);
+      ctx.beginPath();
+      for (let i=0;i<pts.length;i++){
+        const [x,y]=pts[i];
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (this.selected){
+      const x=this.selected.x ?? W*0.5, y=this.selected.y ?? H*0.2, r=Math.max(9, this.selected.r||12);
+      ctx.strokeStyle='rgba(82,230,255,0.95)';
+      ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(x,y,r+8,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+};
+
 const AutoPilot = {
   active: false,
 
@@ -16215,6 +16392,25 @@ const DiffConfig = {
   get fireCdMul()      { return [1.5, 1.0, 0.85, 0.7][this.mode]; }
 };
 
+ui.menuGameTitle?.addEventListener('click', ()=> DevTools.titleTap());
+ui.btnDevClose?.addEventListener('click', ()=>{ Game.devMode=false; DevTools.syncPanel(); });
+ui.btnDevPause?.addEventListener('click', ()=>{ Game.devFrozen=!Game.devFrozen; DevTools.syncPanel(); });
+ui.btnDevPredict?.addEventListener('click', ()=>{ Game.devPredict=!Game.devPredict; DevTools.syncPanel(); });
+ui.btnDevApply?.addEventListener('click', ()=> DevTools.applyInputs());
+ui.btnDevNudgeStop?.addEventListener('click', ()=>{
+  const o = DevTools.selected; if (!o) return;
+  if ('vx' in o) o.vx = 0;
+  if ('vy' in o) o.vy = 0;
+  DevTools.refreshInputs();
+});
+ui.btnDevKill?.addEventListener('click', ()=>{
+  const o = DevTools.selected; if (!o) return;
+  if ('alive' in o) o.alive = false;
+  if ('hp' in o) o.hp = 0;
+  if (o===Fortress) o.flagHp = 0;
+  DevTools.refreshInputs();
+});
+
 document.getElementById('btnAutoPilot')?.addEventListener('click', () => {
   AutoPilot.toggle();
 });
@@ -16327,6 +16523,7 @@ function render(dt) {
     drawPlayer();
   }
   drawTexts();
+  DevTools.drawOverlay();
 
   // --- 步骤 4: UI 覆盖层 (Screen Space) ---
   // 重置回无缩放状态画 UI
@@ -17257,7 +17454,8 @@ function step(now){
   dt = clamp(dt, 0, 0.040);
 
   // 应用游戏速率
-  const finalDt = dt * TimeMachine.speed;
+  const devTimeScale = Game.devFrozen ? 0 : 1;
+  const finalDt = dt * TimeMachine.speed * devTimeScale;
   // 网络心跳/房间状态在所有界面都保持更新，避免大厅/菜单超时掉线
   Multiplayer.update(finalDt);
 
