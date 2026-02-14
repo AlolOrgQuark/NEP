@@ -856,7 +856,7 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 #ubWinnerModal{ position:fixed; inset:0; z-index:28100; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.58); }
 #ubWinnerModal.show{ display:flex; }
 #ubWinnerModal .card{ width:min(760px,95vw); max-height:min(82vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.95), rgba(24,8,40,.93)); border:1px solid rgba(255,210,138,.45); border-radius:10px; padding:12px; }
-#textPromptModal{ position:fixed; inset:0; z-index:28250; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.62); opacity:0; pointer-events:none; transition:opacity .22s ease; }
+#textPromptModal{ position:fixed; inset:0; z-index:60010; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.62); opacity:0; pointer-events:none; transition:opacity .22s ease; }
 #textPromptModal.show{ display:flex; }
 #textPromptModal.visible{ opacity:1; pointer-events:auto; }
 #textPromptModal .card{ width:min(860px,96vw); max-height:min(86vh,900px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.95), rgba(24,8,40,.93)); border:1px solid rgba(157,238,255,.42); border-radius:12px; padding:12px; transform:translateY(18px) scale(.96); opacity:0; transition:transform .24s cubic-bezier(.2,.9,.2,1),opacity .24s ease; }
@@ -3184,6 +3184,9 @@ const addShake = (m, t=0.16) => {
           }
         }
       } else {
+        // SELL 模式应重置“重复点击同建造按钮=旋转”计数语义
+        this.selected = 'none';
+        this.placeRot = 0;
         this.clearPreview();
       }
       this.syncSelectionUI();
@@ -18047,6 +18050,7 @@ function toMenu(){
 
   Music.stop();
   Fortress.updatePanel();
+  forceCloseTextPromptModal();
 }
 function mountOverlaysToBody(){
   for (const id of ['gameover','pausePanel']){
@@ -21020,6 +21024,15 @@ requestAnimationFrame(step);
   }, {capture:true, passive:true});
 })();
 
+
+function forceCloseTextPromptModal(){
+  const m = document.getElementById('textPromptModal');
+  const input = document.getElementById('textPromptInput');
+  if (!m) return;
+  m.classList.remove('visible');
+  m.classList.remove('show');
+  if (input) input.value = '';
+}
 
 function showLargeTextPrompt({title='粘贴文本', label='TEXT', placeholder='在此粘贴', defaultValue=''}={}){
   return new Promise((resolve)=>{
