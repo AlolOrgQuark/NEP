@@ -14027,7 +14027,19 @@ BG_Effect.init();
         if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
       }
 
-      if (e.y > H/Camera.zoom + 220) e.alive=false;
+      const offscreenBottomY = H/Camera.zoom + 220;
+      if (Game.mode === 'lab') {
+        if (e.y > offscreenBottomY) {
+          e.y = -120;
+          e.age = 0;
+          if (e.mmx && (e.mmx.mode === 'HOLD' || e.mmx.mode === 'ORBIT')) {
+            e.mmx.state = 'enter';
+            if (typeof mmxInitOrbitFromHere === 'function') mmxInitOrbitFromHere(e);
+          }
+        }
+      } else if (e.y > offscreenBottomY) {
+        e.alive=false;
+      }
     }
     if (!isNetAuthoritative){
       enforceHoverLimit();
