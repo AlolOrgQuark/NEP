@@ -747,7 +747,8 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   transition:max-height .28s ease, opacity .24s ease, transform .24s ease, padding .24s ease, border-color .24s ease;
 }
 .acc[open] .acc-body{
-  max-height:960px;
+  max-height:5000px;
+  overflow:visible;
   opacity:1;
   transform:translateY(0);
   padding:10px 12px 12px;
@@ -808,6 +809,28 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   color:#d9f9ff;
   background:rgba(0,0,0,.26);
 }
+
+/* Forge extra emitter mobile overflow fixes */
+#forgeExtraEmittersList, #forgeExtraEmittersList *{ box-sizing:border-box; }
+#forgeExtraEmittersList{ overflow-x:hidden; }
+.forge-extra-card{ width:100%; min-width:0; overflow:hidden; border-radius:8px; }
+.forge-extra-title{ display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:6px; }
+.forge-extra-title-text{ min-width:0; word-break:break-word; white-space:normal; line-height:1.25; }
+.forge-extra-wrap{ border:1px dashed rgba(179,108,255,0.35); padding:6px; margin-bottom:6px; width:100%; min-width:0; overflow:hidden; }
+.forge-extra-wrap-row{ border:1px solid rgba(179,108,255,0.25); padding:6px; background:rgba(179,108,255,0.08); width:100%; min-width:0; overflow:hidden; }
+.forge-extra-wrap-top{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.forge-extra-wrap-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+.forge-extra-wrap-actions .mini-btn{ flex:0 0 auto; }
+@media (max-width:700px){
+  .forge-extra-wrap-top{ align-items:stretch; }
+  .forge-extra-wrap-top .forge-extra-select{ flex:1 1 100% !important; width:100%; }
+}
+
+/* Unit battle modal */
+#unitBattleModal{ position:fixed; inset:0; z-index:26000; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.65); }
+#unitBattleModal.show{ display:flex; }
+#unitBattleModal .ub-modal-card{ width:min(780px,94vw); max-height:min(86vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.92), rgba(24,8,40,.9)); border:1px solid rgba(130,229,255,.42); box-shadow:0 18px 50px rgba(0,0,0,.55); padding:14px; border-radius:12px; }
+#unitBattleModal textarea{ min-height:180px; }
 
 /* action row */
 .menu-actions{
@@ -1428,19 +1451,9 @@ input[type="checkbox"] {
               <button id="btnStartLab" style="border-color:rgba(179,108,255,0.6);color:var(--c-magenta)">START LAB (FORGE)</button>
               <button id="btnStartUnitBattle" style="border-color:#9deeff;color:#9deeff">START UNIT BATTLE (兵种对战)</button>
             </div>
-          </div>
-
-          <div class="menu-card ub-panel" id="unitBattlePanel">
-            <div class="ub-title">UNIT BATTLE · 兵种批量导入对战</div>
-            <div class="muted" style="font-size:10px">导入多个怪物 Forge JSON（可无限追加），开始后在堡垒准备阶段拖拽半透明预览体调整出生点。</div>
-            <div class="field" style="margin-top:8px"><label>UNIT JSON</label><textarea id="ubJsonInput" placeholder='粘贴 forge JSON 或 {forge:{...}}'></textarea></div>
-            <div class="menu-actions" style="margin-top:8px;justify-content:flex-start;gap:8px">
-              <button id="btnUbImport" class="mini-btn" style="border-color:#9deeff;color:#9deeff">导入兵种</button>
-              <button id="btnUbClear" class="mini-btn" style="border-color:#ff9b72;color:#ff9b72">清空兵种</button>
-              <button id="btnUbExportWinner" class="mini-btn" style="border-color:#7ef9c0;color:#7ef9c0">导出胜者</button>
-            </div>
             <div id="ubList" class="ub-list"></div>
           </div>
+
         </div>
 
         <!-- WORKSHOP -->
@@ -1787,6 +1800,26 @@ input[type="checkbox"] {
 </div>
 
 <!-- Import/Export Drawer -->
+
+
+<div id="unitBattleModal" aria-hidden="true">
+  <div class="ub-modal-card cyber-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+      <div class="ub-title" style="margin:0">UNIT BATTLE · 兵种批量导入对战</div>
+      <button id="btnUbClose" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">CLOSE</button>
+    </div>
+    <div class="muted" style="font-size:10px">导入多个怪物 Forge JSON（支持 {type:&quot;forge&quot;,forge:{...}} 与 {spec:{...}}），可无限追加。进入后先自由布置堡垒，再拖动半透明预览体调整刷怪点。</div>
+    <div class="field" style="margin-top:8px"><label>UNIT JSON</label><textarea id="ubJsonInput" placeholder='粘贴 forge JSON'></textarea></div>
+    <div class="menu-actions" style="margin-top:8px;justify-content:flex-start;gap:8px">
+      <button id="btnUbImport" class="mini-btn" style="border-color:#9deeff;color:#9deeff">导入兵种</button>
+      <button id="btnUbClear" class="mini-btn" style="border-color:#ff9b72;color:#ff9b72">清空兵种</button>
+      <button id="btnUbStart" class="mini-btn" style="border-color:#7ef9c0;color:#7ef9c0">开始兵种对战</button>
+      <button id="btnUbExportWinner" class="mini-btn" style="border-color:#ffd28a;color:#ffd28a">导出胜者</button>
+    </div>
+    <div id="ubList" class="ub-list"></div>
+  </div>
+</div>
+
 <div class="drawer" id="ioDrawer" aria-hidden="true">
   <div class="drawer-top">
     <div class="t">IMPORT / EXPORT</div>
@@ -16968,9 +17001,32 @@ const UnitBattle = {
   reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; },
   parseUnitJSON(txt){
     const obj = JSON.parse(txt||'{}');
-    const forge = obj?.forge ? obj.forge : obj;
-    if (!forge?.spec) throw new Error('需要 forge/spec JSON');
-    return forge;
+    const raw = obj?.forge ? obj.forge : obj;
+    if (raw?.spec) return raw;
+
+    const emitters = Array.isArray(raw?.emitters)
+      ? raw.emitters
+      : [raw?.slot1, raw?.slot2].filter(Boolean);
+    if (!emitters.length) throw new Error('不是 forge 格式：缺少 spec 或 emitters/slot1/slot2');
+
+    const spec = {
+      moveKey: (Array.isArray(raw.moveKeys) && raw.moveKeys.length ? raw.moveKeys[0] : raw.moveKey) || 'DRIFT',
+      moveKeys: (Array.isArray(raw.moveKeys) && raw.moveKeys.length ? raw.moveKeys : [raw.moveKey || 'DRIFT']),
+      baseCol: raw.baseCol || raw.col || raw.tint || C.E2,
+      tint: raw.tint || raw.baseCol || raw.col || C.E2,
+      bodySeed: raw.bodySeed ?? 1337,
+      bodyKind: raw.bodyKind || 'AUTO',
+      bodyScale: raw.bodyScale ?? 1,
+      bodyOpt: raw.bodyOpt || {},
+      emitters: emitters,
+      waveBulletMods: Array.isArray(raw.mods) ? raw.mods : []
+    };
+    return {
+      isBoss: !!raw.isBoss,
+      hp: Math.max(20, (+raw.hp||240)),
+      traits: Array.isArray(raw.traits) ? raw.traits : [],
+      spec
+    };
   },
   importOne(txt){
     const forge = this.parseUnitJSON(txt);
@@ -18558,6 +18614,10 @@ function renderWrapperCfgFieldsUI(container, item, wrapIdx, onChanged){
 }
 
 function renderEmitterUiEditor(card, item, idx){
+  const refreshAccHeight = ()=>{
+    const body = card.closest('.acc-body');
+    if (body && body.style.maxHeight && body.style.maxHeight !== '0px') body.style.maxHeight = body.scrollHeight + 'px';
+  };
   const model = emitterToUiModel(item);
 
   const persist = ()=>{
@@ -18615,6 +18675,7 @@ function renderEmitterUiEditor(card, item, idx){
       model.base.mods = Array.from(selected).slice(0,24);
       btn.classList.toggle('on', selected.has(k));
       persist();
+      refreshAccHeight();
     });
     modsChips.appendChild(btn);
   });
@@ -18627,19 +18688,19 @@ function renderEmitterUiEditor(card, item, idx){
   card.appendChild(baseWrap);
 
   const wrappersWrap = document.createElement('div');
-  wrappersWrap.style.cssText = 'border:1px dashed rgba(179,108,255,0.35);padding:6px;margin-bottom:6px';
+  wrappersWrap.className = 'forge-extra-wrap';
   wrappersWrap.innerHTML = '<div class="muted" style="margin-bottom:4px">WRAPPERS (INNER -> OUTER)</div>';
   const list = document.createElement('div');
-  list.style.display='flex'; list.style.flexDirection='column'; list.style.gap='6px';
+  list.style.display='flex'; list.style.flexDirection='column'; list.style.gap='6px'; list.style.minWidth='0';
 
   const rerender = ()=>{
     list.innerHTML='';
     model.wrappers.forEach((w, wi)=>{
       const row = document.createElement('div');
-      row.style.cssText='border:1px solid rgba(179,108,255,0.25);padding:6px;background:rgba(179,108,255,0.08)';
+      row.className='forge-extra-wrap-row';
 
       const top = document.createElement('div');
-      top.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap';
+      top.className='forge-extra-wrap-top';
       const sel = document.createElement('select');
       sel.className = 'forge-extra-select';
       sel.style.minWidth = '0';
@@ -18653,7 +18714,9 @@ function renderEmitterUiEditor(card, item, idx){
       const up = mkBtn('↑', ()=>{ if (wi<=0) return; [model.wrappers[wi-1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi-1]]; persist(); rerender(); });
       const dn = mkBtn('↓', ()=>{ if (wi>=model.wrappers.length-1) return; [model.wrappers[wi+1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi+1]]; persist(); rerender(); });
       const del = mkBtn('REMOVE', ()=>{ model.wrappers.splice(wi,1); persist(); rerender(); });
-      top.appendChild(sel); top.appendChild(up); top.appendChild(dn); top.appendChild(del);
+      const act = document.createElement('div'); act.className='forge-extra-wrap-actions';
+      act.appendChild(up); act.appendChild(dn); act.appendChild(del);
+      top.appendChild(sel); top.appendChild(act);
 
       const cfgBox = document.createElement('div');
       cfgBox.style.marginTop='6px';
@@ -18666,9 +18729,10 @@ function renderEmitterUiEditor(card, item, idx){
   };
 
   rerender();
+  refreshAccHeight();
   const addW = document.createElement('button');
   addW.className='mini-btn'; addW.textContent='ADD WRAPPER';
-  addW.addEventListener('click', ()=>{ model.wrappers.push({wrapperType:'', compCfg:{}}); persist(); rerender(); });
+  addW.addEventListener('click', ()=>{ model.wrappers.push({wrapperType:'', compCfg:{}}); persist(); rerender(); refreshAccHeight(); });
 
   wrappersWrap.appendChild(list);
   wrappersWrap.appendChild(addW);
@@ -18695,11 +18759,12 @@ function renderForgeExtraEmittersUI(){
 
   ForgeState.extraEmitters.forEach((item, idx)=>{
     const card = document.createElement('div');
+    card.className = 'forge-extra-card';
     card.style.cssText = 'border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.22);padding:8px';
 
     const title = document.createElement('div');
-    title.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px';
-    title.innerHTML = `<div class="mono" style="font-size:12px">EXTRA #${idx+1} · ${summarizeSerializedEmitter(item)}</div>`;
+    title.className = 'forge-extra-title';
+    title.innerHTML = `<div class="mono forge-extra-title-text" style="font-size:12px">EXTRA #${idx+1} · ${summarizeSerializedEmitter(item)}</div>`;
 
     const btns = document.createElement('div');
     btns.style.cssText = 'display:flex;gap:6px';
@@ -19826,8 +19891,8 @@ document.getElementById('btnStartLab')?.addEventListener('click', ()=>{
   startRun(cfg);
 });
 document.getElementById('btnStartUnitBattle')?.addEventListener('click', ()=>{
-  if (!UnitBattle.units.length){ alert('请先导入至少一个兵种 JSON'); return; }
-  startRun({mode:'unitbattle', wave:1});
+  const m = document.getElementById('unitBattleModal');
+  if (m) m.classList.add('show');
 });
 
 ui.btnRestart?.addEventListener('click', () => {
@@ -20188,6 +20253,13 @@ document.getElementById('btnUbImport')?.addEventListener('click', ()=>{
 });
 document.getElementById('btnUbClear')?.addEventListener('click', ()=>{ UnitBattle.units.length=0; UnitBattle.refreshList(); });
 document.getElementById('btnUbExportWinner')?.addEventListener('click', ()=>UnitBattle.exportWinner());
+document.getElementById('btnUbClose')?.addEventListener('click', ()=>document.getElementById('unitBattleModal')?.classList.remove('show'));
+document.getElementById('unitBattleModal')?.addEventListener('click', (e)=>{ if (e.target?.id==='unitBattleModal') e.currentTarget.classList.remove('show'); });
+document.getElementById('btnUbStart')?.addEventListener('click', ()=>{
+  if (!UnitBattle.units.length){ alert('请先导入至少一个兵种 JSON'); return; }
+  document.getElementById('unitBattleModal')?.classList.remove('show');
+  startRun({mode:'unitbattle', wave:1});
+});
 UnitBattle.refreshList();
 toMenu();
 canvas.style.pointerEvents = 'auto';
