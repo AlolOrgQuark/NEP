@@ -6466,40 +6466,106 @@ function refreshDNAAfterFire(beforeP, beforeE){
     if (Number.isFinite(obj.vy)) obj.vy *= 0.35;
   }
 
-  function applyEnemyPathSteer(obj, target, structures, dt){
-    if (!obj || !target || !Array.isArray(structures) || !structures.length) return;
+  function applyEnemyPathSteer(obj, target, structures, dt, allies=[]){
+    if (!obj || !target || !Number.isFinite(obj.x) || !Number.isFinite(obj.y)) return;
     const tx = target.x ?? obj.x, ty = target.y ?? obj.y;
-    let dx = tx - obj.x, dy = ty - obj.y;
-    const d = Math.hypot(dx,dy) || 1;
-    let ux = dx/d, uy = dy/d;
-    const lateralX = -uy, lateralY = ux;
-    const look = 46 + (obj.r||12)*1.8;
+    const minX = 24, maxX = W-24, minY = 24, maxY = H-24;
+    const cell = 34;
 
-    const blockedScore = (dirX, dirY)=>{
-      let score = 0;
-      const sx = obj.x + dirX*look, sy = obj.y + dirY*look;
-      for (const fs of structures){
-        if (!fs || fs.hp<=0 || fs.type==='mine') continue;
-        if (circleRectOverlap(sx, sy, (obj.r||10)+2, fs)) score += 1;
+    const threatOf = (st)=>({
+      turret:7.5,gatling:8.0,sniper:7.0,missile:8.2,tesla:8.6,flame:7.2,mortar:7.8,dronepad:6.8,pulse:6.6,
+      wall:2.2,heavywall:2.8,bunker:3.5,shield:3.0,barricade:1.8,taunt:2.4
+    }[st?.type] || 2.0);
+
+    const key=(ix,iy)=>`${ix},${iy}`;
+    const toCell=(x,y)=>({ix:Math.round((x-minX)/cell), iy:Math.round((y-minY)/cell)});
+    const toPos=(ix,iy)=>({x:minX + ix*cell, y:minY + iy*cell});
+    const s = toCell(obj.x,obj.y), g = toCell(tx,ty);
+
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+    const open=[{ix:s.ix,iy:s.iy,g:0,f:0}];
+    const best=new Map([[key(s.ix,s.iy),0]]);
+    const parent=new Map();
+    const reserved = Fortress._pathReserve || new Map();
+    Fortress._pathReserve = reserved;
+
+    const h=(ix,iy)=>Math.hypot(ix-g.ix, iy-g.iy);
+    open[0].f = h(s.ix,s.iy);
+
+    const maxExpand = 240;
+    let endNode = null;
+    for (let expand=0; open.length && expand<maxExpand; expand++){
+      open.sort((a,b)=>a.f-b.f);
+      const cur=open.shift();
+      if (!cur) break;
+      if (Math.abs(cur.ix-g.ix)<=1 && Math.abs(cur.iy-g.iy)<=1){ endNode = cur; break; }
+
+      for (const [dx,dy] of dirs){
+        const nx=cur.ix+dx, ny=cur.iy+dy;
+        const p=toPos(nx,ny);
+        if (p.x<minX || p.x>maxX || p.y<minY || p.y>maxY) continue;
+
+        let step = Math.hypot(dx,dy);
+        if (Array.isArray(structures)){
+          for (const st of structures){
+            if (!st || st.hp<=0 || st.type==='mine') continue;
+            const dd = Math.hypot(p.x-st.x, p.y-st.y);
+            const rad = (Math.max(st.w||20, st.h||20)*0.9) + 24;
+            if (dd < rad){
+              const hpPct = clamp((st.hp||1)/Math.max(1, st.maxHp||1), 0, 1);
+              step += threatOf(st) * (1.25 - hpPct*0.6) * (1 - dd/rad + 0.2);
+            }
+            if (circleRectOverlap(p.x,p.y,(obj.r||12)+1,st)) step += 26 + (st.hp||20)*0.02;
+          }
+        }
+        if (Array.isArray(allies)){
+          for (const a of allies){
+            if (!a || a===obj || !a.alive) continue;
+            const dd = Math.hypot(p.x-a.x, p.y-a.y);
+            if (dd < 42) step += (42-dd)*0.12;
+          }
+        }
+
+        const rk = key(nx,ny);
+        step += (reserved.get(rk)||0) * 0.85;
+        const ng = cur.g + step;
+        if (ng >= (best.get(rk) ?? Infinity)) continue;
+        best.set(rk, ng);
+        parent.set(rk, key(cur.ix,cur.iy));
+        open.push({ix:nx,iy:ny,g:ng,f:ng + h(nx,ny)});
       }
-      return score;
-    };
-
-    const fwd = blockedScore(ux, uy);
-    if (fwd > 0){
-      const l = blockedScore(ux + lateralX*0.85, uy + lateralY*0.85);
-      const r = blockedScore(ux - lateralX*0.85, uy - lateralY*0.85);
-      const side = (l <= r) ? 1 : -1;
-      ux += lateralX * side * 0.95;
-      uy += lateralY * side * 0.95;
-      const nd = Math.hypot(ux,uy) || 1;
-      ux/=nd; uy/=nd;
     }
 
-    const steerSp = 52 + (obj.r||12)*1.2;
-    obj.x += ux * steerSp * dt;
-    obj.y += uy * steerSp * dt;
+    if (!endNode){
+      const dx = tx-obj.x, dy = ty-obj.y;
+      const d = Math.hypot(dx,dy) || 1;
+      obj.x += (dx/d) * (44 + (obj.r||12)) * dt;
+      obj.y += (dy/d) * (44 + (obj.r||12)) * dt;
+      return;
+    }
+
+    let curK = key(endNode.ix,endNode.iy);
+    const path=[];
+    while (curK){
+      const [ix,iy]=curK.split(',').map(Number);
+      path.push({ix,iy});
+      curK = parent.get(curK) || null;
+    }
+    path.reverse();
+    const next = path[Math.min(2, path.length-1)] || path[path.length-1] || s;
+    const np = toPos(next.ix,next.iy);
+    const dx = np.x - obj.x, dy = np.y - obj.y;
+    const d = Math.hypot(dx,dy) || 1;
+    const sp = 58 + (obj.r||12)*1.5;
+    obj.x += (dx/d) * sp * dt;
+    obj.y += (dy/d) * sp * dt;
+
+    for (let i=1;i<Math.min(path.length,4);i++){
+      const k = key(path[i].ix, path[i].iy);
+      reserved.set(k, (reserved.get(k)||0) + 1);
+    }
   }
+
 
 
   // ================= Supplies =================
@@ -17433,34 +17499,11 @@ const UnitBattle = {
       e.noDrop = true; e.score = 0;
       const baseMove = e.move?.bind(e);
       e.move = (dt)=>{
-        if (baseMove) baseMove(dt*0.05);
+        if (baseMove) baseMove(dt*0.03);
         const t = UnitBattle.findOpponent(e, e.x, e.y, 1800);
         if (!t) return;
-        const tx = (t.x ?? e.x), ty = (t.y ?? e.y);
-        const dx = tx - e.x, dy = ty - e.y;
-        const d = Math.hypot(dx,dy) || 1;
-        let vx = (dx/d), vy = (dy/d);
-
-        // path steering: avoid fortress blocks instead of always straight break-through.
-        const look = 64 + (e.r||14)*2;
-        const structures = Fortress.structures || [];
-        for (const fs of structures){
-          if (!fs || fs.hp<=0 || fs.type==='mine') continue;
-          const nx = clamp(e.x, fs.x-fs.w*0.55, fs.x+fs.w*0.55);
-          const ny = clamp(e.y, fs.y-fs.h*0.55, fs.y+fs.h*0.55);
-          const ox = e.x - nx, oy = e.y - ny;
-          const od = Math.hypot(ox,oy) || 1;
-          const danger = Math.max(0, 1 - od/(look+Math.max(fs.w,fs.h)*0.45));
-          if (danger<=0) continue;
-          vx += (ox/od) * danger * 1.8;
-          vy += (oy/od) * danger * 1.8;
-        }
-
-        const nd = Math.hypot(vx,vy) || 1;
-        vx/=nd; vy/=nd;
-        const sp = 122 + (e.r||14)*2.8;
-        e.x += vx * sp * dt;
-        e.y += vy * sp * dt;
+        const allies = enemies.filter(o=>o && o.alive && o!==e && o.ubTeam===e.ubTeam);
+        applyEnemyPathSteer(e, t, Fortress.structures||[], dt, allies);
       };
     }
     this.winner=null;
@@ -17496,37 +17539,30 @@ const UnitBattle = {
     return preferBreak ? bestStruct : bestEnemy;
   },
   checkWinner(){
-    if (!this.active || Fortress.phase!=='assault') return;
+    if (!this.active || Game.state!=='playing') return;
     const alive = enemies.filter(e=>e.alive && e.ubTeam!=null);
     if (!alive.length) return;
-    const teams = new Set(alive.map(e=>e.ubTeam));
-    if (teams.size===1){
-      const t=[...teams][0];
-      if (!this.winnerTeam){
-        this.winnerTeam = t;
-        this.winner = alive[0]._ubSpec || null;
-        textPop(W*0.5, H*0.18, `TEAM ${t} WIN`, C.G);
-      }
+    const teamAlive = new Map();
+    for (const e of alive) teamAlive.set(e.ubTeam, (teamAlive.get(e.ubTeam)||0)+1);
+    if (teamAlive.size!==1) return;
+    const t=[...teamAlive.keys()][0];
+    if (this.winnerTeam===t) return;
+    this.winnerTeam = t;
+    this.winner = alive[0]._ubSpec || null;
+    this.winnerPool = deepClone(alive.filter(e=>e.ubTeam===t && e._ubSpec).map(e=>e._ubSpec));
+    if (!this.winnerPool.length){
+      this.winnerPool = deepClone(this.teams.find(v=>v.id===t)?.units || []);
     }
+    textPop(W*0.5, H*0.18, `TEAM ${t} WIN`, C.G);
+    spawnShockwave(W*0.5, H*0.18, C.G, 180, 0.36);
   },
   exportWinner(){
     if (!this.winnerTeam) return alert('暂无胜者');
-    const cands = enemies.filter(e=>e.alive && e.ubTeam===this.winnerTeam && e._ubSpec).map(e=>e._ubSpec);
-    const pool = cands.length ? cands : (this.teams.find(t=>t.id===this.winnerTeam)?.units || []);
-    if (!pool.length) return alert('胜者队伍没有可导出的兵种');
-    let pick = 0;
-    if (pool.length>1){
-      const msg = pool.map((u,i)=>`${i+1}. ${(u?.spec?.moveKey||'MIX')}  HP:${u?.hp||0}`).join('\n');
-      const v = prompt(`TEAM ${this.winnerTeam} 获胜。请输入导出兵种序号\n${msg}`, '1');
-      const idx = Math.max(1, Math.min(pool.length, parseInt(v||'1',10)||1));
-      pick = idx-1;
+    if (!Array.isArray(this.winnerPool) || !this.winnerPool.length){
+      this.winnerPool = deepClone(this.teams.find(v=>v.id===this.winnerTeam)?.units || []);
     }
-    const chosen = pool[pick] || pool[0];
-    const txt = JSON.stringify({type:'forge', forge:chosen}, null, 2);
-    const io = document.getElementById('ioText');
-    if (io) io.value = txt;
-    try{ navigator.clipboard.writeText(txt); }catch(_){ }
-    textPop(W*0.5, H*0.2, `已导出 TEAM ${this.winnerTeam} #${pick+1}`, C.P2);
+    if (!this.winnerPool.length) return alert('胜者队伍没有可导出的兵种');
+    openUbWinnerModal();
   },
   drawGhosts(){
     if (!this.active || Fortress.phase!=='fortify') return;
@@ -17539,6 +17575,11 @@ const UnitBattle = {
       const body = genEnemyBody((g.forge?.spec?.bodySeed||1337) + g.idx*97);
       const fake = {x:g.x,y:g.y,r:g.r*0.75,body,bodySeed:(g.forge?.spec?.bodySeed||1337),tint:(g.forge?.spec?.baseCol||C.E2),baseCol:(g.forge?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
       drawEnemyGeneric(fake);
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.font='700 10px "Consolas", monospace';
+      ctx.textAlign='center';
+      ctx.textBaseline='bottom';
+      ctx.fillText(`T${g.team}`, g.x, g.y - g.r - 6);
     }
     ctx.restore();
   }
