@@ -827,10 +827,14 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 }
 
 /* Unit battle modal */
-#unitBattleModal{ position:fixed; inset:0; z-index:26000; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.65); }
-#unitBattleModal.show{ display:flex; }
-#unitBattleModal .ub-modal-card{ width:min(780px,94vw); max-height:min(86vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.92), rgba(24,8,40,.9)); border:1px solid rgba(130,229,255,.42); box-shadow:0 18px 50px rgba(0,0,0,.55); padding:14px; border-radius:12px; }
+#unitBattleModal{ position:fixed; inset:0; z-index:26000; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.65); opacity:0; transition:opacity .22s ease; }
+#unitBattleModal.show{ display:flex; opacity:1; }
+#unitBattleModal .ub-modal-card{ width:min(780px,94vw); max-height:min(86vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.92), rgba(24,8,40,.9)); border:1px solid rgba(130,229,255,.42); box-shadow:0 18px 50px rgba(0,0,0,.55); padding:14px; border-radius:12px; transform:translateY(18px) scale(.96); opacity:0; transition:transform .26s cubic-bezier(.2,.9,.2,1), opacity .26s ease; }
+#unitBattleModal.show .ub-modal-card{ transform:translateY(0) scale(1); opacity:1; }
 #unitBattleModal textarea{ min-height:180px; }
+.ub-unit-card{ width:80px; border:1px solid rgba(157,238,255,.35); border-radius:10px; padding:4px; background:rgba(0,0,0,.24); display:flex; flex-direction:column; gap:4px; align-items:center; }
+.ub-unit-icon{ width:64px; height:64px; border:1px solid rgba(157,238,255,.3); background:radial-gradient(circle at 50% 50%, rgba(157,238,255,.12), rgba(0,0,0,.2)); }
+.ub-unit-meta{ font:600 9px/1.15 var(--font-mono); color:#c8f4ff; text-align:center; word-break:break-word; }
 
 /* action row */
 .menu-actions{
@@ -1449,7 +1453,7 @@ input[type="checkbox"] {
               <button id="btnStartFortress" style="border-color:#7ef9c0;color:#7ef9c0">START FORTRESS (BASTION)</button>
               <button id="btnStartDuel" style="border-color:var(--c-yellow);color:var(--c-yellow)">START DUEL (A vs B)</button>
               <button id="btnStartLab" style="border-color:rgba(179,108,255,0.6);color:var(--c-magenta)">START LAB (FORGE)</button>
-              <button id="btnStartUnitBattle" style="border-color:#9deeff;color:#9deeff">START UNIT BATTLE (兵种对战)</button>
+              <button id="btnStartUnitBattle" style="border-color:#9deeff;color:#9deeff">START UNIT BATTLE</button>
             </div>
             <div id="ubList" class="ub-list"></div>
           </div>
@@ -12321,6 +12325,7 @@ function grantPlayerEmitter(){
 
   function firePlayer(dt){
     if (!Player.alive) return;
+    if (UnitBattle.active) return;
     if (isFortressPrepPhase()) return;
     Player.fireCd -= dt;
     if (Player.fireCd>0) return;
@@ -12395,6 +12400,7 @@ function grantPlayerEmitter(){
 
   // ================= Bomb =================
   function useBomb(){
+    if (UnitBattle.active) return;
     if (Player.bomb<=0) return;
     Player.bomb--;
     ui.bombText.textContent = Player.bomb;
@@ -14366,10 +14372,10 @@ BG_Effect.init();
        // E bullets vs player
     for(const b of bulletsE){
       if (!b.alive || b._phaseGhost) continue;
-      if (UnitBattle.active && b.ubTeam!=null){
+      if (UnitBattle.active){
         let hitOpp = false;
         for (const e of enemies){
-          if (!e.alive || e.ubTeam==null || e.ubTeam===b.ubTeam) continue;
+          if (!e.alive || e.ubTeam==null || b.ubTeam==null || e.ubTeam===b.ubTeam) continue;
           if (hitCircle(b.x,b.y,b.r,e.x,e.y,e.r)){
             e.onHit?.(b.dmg);
             killBullet(b, 'hit', {childMods: propagateMods(b.mods)});
@@ -14380,6 +14386,7 @@ BG_Effect.init();
           }
         }
         if (hitOpp) continue;
+        continue;
       }
       if (!Player.alive) continue;
       if (hitCircle(b.x,b.y,b.r, Player.x,Player.y, Player.r)){
@@ -17038,10 +17045,25 @@ const UnitBattle = {
     if (!el) return;
     el.innerHTML='';
     this.units.forEach((u,i)=>{
-      const c=document.createElement('span');
-      c.className='ub-chip';
-      c.textContent=`#${i+1} ${u?.spec?.moveKey||'MIX'} HP:${u?.hp||0}`;
-      el.appendChild(c);
+      const card=document.createElement('div');
+      card.className='ub-unit-card';
+      const cv=document.createElement('canvas');
+      cv.className='ub-unit-icon';
+      cv.width=64; cv.height=64;
+      const g=cv.getContext('2d');
+      if (g){
+        g.clearRect(0,0,64,64);
+        const seed=((u?.spec?.bodySeed)||1337) + i*131;
+        const body=genEnemyBody(seed);
+        const fake={x:32,y:34,r:14,body,bodySeed:seed,tint:(u?.spec?.baseCol||C.E2),baseCol:(u?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
+        drawEnemyGenericBody(g, fake, body, fake.baseCol, 14, 0.0, 0.0);
+      }
+      const meta=document.createElement('div');
+      meta.className='ub-unit-meta';
+      meta.textContent=`#${i+1} ${u?.spec?.moveKey||'MIX'} HP:${u?.hp||0}`;
+      card.appendChild(cv);
+      card.appendChild(meta);
+      el.appendChild(card);
     });
   },
   setupGhosts(){
@@ -17094,14 +17116,33 @@ const UnitBattle = {
     this.winner=null;
   },
   findOpponent(source, x,y,maxD=99999){
-    if (!source || source.ubTeam==null) return Player.alive?Player:null;
-    let best=null,bestD=maxD*maxD;
+    if (!source || source.ubTeam==null) return Fortress.pickStrategicTarget(x,y,maxD) || null;
+    let bestEnemy=null,bestD=maxD*maxD;
     for (const e of enemies){
       if (!e.alive || e===source || e.ubTeam==null || e.ubTeam===source.ubTeam) continue;
       const d2=dist2(x,y,e.x,e.y);
-      if (d2<bestD){ bestD=d2; best=e; }
+      if (d2<bestD){ bestD=d2; bestEnemy=e; }
     }
-    return best || (Player.alive?Player:null);
+
+    let bestStruct=null, bestStructScore=-1e18;
+    const structs = Fortress.structures || [];
+    for (const st of structs){
+      if (!st || (st.hp||0)<=0) continue;
+      const d2 = dist2(x,y,st.x,st.y);
+      if (d2 > maxD*maxD) continue;
+      const laneW = (Math.abs(st.x-W*0.5)<180 && st.y>H*0.42) ? 1.8 : 1.0;
+      const hpW = 1.0 + (1.0 - clamp((st.hp||1)/Math.max(1, st.maxHp||1),0,1))*1.2;
+      const score = laneW*1.4 + hpW + (1/(1+Math.sqrt(d2)*0.012));
+      if (score > bestStructScore){ bestStructScore = score; bestStruct = st; }
+    }
+
+    if (!bestEnemy) return bestStruct || null;
+    if (!bestStruct) return bestEnemy;
+
+    const enemyDist = Math.sqrt(bestD);
+    const structDist = Math.hypot(bestStruct.x-x, bestStruct.y-y);
+    const preferBreak = structDist < enemyDist*1.15;
+    return preferBreak ? bestStruct : bestEnemy;
   },
   checkWinner(){
     if (!this.active || Fortress.phase!=='assault') return;
@@ -20236,6 +20277,41 @@ function spawnChaosEnemy(wave) {
   // 视觉效果
   textPop(W/2, H*0.4, `CHALLENGE WAVE ${wave}`, C.R);
   spawnShockwave(W/2, -50, C.E1, 500, 1.0);
+}
+
+
+// ================= Loop =================
+  let lastT = performance.now();
+
+function step(now){
+  requestAnimationFrame(step);
+  let dt = (now - lastT) / 1000;
+  lastT = now;
+  dt = clamp(dt, 0, 0.040);
+
+  // 应用游戏速率
+  const devTimeScale = Game.devFrozen ? 0 : 1;
+  const finalDt = dt * TimeMachine.speed * devTimeScale;
+  // 网络心跳/房间状态在所有界面都保持更新，避免大厅/菜单超时掉线
+  Multiplayer.update(finalDt);
+
+  const netKeepRunning = !!(Game.lastStart?.net && Multiplayer?.isActive?.() && (Game.mode==='fortress_duel' || Game.mode==='workshop') && (Game.state==='paused' || Game.state==='over'));
+  if (Game.state === 'playing' || netKeepRunning) {
+    update(finalDt); // 使用变速后的 dt
+
+    // [插入] TAS 录制
+    if (TimeMachine.enabled && Game.state === 'playing') {
+      TimeMachine.record();
+    }
+  }
+
+  // SFX 和 Music 保持原速更新，否则声音会变调或卡顿
+  SFX.update(dt);
+  Music.update();
+
+  if (Player.deathT > 0) Player.deathT = Math.max(0, Player.deathT - dt); // 死亡动画也不变速
+
+  render(finalDt); // 渲染使用变速 dt 以匹配逻辑
 }
 
   // ================= Boot =================
