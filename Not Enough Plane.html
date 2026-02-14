@@ -6485,14 +6485,14 @@ function refreshDNAAfterFire(beforeP, beforeE){
       obj.y += (dy/d) * sp * dt;
     };
 
-    const blocks = Array.isArray(structures)
+    const blocksRaw = Array.isArray(structures)
       ? structures.filter(st=>st && st.hp>0 && st.type!=='mine')
       : [];
-    if (!blocks.length){ steerTo(tx,ty,1.08); return; }
+    if (!blocksRaw.length){ steerTo(tx,ty,1.08); return; }
 
     const pad = (obj.r||12) + 3;
-    const isBlocked = (x1,y1,x2,y2)=>{
-      for (const st of blocks){
+    const isBlocked = (x1,y1,x2,y2, arr=blocksRaw)=>{
+      for (const st of arr){
         if (segmentIntersectsOrientedRect(x1,y1,x2,y2,st,pad)) return true;
       }
       return false;
@@ -6503,10 +6503,50 @@ function refreshDNAAfterFire(beforeP, beforeE){
       return;
     }
 
+    // Replan throttle to avoid O(N^2 * enemyCount) spikes when fortress has many blocks.
+    obj._pathRecalcCd = Math.max(0, (obj._pathRecalcCd||0) - dt);
+    if (obj._pathNext && obj._pathRecalcCd>0){
+      steerTo(obj._pathNext.x, obj._pathNext.y, 1.0);
+      return;
+    }
+
+    // If layout is very dense, use bounded-angle local search (fast fallback).
+    if (blocksRaw.length > 26){
+      let best=null;
+      const baseA = Math.atan2(dy0, dx0);
+      const probe = Math.min(260, Math.max(110, d0*0.55));
+      for (let i=-4;i<=4;i++){
+        const a = baseA + i * 0.28;
+        const px = clamp(obj.x + Math.cos(a)*probe, 20, W-20);
+        const py = clamp(obj.y + Math.sin(a)*probe, 20, H-20);
+        let cost = Math.hypot(px-obj.x, py-obj.y) + Math.hypot(tx-px, ty-py);
+        if (isBlocked(obj.x,obj.y,px,py)) cost += 220;
+        if (isBlocked(px,py,tx,ty)) cost += 150;
+        for (const st of blocksRaw){
+          const dd = Math.hypot(px-st.x, py-st.y);
+          const rad = Math.max(st.w||20, st.h||20)*0.75 + 24;
+          if (dd < rad) cost += (1 - dd/rad + 0.1) * 26;
+        }
+        if (!best || cost < best.cost) best = {x:px,y:py,cost};
+      }
+      obj._pathNext = {x:best.x, y:best.y};
+      obj._pathRecalcCd = 0.14 + rand(0,0.08);
+      steerTo(best.x, best.y, 1.0);
+      return;
+    }
+
     const threatOf = (st)=>({
       turret:8.2,gatling:8.6,sniper:7.6,missile:8.8,tesla:9.0,flame:7.6,mortar:8.2,dronepad:7.2,pulse:7.1,
       wall:2.2,heavywall:2.8,bunker:3.4,shield:3.1,barricade:1.8,taunt:2.4
     }[st?.type] || 2.0);
+
+    // Keep graph small: only consider blockers + nearby structures.
+    const nearLine = [];
+    for (const st of blocksRaw){
+      const dSeg = Math.sqrt(distPointSeg2(st.x, st.y, obj.x, obj.y, tx, ty));
+      if (dSeg < Math.max(140, d0*0.55)) nearLine.push(st);
+    }
+    const blocks = nearLine.length ? nearLine.slice(0, 20) : blocksRaw.slice(0, 20);
 
     // Visibility graph (obstacle-corner nodes + start/goal) with A*.
     const nodes=[{x:obj.x,y:obj.y,id:0,st:null},{x:tx,y:ty,id:1,st:null}];
@@ -6519,7 +6559,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
       const hw=(st.w||20)*0.5 + pad + 10;
       const hh=(st.h||20)*0.5 + pad + 10;
       const c=Math.cos(st.rot||0), sn=Math.sin(st.rot||0);
-      const local=[[ hw, hh],[ hw,-hh],[-hw, hh],[-hw,-hh],[ hw,0],[-hw,0],[0,hh],[0,-hh]];
+      const local=[[ hw, hh],[ hw,-hh],[-hw, hh],[-hw,-hh]];
       for (const [lx,ly] of local){
         addNode(st.x + lx*c - ly*sn, st.y + lx*sn + ly*c, st);
       }
@@ -6530,20 +6570,20 @@ function refreshDNAAfterFire(beforeP, beforeE){
     for (let i=0;i<n;i++){
       for (let j=i+1;j<n;j++){
         const a=nodes[i], b=nodes[j];
-        if (isBlocked(a.x,a.y,b.x,b.y)) continue;
+        if (isBlocked(a.x,a.y,b.x,b.y, blocks)) continue;
         let w = Math.hypot(b.x-a.x, b.y-a.y);
-        if (b.st) w += threatOf(b.st)*22;
+        if (b.st) w += threatOf(b.st)*18;
 
         for (const st of blocks){
           const dd = Math.hypot(b.x-st.x, b.y-st.y);
           const rad = Math.max(st.w||20, st.h||20)*0.75 + 24;
-          if (dd < rad) w += threatOf(st) * (1 - dd/rad + 0.1) * 6.5;
+          if (dd < rad) w += threatOf(st) * (1 - dd/rad + 0.1) * 5.0;
         }
         if (Array.isArray(allies)){
           for (const al of allies){
             if (!al || al===obj || !al.alive) continue;
             const dd = Math.hypot(b.x-al.x, b.y-al.y);
-            if (dd < 56) w += (56-dd) * 0.35;
+            if (dd < 56) w += (56-dd) * 0.26;
           }
         }
 
@@ -6558,7 +6598,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
     f[startId]=Math.hypot(nodes[startId].x-nodes[goalId].x, nodes[startId].y-nodes[goalId].y);
 
     let found=false, guard=0;
-    while (open.length && guard<1200){
+    while (open.length && guard<900){
       guard++;
       let bestIdx=0;
       for (let i=1;i<open.length;i++) if (f[open[i]]<f[open[bestIdx]]) bestIdx=i;
@@ -6575,7 +6615,6 @@ function refreshDNAAfterFire(beforeP, beforeE){
     }
 
     if (!found){
-      // fallback: follow tangent-ish direction instead of smashing nearest wall
       steerTo(obj.x + (-dy0/d0)*28 + dx0*0.45, obj.y + (dx0/d0)*28 + dy0*0.45, 1.0);
       return;
     }
@@ -6584,6 +6623,8 @@ function refreshDNAAfterFire(beforeP, beforeE){
     for (let cur=goalId; cur!==-1; cur=prev[cur]) path.push(cur);
     path.reverse();
     const nextNode = nodes[path[Math.min(1, path.length-1)]] || nodes[goalId];
+    obj._pathNext = {x:nextNode.x, y:nextNode.y};
+    obj._pathRecalcCd = 0.12 + rand(0,0.08);
     steerTo(nextNode.x, nextNode.y, 1.0);
   }
 
@@ -7941,13 +7982,14 @@ SNIPER:{
       if (e.snCharge>0){
         e.snCharge += dt;
         // track aim slightly
-        e.snAimX = lerp(e.snAimX, Player.x, 1 - Math.exp(-8*dt));
-        e.snAimY = lerp(e.snAimY, Player.y, 1 - Math.exp(-8*dt));
+        const snT = UnitBattle.active ? (UnitBattle.findOpponent(e, e.x, e.y, 2200) || Player) : Player;
+        e.snAimX = lerp(e.snAimX, snT.x, 1 - Math.exp(-8*dt));
+        e.snAimY = lerp(e.snAimY, snT.y, 1 - Math.exp(-8*dt));
 
         if (e.snCharge >= 0.75){
           // fire
           const col = C.Y;
-          spawnBeam(e.x, e.y+10, e.snAimX, e.snAimY, 10, 0.22, 16 + d*1.5, col);
+          spawnBeam(e.x, e.y+10, e.snAimX, e.snAimY, 10, 0.22, 16 + d*1.5, col, {team:'E', ubTeam:e?.ubTeam, owner:e});
           sparks(e.x,e.y+10,'glowY', 18, 620);
           spawnShockwave(e.x,e.y+10,col, 240, 0.55);
           e.snCharge = 0;
@@ -7959,7 +8001,8 @@ SNIPER:{
       if (e.snCd>0) return;
       e.snCd = rand(2.8, 4.2)/Math.sqrt(d);
       e.snCharge = 0.001;
-      e.snAimX = Player.x; e.snAimY = Player.y;
+      const snT0 = UnitBattle.active ? (UnitBattle.findOpponent(e, e.x, e.y, 2200) || Player) : Player;
+      e.snAimX = snT0.x; e.snAimY = snT0.y;
     });
 
     wrapDraw(e,(draw)=>{
@@ -17493,8 +17536,9 @@ const UnitBattle = {
         const g=cv.getContext('2d');
         if (g){
           g.clearRect(0,0,64,64);
-          const seed=((u?.spec?.bodySeed)||1337) + i*131 + team.id*97;
+          const seed=((u?.spec?.bodySeed)||1337);
           const body=genEnemyBody(seed);
+          applyBodyOverrides(body, u?.spec?.bodyOpt || {});
           const fake={x:32,y:34,r:14,body,bodySeed:seed,tint:(u?.spec?.baseCol||C.E2),baseCol:(u?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
           drawEnemyGenericBody(g, fake, body, fake.baseCol, 14, 0.0, 0.0);
         }
@@ -17645,7 +17689,8 @@ const UnitBattle = {
       ctx.fillStyle = col;
       ctx.beginPath(); ctx.arc(g.x,g.y,g.r,0,Math.PI*2); ctx.fill();
       ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=1.2; ctx.stroke();
-      const body = genEnemyBody((g.forge?.spec?.bodySeed||1337) + g.idx*97);
+      const body = genEnemyBody((g.forge?.spec?.bodySeed||1337));
+      applyBodyOverrides(body, g.forge?.spec?.bodyOpt || {});
       const fake = {x:g.x,y:g.y,r:g.r*0.75,body,bodySeed:(g.forge?.spec?.bodySeed||1337),tint:(g.forge?.spec?.baseCol||C.E2),baseCol:(g.forge?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
       drawEnemyGeneric(fake);
       ctx.fillStyle = 'rgba(255,255,255,0.95)';
@@ -20893,8 +20938,9 @@ function openUbWinnerModal(){
     const g=cv.getContext('2d');
     if (g){
       g.clearRect(0,0,92,92);
-      const seed=((u?.spec?.bodySeed)||1337) + i*41;
+      const seed=((u?.spec?.bodySeed)||1337);
       const body=genEnemyBody(seed);
+      applyBodyOverrides(body, u?.spec?.bodyOpt || {});
       const fake={x:46,y:52,r:20,body,bodySeed:seed,tint:(u?.spec?.baseCol||C.E2),baseCol:(u?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
       drawEnemyGenericBody(g, fake, body, fake.baseCol, 20, 0.0, 0.0);
     }
