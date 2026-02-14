@@ -307,6 +307,19 @@ button:disabled{ opacity:0.5; cursor:not-allowed; filter:grayscale(1); }
 #fortressBuildScroller::-webkit-scrollbar-thumb{ background:rgba(82,230,255,0.35); border-radius:6px; }
 #fortressBuildScroller .mini-btn.on{ background:rgba(82,230,255,0.22); color:#fff; border-color:var(--c-cyan); }
 
+
+body.unit-battle-hud .bottom{
+  justify-content:center;
+}
+body.unit-battle-hud #hpPanel{
+  display:none !important;
+}
+body.unit-battle-hud #fortressPanel{
+  display:block;
+  width:min(680px, 96vw);
+  margin-bottom:0;
+}
+
 .ui-fab{
   appearance:none;
   position:fixed;
@@ -1351,7 +1364,7 @@ input[type="checkbox"] {
         </div>
       </div>
 
-      <div class="hud-panel">
+      <div class="hud-panel" id="hpPanel">
         
         <!-- HP Row -->
         <div class="bar-row">
@@ -2091,6 +2104,7 @@ input[type="checkbox"] {
     devBadge: $('devBadge'),
 
     fortressPanel: $('fortressPanel'),
+    hpPanel: $('hpPanel'),
     fortressPhase: $('fortressPhase'),
     fortressMat: $('fortressMat'),
     fortressCore: $('fortressCore'),
@@ -3150,7 +3164,9 @@ const addShake = (m, t=0.16) => {
     updatePanel(){
       if (!ui.fortressPanel) return;
       const on = (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Game.state==='playing';
-      ui.fortressPanel.style.display = (on && this.phase==='fortify') ? 'block' : 'none';
+      const ubHudOn = !!UnitBattle.active;
+      ui.fortressPanel.style.display = (on && (this.phase==='fortify' || ubHudOn)) ? 'block' : 'none';
+      if (ui.hpPanel) ui.hpPanel.style.display = (ubHudOn ? 'none' : 'block');
       if (!on) return;
       const phaseText = (Game.mode==='fortress_duel')
         ? (this.phase==='fortify' ? `对战准备 ${Math.ceil(this.duelTimer||0)}s` : `对战敌袭 ${Math.ceil(this.duelTimer||0)}s`)
@@ -14518,6 +14534,7 @@ BG_Effect.init();
     Player.overdriveT = Math.max(0, Player.overdriveT-dt);
     Player.slowT = Math.max(0, Player.slowT-dt);
     if (UnitBattle.active) Player.invuln = Math.max(Player.invuln||0, 999);
+    document.body.classList.toggle('unit-battle-hud', !!UnitBattle.active && Game.state==='playing');
     Player.invuln = Math.max(0, Player.invuln-dt);
     Player.shield = Math.max(0, Player.shield-dt);
     
@@ -17122,7 +17139,7 @@ function render(dt) {
   if (Game.state !== 'menu') {
     Multiplayer.drawPeers();
   }
-  if (Game.state !== 'menu' && (Player.alive || Player.deathT > 0)) {
+  if (!UnitBattle.active && Game.state !== 'menu' && (Player.alive || Player.deathT > 0)) {
     drawPlayer();
   }
   drawTexts();
