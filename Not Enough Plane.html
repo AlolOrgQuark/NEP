@@ -3397,6 +3397,7 @@ const addShake = (m, t=0.16) => {
       if (Game.mode!=='lab') this.stock -= cfg.cost;
       this.undoStack.push({type:'place', id, refund:cfg.cost});
       sparks(x,y,'glowP', 8, 180);
+      SFX.pickup?.();
       this.clearPreview();
       this.updatePanel();
       this.snapshotLabLayout();
@@ -6393,21 +6394,18 @@ function refreshDNAAfterFire(beforeP, beforeE){
   function resolveEnemyFortressCollision(obj, structures, prevX, prevY){
     if (!obj || !Array.isArray(structures) || !structures.length) return;
     const rr = (obj.r||10) + 1;
+    const targetX = obj.x, targetY = obj.y;
     let crossed = false;
     for (const fs of structures){
       if (!fs || fs.hp<=0 || fs.type==='mine') continue;
-      if (segmentIntersectsOrientedRect(prevX, prevY, obj.x, obj.y, fs, rr*0.28)) { crossed = true; break; }
+      if (segmentIntersectsOrientedRect(prevX, prevY, targetX, targetY, fs, rr*0.35)) { crossed = true; break; }
     }
 
-    let pushed = false;
-    for (let iter=0; iter<6; iter++){
+    for (let iter=0; iter<8; iter++){
       let hit = false;
       for (const fs of structures){
         if (!fs || fs.hp<=0 || fs.type==='mine') continue;
-        if (pushCircleOutRect(obj, fs)){
-          hit = true;
-          pushed = true;
-        }
+        if (pushCircleOutRect(obj, fs)) hit = true;
       }
       if (!hit) break;
     }
@@ -6419,9 +6417,26 @@ function refreshDNAAfterFire(beforeP, beforeE){
     }
 
     if (!overlapped && !crossed) return;
-    obj.x = prevX;
-    obj.y = prevY;
-    for (let iter=0; iter<3; iter++){
+
+    // Swept fallback: step from previous position toward target and stop at last safe point.
+    const dist = Math.hypot(targetX - prevX, targetY - prevY);
+    const steps = Math.max(10, Math.ceil(dist / Math.max(4, rr*0.25)));
+    let safeX = prevX, safeY = prevY;
+    for (let i=1;i<=steps;i++){
+      const t = i/steps;
+      const sx = prevX + (targetX - prevX)*t;
+      const sy = prevY + (targetY - prevY)*t;
+      let hit = false;
+      for (const fs of structures){
+        if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+        if (circleRectOverlap(sx, sy, rr, fs)){ hit = true; break; }
+      }
+      if (hit) break;
+      safeX = sx; safeY = sy;
+    }
+    obj.x = safeX; obj.y = safeY;
+
+    for (let iter=0; iter<6; iter++){
       let hit = false;
       for (const fs of structures){
         if (!fs || fs.hp<=0 || fs.type==='mine') continue;
@@ -6429,42 +6444,8 @@ function refreshDNAAfterFire(beforeP, beforeE){
       }
       if (!hit) break;
     }
-    if (Number.isFinite(obj.vx)) obj.vx *= 0.45;
-    if (Number.isFinite(obj.vy)) obj.vy *= 0.45;
-  }
-
-  function resolveEnemyFortressCollision(obj, structures, prevX, prevY){
-    if (!obj || !Array.isArray(structures) || !structures.length) return;
-    let pushed = false;
-    for (let iter=0; iter<4; iter++){
-      let hit = false;
-      for (const fs of structures){
-        if (!fs || fs.hp<=0 || fs.type==='mine') continue;
-        if (pushCircleOutRect(obj, fs)){
-          hit = true;
-          pushed = true;
-        }
-      }
-      if (!hit) break;
-    }
-    if (!pushed) return;
-
-    // 兜底：若仍有重叠，回退到上一帧位置后再推一次，避免穿墙
-    let overlapped = false;
-    for (const fs of structures){
-      if (!fs || fs.hp<=0 || fs.type==='mine') continue;
-      if (circleRectOverlap(obj.x, obj.y, obj.r||10, fs)){ overlapped = true; break; }
-    }
-    if (!overlapped) return;
-
-    obj.x = prevX;
-    obj.y = prevY;
-    for (const fs of structures){
-      if (!fs || fs.hp<=0 || fs.type==='mine') continue;
-      pushCircleOutRect(obj, fs);
-    }
-    if (Number.isFinite(obj.vx)) obj.vx *= 0.6;
-    if (Number.isFinite(obj.vy)) obj.vy *= 0.6;
+    if (Number.isFinite(obj.vx)) obj.vx *= 0.35;
+    if (Number.isFinite(obj.vy)) obj.vy *= 0.35;
   }
 
   // ================= Supplies =================
@@ -17207,11 +17188,12 @@ const UnitBattle = {
   ghosts:[],
   dragging:null,
   winner:null,
+  winnerTeam:null,
   _source:null,
   _bulletSource:null,
   assaultSnapshot:null,
   importTargetTeamId:null,
-  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; this._bulletSource=null; },
+  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; this.winnerTeam=null; this._bulletSource=null; },
   ensureDefaultTeam(){ if (!this.teams.length) this.addTeam(); },
   makeTeamName(id){ return `TEAM ${id}`; },
   addTeam(){
@@ -17378,18 +17360,22 @@ const UnitBattle = {
       e.noDrop = true; e.score = 0;
       const baseMove = e.move?.bind(e);
       e.move = (dt)=>{
-        if (baseMove) baseMove(dt*0.45);
-        const t = UnitBattle.findOpponent(e, e.x, e.y, 1400);
+        // Unit battle: target-driven major direction, base move only as tiny jitter modifier.
+        if (baseMove) baseMove(dt*0.08);
+        const t = UnitBattle.findOpponent(e, e.x, e.y, 1600);
         if (!t) return;
         const tx = (t.x ?? e.x), ty = (t.y ?? e.y);
         const dx = tx - e.x, dy = ty - e.y;
         const d = Math.hypot(dx,dy) || 1;
-        const sp = 90 + (e.r||14)*2.5;
-        e.x += (dx/d) * sp * dt;
-        e.y += (dy/d) * sp * dt;
+        const ux = dx/d, uy = dy/d;
+        const sp = 120 + (e.r||14)*2.8;
+        const sway = Math.sin((Game.time||0)*3.2 + (e.bodySeed||0)*0.01) * 18;
+        e.x += (ux*sp + (-uy)*sway) * dt;
+        e.y += (uy*sp + (ux)*sway) * dt;
       };
     }
     this.winner=null;
+    this.winnerTeam=null;
   },
   findOpponent(source, x,y,maxD=99999){
     if (!source || source.ubTeam==null) return Fortress.pickStrategicTarget(x,y,maxD) || null;
@@ -17412,7 +17398,7 @@ const UnitBattle = {
       if (score > bestStructScore){ bestStructScore = score; bestStruct = st; }
     }
 
-    if (!bestEnemy) return bestStruct || null;
+    if (!bestEnemy || bestEnemy.ubTeam===source.ubTeam) return bestStruct || null;
     if (!bestStruct) return bestEnemy;
 
     const enemyDist = Math.sqrt(bestD);
@@ -17423,22 +17409,35 @@ const UnitBattle = {
   checkWinner(){
     if (!this.active || Fortress.phase!=='assault') return;
     const alive = enemies.filter(e=>e.alive && e.ubTeam!=null);
+    if (!alive.length) return;
     const teams = new Set(alive.map(e=>e.ubTeam));
-    if (teams.size===1 && alive.length){
+    if (teams.size===1){
       const t=[...teams][0];
-      if (!this.winner){
+      if (!this.winnerTeam){
+        this.winnerTeam = t;
         this.winner = alive[0]._ubSpec || null;
         textPop(W*0.5, H*0.18, `TEAM ${t} WIN`, C.G);
       }
     }
   },
   exportWinner(){
-    if (!this.winner) return alert('暂无胜者');
-    const txt = JSON.stringify({type:'forge', forge:this.winner}, null, 2);
+    if (!this.winnerTeam) return alert('暂无胜者');
+    const cands = enemies.filter(e=>e.alive && e.ubTeam===this.winnerTeam && e._ubSpec).map(e=>e._ubSpec);
+    const pool = cands.length ? cands : (this.teams.find(t=>t.id===this.winnerTeam)?.units || []);
+    if (!pool.length) return alert('胜者队伍没有可导出的兵种');
+    let pick = 0;
+    if (pool.length>1){
+      const msg = pool.map((u,i)=>`${i+1}. ${(u?.spec?.moveKey||'MIX')}  HP:${u?.hp||0}`).join('\n');
+      const v = prompt(`TEAM ${this.winnerTeam} 获胜。请输入导出兵种序号\n${msg}`, '1');
+      const idx = Math.max(1, Math.min(pool.length, parseInt(v||'1',10)||1));
+      pick = idx-1;
+    }
+    const chosen = pool[pick] || pool[0];
+    const txt = JSON.stringify({type:'forge', forge:chosen}, null, 2);
     const io = document.getElementById('ioText');
     if (io) io.value = txt;
     try{ navigator.clipboard.writeText(txt); }catch(_){ }
-    textPop(W*0.5, H*0.2, '胜者已导出到 I/O', C.P2);
+    textPop(W*0.5, H*0.2, `已导出 TEAM ${this.winnerTeam} #${pick+1}`, C.P2);
   },
   drawGhosts(){
     if (!this.active || Fortress.phase!=='fortify') return;
