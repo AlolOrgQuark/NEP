@@ -3282,9 +3282,10 @@ const addShake = (m, t=0.16) => {
     async importLabLayout(){
       const mode = Game.mode;
       if (mode!=='lab' && mode!=='fortress' && mode!=='fortress_duel') return false;
-      let txt='';
-      try{ txt=await navigator.clipboard.readText(); }catch(_){ }
-      if (!txt){ txt = await showLargeTextPrompt({title:'导入阵型', label:'LAYOUT JSON', placeholder:'粘贴完整阵型 JSON（不限长度）'}); if (!txt) return false; }
+      let clip='';
+      try{ clip=await navigator.clipboard.readText(); }catch(_){ }
+      const txt = await showLargeTextPrompt({title:'导入阵型', label:'LAYOUT JSON', placeholder:'粘贴完整阵型 JSON（不限长度）', defaultValue:(clip||'')});
+      if (!txt) return false;
       try{
         const obj = JSON.parse(txt);
         const layout = Array.isArray(obj) ? obj : obj.layout;
@@ -3459,12 +3460,18 @@ const addShake = (m, t=0.16) => {
     },
     pickStructure(screenX, screenY){
       const pt = this.toWorld(screenX, screenY);
+      const pad = 10;
+      let best = -1;
+      let bestD2 = Infinity;
       for (let i=this.structures.length-1;i>=0;i--){
         const s = this.structures[i];
-        const hw=s.w*0.5, hh=s.h*0.5;
-        if (pt.x>=s.x-hw && pt.x<=s.x+hw && pt.y>=s.y-hh && pt.y<=s.y+hh) return i;
+        if (!s || (s.hp||0)<=0) continue;
+        if (circleRectOverlap(pt.x, pt.y, pad, s)) return i;
+        const d2 = dist2(pt.x, pt.y, s.x, s.y);
+        const reach = (Math.max(s.w||20, s.h||20)*0.62 + pad);
+        if (d2 <= reach*reach && d2 < bestD2){ best=i; bestD2=d2; }
       }
-      return -1;
+      return best;
     },
     findTauntTarget(x,y,maxD=99999){
       let best=null, bestD=maxD*maxD;
@@ -20595,7 +20602,7 @@ function bindAccordionsAnimated(rootSel='#pageWorkshop, #pageForge'){
 document.querySelectorAll('#fortressBuildScroller [data-item]').forEach((el)=>{
   el.addEventListener('click', ()=>Fortress.select(el.dataset.item));
 });
-ui.btnFortSell?.addEventListener('click', ()=>Fortress.select(Fortress.sellMode ? Fortress.selected : 'sell'));
+ui.btnFortSell?.addEventListener('click', ()=>Fortress.select('sell'));
 ui.btnFortUndo?.addEventListener('click', ()=>Fortress.undo());
 ui.btnFortStartWave?.addEventListener('click', ()=>Fortress.beginAssault());
 ui.btnFortRepairFlag?.addEventListener('click', ()=>Fortress.repairFlag(6, 180));
