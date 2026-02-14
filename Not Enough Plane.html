@@ -547,6 +547,46 @@ body.unit-battle-hud #fortressPanel{
   font-size:11px;
 }
 
+
+/* global style variants (click menu title to cycle) */
+body.ui-style-arcade{
+  --font-main: "Consolas", monospace;
+}
+body.ui-style-arcade #menu .menu-shell,
+body.ui-style-arcade .menu-card,
+body.ui-style-arcade .hud-panel,
+body.ui-style-arcade .stat-pill{
+  border-radius:2px !important;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.12), 0 0 20px rgba(255,92,193,0.18) inset;
+}
+body.ui-style-arcade #menu .brand .title{
+  text-shadow:0 0 8px rgba(255,60,160,0.55), 0 0 18px rgba(82,230,255,0.28);
+  letter-spacing:3px;
+}
+
+body.ui-style-minimal #menu .menu-shell,
+body.ui-style-minimal .menu-card,
+body.ui-style-minimal .hud-panel,
+body.ui-style-minimal .stat-pill,
+body.ui-style-minimal .mini-btn{
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+  text-shadow:none !important;
+}
+body.ui-style-minimal #menu .menu-shell{
+  background:rgba(6,10,18,0.95);
+}
+body.ui-style-minimal #menu .brand .title{
+  font-style:normal;
+  letter-spacing:2px;
+}
+body.ui-style-minimal .mini-btn,
+body.ui-style-minimal .nav-btn{
+  border-color:rgba(255,255,255,0.28) !important;
+}
+
 #menu .menu-nav{
   display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;
 }
@@ -7265,27 +7305,26 @@ STYLE_WARNING_STRIPES:{
 
           const r2 = e._magRadius * e._magRadius;
           
-          // 遍历所有玩家子弹
-          for (const b of bulletsP) {
-            if (!b.alive || b._phaseGhost) continue; // 忽略隐形/死亡子弹
-
+          const pullOne = (b)=>{
+            if (!b?.alive || b._phaseGhost) return;
             const dx = e.x - b.x;
             const dy = e.y - b.y;
             const distSq = dx*dx + dy*dy;
+            if (distSq >= r2) return;
+            const dist = Math.max(1e-4, Math.sqrt(distSq));
+            const force = e._magForce * (1 + (1 - dist/e._magRadius));
+            b.vx += (dx / dist) * force * dt;
+            b.vy += (dy / dist) * force * dt;
+          };
 
-            // 如果子弹进入引力范围
-            if (distSq < r2) {
-              const dist = Math.sqrt(distSq);
-              // 计算引力向量 (指向敌人中心)
-              // 距离越近，引力越强 (非线性增强)
-              const force = e._magForce * (1 + (1 - dist/e._magRadius)); 
-              
-              // 修改子弹速度向量
-              b.vx += (dx / dist) * force * dt;
-              b.vy += (dy / dist) * force * dt;
-              
-              // [可选] 稍微偏转子弹角度使其指向敌人（让追踪看起来更自然）
-              // b.vx *= 0.98; b.vy *= 0.98; // 增加一点阻力防止弹射过快
+          // 常规：吸引玩家子弹
+          for (const b of bulletsP) pullOne(b);
+
+          // UnitBattle：额外吸引“其他队伍”的敌方子弹
+          if (UnitBattle.active && e.ubTeam!=null){
+            for (const b of bulletsE){
+              if (b?.ubTeam==null || b.ubTeam===e.ubTeam) continue;
+              pullOne(b);
             }
           }
         });
@@ -17551,7 +17590,7 @@ const UnitBattle = {
         for (let j=0;j<unitN;j++){
           randomizeForgeState();
           const u = deepClone(readForgeSpecFromUI());
-          if (u) t.units.push(u);
+          if (u){ u.isBoss = false; t.units.push(u); }
         }
       }
     } finally {
@@ -21115,6 +21154,30 @@ toMenu();
 canvas.style.pointerEvents = 'auto';
 mountOverlaysToBody();
 requestAnimationFrame(step);
+
+(function bindMenuTitleStyleCycler(){
+  const key = 'NEP_UI_STYLE';
+  const cls = ['ui-style-neon','ui-style-arcade','ui-style-minimal'];
+  const title = document.querySelector('#menu .brand .title');
+  if (!title) return;
+
+  const apply = (name)=>{
+    for (const c of cls) document.body.classList.remove(c);
+    document.body.classList.add(name);
+    try{ localStorage.setItem(key, name); }catch(_){ }
+  };
+
+  const saved = (localStorage.getItem(key) || '').trim();
+  apply(cls.includes(saved) ? saved : 'ui-style-neon');
+  title.title = '点击切换 UI 风格';
+  title.style.cursor = 'pointer';
+  title.addEventListener('click', ()=>{
+    const cur = cls.findIndex(c=>document.body.classList.contains(c));
+    const next = cls[(cur+1+cls.length)%cls.length];
+    apply(next);
+    textPop(W*0.5, H*0.12, `UI STYLE: ${next.replace('ui-style-','').toUpperCase()}`, C.P2);
+  });
+})();
 
 (function bindGlobalUIButtonSfx(){
   let lastAt = 0;
