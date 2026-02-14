@@ -827,10 +827,11 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 }
 
 /* Unit battle modal */
-#unitBattleModal{ position:fixed; inset:0; z-index:26000; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.65); opacity:0; transition:opacity .22s ease; }
-#unitBattleModal.show{ display:flex; opacity:1; }
+#unitBattleModal{ position:fixed; inset:0; z-index:26000; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.65); opacity:0; pointer-events:none; transition:opacity .22s ease; }
+#unitBattleModal.show{ display:flex; }
+#unitBattleModal.visible{ opacity:1; pointer-events:auto; }
 #unitBattleModal .ub-modal-card{ width:min(780px,94vw); max-height:min(86vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.92), rgba(24,8,40,.9)); border:1px solid rgba(130,229,255,.42); box-shadow:0 18px 50px rgba(0,0,0,.55); padding:14px; border-radius:12px; transform:translateY(18px) scale(.96); opacity:0; transition:transform .26s cubic-bezier(.2,.9,.2,1), opacity .26s ease; }
-#unitBattleModal.show .ub-modal-card{ transform:translateY(0) scale(1); opacity:1; }
+#unitBattleModal.visible .ub-modal-card{ transform:translateY(0) scale(1); opacity:1; }
 #unitBattleModal textarea{ min-height:180px; }
 .ub-unit-card{ width:80px; border:1px solid rgba(157,238,255,.35); border-radius:10px; padding:4px; background:rgba(0,0,0,.24); display:flex; flex-direction:column; gap:4px; align-items:center; }
 .ub-unit-icon{ width:64px; height:64px; border:1px solid rgba(157,238,255,.3); background:radial-gradient(circle at 50% 50%, rgba(157,238,255,.12), rgba(0,0,0,.2)); }
@@ -3043,6 +3044,7 @@ const addShake = (m, t=0.16) => {
       this.squadRoles.clear();
       this.squadIntelCd=0;
       this.autoAssaultStall=0;
+      this.placeRot = 0;
     },
     start(){
       this.reset();
@@ -3098,7 +3100,10 @@ const addShake = (m, t=0.16) => {
     },
     select(item){
       this.sellMode = (item==='sell');
-      if (!this.sellMode) this.selected = item;
+      if (!this.sellMode){
+        if (this.selected===item) this.placeRot = (((this.placeRot||0) + Math.PI/4) % (Math.PI*2));
+        this.selected = item;
+      }
       this.clearPreview();
       this.syncSelectionUI();
     },
@@ -3316,7 +3321,7 @@ const addShake = (m, t=0.16) => {
       const cfg = this.catalog[this.selected];
       if (!cfg || this.stock < cfg.cost) return false;
       const p = this.resolvePlacementPoint(screenX, screenY);
-      this.preview = {x:p.x, y:p.y, item:this.selected};
+      this.preview = {x:p.x, y:p.y, item:this.selected, rot:(this.placeRot||0)};
       this.previewPointerId = pointerId;
       return true;
     },
@@ -3330,7 +3335,7 @@ const addShake = (m, t=0.16) => {
       const x = p.x;
       const y = p.y;
       const id = this.sid++;
-      const st = {id,x,y,w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,cd:cfg.cd||0,cost:cfg.cost,_builtAt:Game.time||0,_builtWave:Game.wave||1};
+      const st = {id,x,y,w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,rot:(this.placeRot||0),cd:cfg.cd||0,cost:cfg.cost,_builtAt:Game.time||0,_builtWave:Game.wave||1};
       this.getBehavior(st.type)?.onCreate?.(st, {fortress:this});
       this.structures.push(st);
       if (Game.mode!=='lab') this.stock -= cfg.cost;
@@ -4110,8 +4115,8 @@ function recoverLocalControl(){
     }
   }
 
-  canvas.addEventListener('pointerup',     (e) => endPointer(e), {passive: true});
-  canvas.addEventListener('pointercancel', (e) => endPointer(e), {passive: true});
+  canvas.addEventListener('pointerup',     (e) => endPointer(e), {passive: false});
+  canvas.addEventListener('pointercancel', (e) => endPointer(e), {passive: false});
   canvas.addEventListener('dblclick', (e)=>{ DevEditor.handleCanvasDoubleClick(e); }, {passive:false});
 
   document.addEventListener('touchmove', (e) => {
@@ -6453,7 +6458,7 @@ COMPOSITE:{ spr:'glowY', col:C.Y, name:'COMP', apply(){
         // 补丁：强制离场逻辑
         // 记录存活时间，如果超过 14 秒，强制向下加速漂移
         this.age = (this.age || 0) + dt;
-        if (this.age > 14) {
+        if (!UnitBattle.active && this.age > 14) {
           // 随时间越来越快的向下推力，无视原本的移动逻辑强制推走
           this.y += (this.age - 14) * 60 * dt;
         }
@@ -15917,7 +15922,7 @@ Game.bossAlive = frame.game.bossAlive;
             e.age = 0; _superUpdate(dt);
             const zoom = (typeof Camera !== 'undefined' && Camera.zoom) ? Camera.zoom : 1.0;
             const limitY = (H / zoom) + 150;
-            if (e.y > limitY) {
+            if (!UnitBattle.active && e.y > limitY) {
               e.y = -150; e.x = clamp(e.x + rand(-100, 100), 50, W - 50);
             }
           };
@@ -16202,11 +16207,15 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
       const hpPct = clamp(fs.hp / Math.max(1, fs.maxHp), 0, 1);
       const itemCfg = Fortress.catalog[fs.type] || null;
       const itemCol = itemCfg?.col || '#d0f5ff';
+      ctx.save();
+      ctx.translate(fs.x, fs.y);
+      if (fs.rot) ctx.rotate(fs.rot);
       ctx.fillStyle = 'rgba(0,0,0,0.62)';
-      ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w, fs.h);
+      ctx.fillRect(-fs.w*0.5, -fs.h*0.5, fs.w, fs.h);
       ctx.strokeStyle = itemCol;
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5, fs.w, fs.h);
+      ctx.strokeRect(-fs.w*0.5, -fs.h*0.5, fs.w, fs.h);
+      ctx.restore();
       ctx.fillStyle = 'rgba(255,255,255,0.20)';
       ctx.globalAlpha = 0.98;
       ctx.fillRect(fs.x-fs.w*0.5, fs.y-fs.h*0.5-6, fs.w, 4);
@@ -16260,17 +16269,22 @@ ctx.fillRect(-100,-100,gw2+200,gh2+200);
       if (cfg){
         const afford = Fortress.stock >= cfg.cost;
         const px = Fortress.preview.x, py = Fortress.preview.y;
+        const rot = Fortress.preview.rot || 0;
+        ctx.save();
+        ctx.translate(px, py);
+        if (rot) ctx.rotate(rot);
         ctx.globalAlpha = 0.26;
         ctx.fillStyle = afford ? 'rgba(126,249,192,0.92)' : 'rgba(255,94,122,0.92)';
-        ctx.fillRect(px-cfg.w*0.5, py-cfg.h*0.5, cfg.w, cfg.h);
+        ctx.fillRect(-cfg.w*0.5, -cfg.h*0.5, cfg.w, cfg.h);
         ctx.globalAlpha = 0.92;
         ctx.strokeStyle = afford ? 'rgba(190,255,236,0.95)' : 'rgba(255,168,188,0.95)';
         ctx.lineWidth = 1.5;
-        ctx.strokeRect(px-cfg.w*0.5, py-cfg.h*0.5, cfg.w, cfg.h);
+        ctx.strokeRect(-cfg.w*0.5, -cfg.h*0.5, cfg.w, cfg.h);
         ctx.globalAlpha = 0.65;
         ctx.setLineDash([5,4]);
-        ctx.strokeRect(px-cfg.w*0.5-2, py-cfg.h*0.5-2, cfg.w+4, cfg.h+4);
+        ctx.strokeRect(-cfg.w*0.5-2, -cfg.h*0.5-2, cfg.w+4, cfg.h+4);
         ctx.setLineDash([]);
+        ctx.restore();
       }
     }
     ctx.restore();
@@ -17112,6 +17126,18 @@ const UnitBattle = {
       e.ubTeam = g.team;
       e._ubSpec = JSON.parse(JSON.stringify(g.forge));
       e.noDrop = true; e.score = 0;
+      const baseMove = e.move?.bind(e);
+      e.move = (dt)=>{
+        if (baseMove) baseMove(dt*0.45);
+        const t = UnitBattle.findOpponent(e, e.x, e.y, 1400);
+        if (!t) return;
+        const tx = (t.x ?? e.x), ty = (t.y ?? e.y);
+        const dx = tx - e.x, dy = ty - e.y;
+        const d = Math.hypot(dx,dy) || 1;
+        const sp = 90 + (e.r||14)*2.5;
+        e.x += (dx/d) * sp * dt;
+        e.y += (dy/d) * sp * dt;
+      };
     }
     this.winner=null;
   },
@@ -17181,6 +17207,7 @@ const UnitBattle = {
 };
 
 function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild=null, keepLabLayout=false} = {}){
+  const reqMode = mode;
   if (mode==='unitbattle'){
     UnitBattle.active = true;
     UnitBattle.setupGhosts();
@@ -17195,8 +17222,8 @@ function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild
   resetGame();
   recoverLocalControl();
   Game.lastStart = { 
-    mode, 
-    wave, 
+    mode:reqMode,
+    wave,
     forge: forge ? JSON.parse(JSON.stringify(forge)) : null,
     net,
   };
@@ -17212,7 +17239,7 @@ function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild
   Camera.zoom = 1.0;
   Camera.targetZoom = 1.0;
   Game.mode = mode;
-  Game.lastStart = {mode, wave, forge: forge ? JSON.parse(JSON.stringify(forge)) : null, net};
+  Game.lastStart = {mode:reqMode, wave, forge: forge ? JSON.parse(JSON.stringify(forge)) : null, net};
   if (!net) Multiplayer.clearRemoteTransientState?.();
   
   const b = clampBuild(deepClone(Builds.A));
@@ -19933,7 +19960,9 @@ document.getElementById('btnStartLab')?.addEventListener('click', ()=>{
 });
 document.getElementById('btnStartUnitBattle')?.addEventListener('click', ()=>{
   const m = document.getElementById('unitBattleModal');
-  if (m) m.classList.add('show');
+  if (!m) return;
+  m.classList.add('show');
+  requestAnimationFrame(()=>m.classList.add('visible'));
 });
 
 ui.btnRestart?.addEventListener('click', () => {
@@ -19951,7 +19980,7 @@ ui.btnRestart?.addEventListener('click', () => {
   }
 
   // Lab 模式的特殊处理 (保持不变)
-  if (last.mode === 'lab') {
+  if (last.mode === 'lab' || last.mode === 'unitbattle') {
     if (ForgeState._isRandom && typeof randomizeForgeState === 'function') {
       randomizeForgeState(); 
     }
@@ -19964,7 +19993,7 @@ ui.btnRestart?.addEventListener('click', () => {
   const supportsWarp = (last.mode === 'survival' || last.mode === 'challenge' || last.mode === 'fortress');
 
   startRun({
-    keepLabLayout: (last.mode==='lab'),
+    keepLabLayout: (last.mode==='lab' || last.mode==='unitbattle'),
     mode: last.mode || 'survival',
     // 如果支持跳关，就读取死亡界面的 ui.inpWave 输入框。
     // 否则（比如 Duel 模式），就回到该模式的起始波次 1。
@@ -20329,11 +20358,17 @@ document.getElementById('btnUbImport')?.addEventListener('click', ()=>{
 });
 document.getElementById('btnUbClear')?.addEventListener('click', ()=>{ UnitBattle.units.length=0; UnitBattle.refreshList(); });
 document.getElementById('btnUbExportWinner')?.addEventListener('click', ()=>UnitBattle.exportWinner());
-document.getElementById('btnUbClose')?.addEventListener('click', ()=>document.getElementById('unitBattleModal')?.classList.remove('show'));
-document.getElementById('unitBattleModal')?.addEventListener('click', (e)=>{ if (e.target?.id==='unitBattleModal') e.currentTarget.classList.remove('show'); });
+function closeUnitBattleModal(){
+  const m = document.getElementById('unitBattleModal');
+  if (!m) return;
+  m.classList.remove('visible');
+  setTimeout(()=>m.classList.remove('show'), 240);
+}
+document.getElementById('btnUbClose')?.addEventListener('click', closeUnitBattleModal);
+document.getElementById('unitBattleModal')?.addEventListener('click', (e)=>{ if (e.target?.id==='unitBattleModal') closeUnitBattleModal(); });
 document.getElementById('btnUbStart')?.addEventListener('click', ()=>{
   if (!UnitBattle.units.length){ alert('请先导入至少一个兵种 JSON'); return; }
-  document.getElementById('unitBattleModal')?.classList.remove('show');
+  closeUnitBattleModal();
   startRun({mode:'unitbattle', wave:1});
 });
 UnitBattle.refreshList();
