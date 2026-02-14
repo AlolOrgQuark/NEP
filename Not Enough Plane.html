@@ -870,6 +870,7 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   margin-top:10px;
 }
 .menu-actions button{ flex:1; min-width:190px; }
+#unitBattleModal .menu-actions button{ flex:0 0 auto; min-width:0; }
 
 /* hide workshop SAVE */
 #btnSaveBuilds{ display:none !important; }
@@ -1840,6 +1841,8 @@ input[type="checkbox"] {
     <div class="muted" style="font-size:10px">先创建队伍，再给每个队伍添加兵种。队伍纵向堆叠，队伍内兵种横向滚动。进入战斗后先布置堡垒，再拖动半透明体调整刷怪点。</div>
     <div class="menu-actions" style="margin-top:8px;justify-content:flex-start;gap:8px">
       <button id="btnUbAddTeam" class="mini-btn" style="border-color:#9deeff;color:#9deeff">新增队伍</button>
+      <button id="btnUbExportAll" class="mini-btn" style="border-color:#b8a6ff;color:#b8a6ff">导出全部队伍</button>
+      <button id="btnUbImportAll" class="mini-btn" style="border-color:#9dffad;color:#9dffad">导入全部队伍</button>
       <button id="btnUbClear" class="mini-btn" style="border-color:#ff9b72;color:#ff9b72">清空队伍</button>
       <button id="btnUbStart" class="mini-btn" style="border-color:#7ef9c0;color:#7ef9c0">开始兵种对战</button>
       <button id="btnUbExportWinner" class="mini-btn" style="border-color:#ffd28a;color:#ffd28a">导出胜者</button>
@@ -6323,7 +6326,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
 
 
   function tryHitUnitBattleOpponentByBullet(b){
-    if (!UnitBattle.active || !b?.alive || b.team!=='E' || b.ubTeam==null || b.noHitT>0 || b._phaseGhost) return false;
+    if (!UnitBattle.active || !b?.alive || b.team!=='E' || b.ubTeam==null || b.noHitT>0) return false;
     let target = null;
     let bestD2 = Infinity;
     for (const e of enemies){
@@ -6334,7 +6337,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
       if (d2 < bestD2){ bestD2=d2; target=e; }
     }
     if (!target) return false;
-    if (b.mods.length){
+    if (Array.isArray(b.mods) && b.mods.length){
       for (const k of b.mods) BulletAffixCatalog[k]?.onHit?.(b, target, null);
     }
     target.onHit?.(b.dmg||0);
@@ -6469,101 +6472,88 @@ function refreshDNAAfterFire(beforeP, beforeE){
   function applyEnemyPathSteer(obj, target, structures, dt, allies=[]){
     if (!obj || !target || !Number.isFinite(obj.x) || !Number.isFinite(obj.y)) return;
     const tx = target.x ?? obj.x, ty = target.y ?? obj.y;
-    const minX = 24, maxX = W-24, minY = 24, maxY = H-24;
-    const cell = 34;
+    const dx0 = tx - obj.x, dy0 = ty - obj.y;
+    const d0 = Math.hypot(dx0,dy0) || 1;
+
+    const steerDirect = (spMul=1)=>{
+      const sp = (62 + (obj.r||12)*1.55) * spMul;
+      obj.x += (dx0/d0) * sp * dt;
+      obj.y += (dy0/d0) * sp * dt;
+    };
+
+    const blocks = Array.isArray(structures)
+      ? structures.filter(st=>st && st.hp>0 && st.type!=='mine')
+      : [];
+    if (!blocks.length){ steerDirect(1.06); return; }
+
+    const pad = (obj.r||12) + 3;
+    const isLineBlocked = (x1,y1,x2,y2)=>{
+      for (const st of blocks){
+        if (segmentIntersectsOrientedRect(x1,y1,x2,y2,st,pad)) return true;
+      }
+      return false;
+    };
+
+    if (!isLineBlocked(obj.x,obj.y,tx,ty)){
+      steerDirect(1.12);
+      return;
+    }
 
     const threatOf = (st)=>({
       turret:7.5,gatling:8.0,sniper:7.0,missile:8.2,tesla:8.6,flame:7.2,mortar:7.8,dronepad:6.8,pulse:6.6,
-      wall:2.2,heavywall:2.8,bunker:3.5,shield:3.0,barricade:1.8,taunt:2.4
-    }[st?.type] || 2.0);
+      wall:2.0,heavywall:2.5,bunker:3.1,shield:2.8,barricade:1.5,taunt:2.1
+    }[st?.type] || 1.8);
 
-    const key=(ix,iy)=>`${ix},${iy}`;
-    const toCell=(x,y)=>({ix:Math.round((x-minX)/cell), iy:Math.round((y-minY)/cell)});
-    const toPos=(ix,iy)=>({x:minX + ix*cell, y:minY + iy*cell});
-    const s = toCell(obj.x,obj.y), g = toCell(tx,ty);
+    const makeBypassPts = (st)=>{
+      const hw = (st.w||20)*0.5 + pad + 8;
+      const hh = (st.h||20)*0.5 + pad + 8;
+      const c = Math.cos(st.rot||0), sn = Math.sin(st.rot||0);
+      const local = [[ hw, hh],[ hw,-hh],[-hw, hh],[-hw,-hh],[ hw,0],[-hw,0],[0,hh],[0,-hh]];
+      return local.map(([lx,ly])=>({x:st.x + lx*c - ly*sn, y:st.y + lx*sn + ly*c, st}));
+    };
 
-    const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-    const open=[{ix:s.ix,iy:s.iy,g:0,f:0}];
-    const best=new Map([[key(s.ix,s.iy),0]]);
-    const parent=new Map();
-    const reserved = Fortress._pathReserve || new Map();
-    Fortress._pathReserve = reserved;
+    let best = null;
+    const blockers = blocks.filter(st=>segmentIntersectsOrientedRect(obj.x,obj.y,tx,ty,st,pad));
+    for (const st of blockers){
+      for (const p of makeBypassPts(st)){
+        if (p.x<24 || p.x>W-24 || p.y<24 || p.y>H-24) continue;
+        if (isLineBlocked(obj.x,obj.y,p.x,p.y)) continue;
+        const toGoalBlocked = isLineBlocked(p.x,p.y,tx,ty);
+        const baseCost = Math.hypot(p.x-obj.x, p.y-obj.y) + Math.hypot(tx-p.x, ty-p.y);
+        let cost = baseCost + threatOf(st)*34 + (toGoalBlocked?90:0);
 
-    const h=(ix,iy)=>Math.hypot(ix-g.ix, iy-g.iy);
-    open[0].f = h(s.ix,s.iy);
-
-    const maxExpand = 240;
-    let endNode = null;
-    for (let expand=0; open.length && expand<maxExpand; expand++){
-      open.sort((a,b)=>a.f-b.f);
-      const cur=open.shift();
-      if (!cur) break;
-      if (Math.abs(cur.ix-g.ix)<=1 && Math.abs(cur.iy-g.iy)<=1){ endNode = cur; break; }
-
-      for (const [dx,dy] of dirs){
-        const nx=cur.ix+dx, ny=cur.iy+dy;
-        const p=toPos(nx,ny);
-        if (p.x<minX || p.x>maxX || p.y<minY || p.y>maxY) continue;
-
-        let step = Math.hypot(dx,dy);
-        if (Array.isArray(structures)){
-          for (const st of structures){
-            if (!st || st.hp<=0 || st.type==='mine') continue;
-            const dd = Math.hypot(p.x-st.x, p.y-st.y);
-            const rad = (Math.max(st.w||20, st.h||20)*0.9) + 24;
-            if (dd < rad){
-              const hpPct = clamp((st.hp||1)/Math.max(1, st.maxHp||1), 0, 1);
-              step += threatOf(st) * (1.25 - hpPct*0.6) * (1 - dd/rad + 0.2);
-            }
-            if (circleRectOverlap(p.x,p.y,(obj.r||12)+1,st)) step += 26 + (st.hp||20)*0.02;
-          }
+        for (const s2 of blocks){
+          const dd = Math.hypot(p.x-s2.x, p.y-s2.y);
+          const rad = Math.max(s2.w||20, s2.h||20)*0.75 + 22;
+          if (dd < rad) cost += threatOf(s2) * (1 - dd/rad + 0.12) * 9;
         }
         if (Array.isArray(allies)){
           for (const a of allies){
             if (!a || a===obj || !a.alive) continue;
             const dd = Math.hypot(p.x-a.x, p.y-a.y);
-            if (dd < 42) step += (42-dd)*0.12;
+            if (dd < 48) cost += (48-dd) * 0.9;
           }
         }
-
-        const rk = key(nx,ny);
-        step += (reserved.get(rk)||0) * 0.85;
-        const ng = cur.g + step;
-        if (ng >= (best.get(rk) ?? Infinity)) continue;
-        best.set(rk, ng);
-        parent.set(rk, key(cur.ix,cur.iy));
-        open.push({ix:nx,iy:ny,g:ng,f:ng + h(nx,ny)});
+        if (!best || cost < best.cost) best = {x:p.x, y:p.y, cost};
       }
     }
 
-    if (!endNode){
-      const dx = tx-obj.x, dy = ty-obj.y;
+    if (!best){
+      const tx2 = tx + (-dy0/d0) * 36;
+      const ty2 = ty + (dx0/d0) * 36;
+      const dx = tx2-obj.x, dy = ty2-obj.y;
       const d = Math.hypot(dx,dy) || 1;
-      obj.x += (dx/d) * (44 + (obj.r||12)) * dt;
-      obj.y += (dy/d) * (44 + (obj.r||12)) * dt;
+      const sp = 52 + (obj.r||12)*1.25;
+      obj.x += (dx/d) * sp * dt;
+      obj.y += (dy/d) * sp * dt;
       return;
     }
 
-    let curK = key(endNode.ix,endNode.iy);
-    const path=[];
-    while (curK){
-      const [ix,iy]=curK.split(',').map(Number);
-      path.push({ix,iy});
-      curK = parent.get(curK) || null;
-    }
-    path.reverse();
-    const next = path[Math.min(2, path.length-1)] || path[path.length-1] || s;
-    const np = toPos(next.ix,next.iy);
-    const dx = np.x - obj.x, dy = np.y - obj.y;
+    const dx = best.x-obj.x, dy = best.y-obj.y;
     const d = Math.hypot(dx,dy) || 1;
-    const sp = 58 + (obj.r||12)*1.5;
+    const sp = 59 + (obj.r||12)*1.45;
     obj.x += (dx/d) * sp * dt;
     obj.y += (dy/d) * sp * dt;
-
-    for (let i=1;i<Math.min(path.length,4);i++){
-      const k = key(path[i].ix, path[i].iy);
-      reserved.set(k, (reserved.get(k)||0) + 1);
-    }
   }
 
 
@@ -17380,6 +17370,31 @@ const UnitBattle = {
     t.units.push(JSON.parse(JSON.stringify(forge)));
     this.refreshList();
   },
+  serializeTeams(){
+    return {version:1, type:'unitbattle_teams', teams:deepClone(this.teams||[])};
+  },
+  applyTeamsPayload(raw){
+    const obj = (typeof raw==='string') ? JSON.parse(raw||'{}') : (raw||{});
+    const teams = Array.isArray(obj) ? obj : (Array.isArray(obj.teams) ? obj.teams : null);
+    if (!teams) throw new Error('不是队伍数据：缺少 teams');
+    const next=[];
+    let maxId = 0;
+    teams.forEach((t,i)=>{
+      const id = Math.max(1, (+t?.id||0) || (i+1));
+      maxId = Math.max(maxId, id);
+      const units = Array.isArray(t?.units) ? t.units : [];
+      const cleanUnits=[];
+      for (const u of units){
+        try{ cleanUnits.push(this.parseUnitJSON(JSON.stringify(u))); }catch(_){ }
+      }
+      next.push({id, name:(t?.name||this.makeTeamName(id)), units:cleanUnits});
+    });
+    this.teams = next;
+    if (!this.teams.length){
+      this.teams.push({id:maxId+1||1, name:this.makeTeamName(maxId+1||1), units:[]});
+    }
+    this.refreshList();
+  },
   removeTeam(teamId){
     const i = this.teams.findIndex(t=>t.id===teamId);
     if (i>=0) this.teams.splice(i,1);
@@ -20773,16 +20788,36 @@ document.getElementById('btnUbImportConfirm')?.addEventListener('click', ()=>{
 document.getElementById('btnUbImportCancel')?.addEventListener('click', closeUbImportModal);
 document.getElementById('btnUbAddTeam')?.addEventListener('click', ()=>{ const id=UnitBattle.addTeam(); openUbImportModal(id); });
 document.getElementById('btnUbClear')?.addEventListener('click', ()=>{ UnitBattle.clearAll(); });
+document.getElementById('btnUbExportAll')?.addEventListener('click', async ()=>{
+  const payload = JSON.stringify(UnitBattle.serializeTeams(), null, 2);
+  const io = document.getElementById('ioText');
+  if (io) io.value = payload;
+  const ok = await copyToClipboardRobust(payload);
+  textPop(W*0.5,H*0.2, ok ? '全部队伍已复制' : '已导出到 I/O（手动复制）', ok ? C.P2 : C.Y);
+  if (!ok) alert('复制失败：已写入 I/O 面板，请手动复制。');
+});
+document.getElementById('btnUbImportAll')?.addEventListener('click', async ()=>{
+  let txt = await readFromClipboardRobust();
+  if (!txt) txt = prompt('粘贴队伍 JSON（{type:"unitbattle_teams",teams:[...] }）') || '';
+  if (!txt.trim()) return;
+  try{
+    UnitBattle.applyTeamsPayload(txt);
+    textPop(W*0.5,H*0.2,'全部队伍已导入',C.P2);
+  }catch(err){ alert('导入失败: '+(err?.message||err)); }
+});
 
 function closeUbWinnerModal(){ document.getElementById('ubWinnerModal')?.classList.remove('show'); }
-function exportUbWinnerByIndex(idx){
+async function exportUbWinnerByIndex(idx){
   const chosen = UnitBattle.winnerPool?.[idx];
   if (!chosen) return;
   const txt = JSON.stringify({type:'forge', forge:chosen}, null, 2);
   const io = document.getElementById('ioText');
   if (io) io.value = txt;
-  try{ navigator.clipboard.writeText(txt); }catch(_){ }
-  textPop(W*0.5, H*0.2, `已导出 TEAM ${UnitBattle.winnerTeam} #${idx+1}`, C.P2);
+  const copied = await copyToClipboardRobust(txt);
+  if (!copied){
+    alert('复制失败：已写入 I/O 面板，请手动复制。');
+  }
+  textPop(W*0.5, H*0.2, copied ? `已导出 TEAM ${UnitBattle.winnerTeam} #${idx+1}` : '导出到 I/O（手动复制）', C.P2);
   closeUbWinnerModal();
 }
 function openUbWinnerModal(){
@@ -20888,6 +20923,18 @@ async function copyToClipboardRobust(text) {
   // --- Fallback 3: 如果都失败了，弹窗让用户手动复制 ---
   // 或者将其直接填入 I/O 面板
   return false;
+}
+
+async function readFromClipboardRobust(){
+  if (navigator.clipboard && window.isSecureContext){
+    try{
+      const txt = await navigator.clipboard.readText();
+      if (txt) return txt;
+    }catch(err){
+      console.warn('Clipboard read 失败，使用输入框回退', err);
+    }
+  }
+  return '';
 }
 // 代码位置：替换脚本末尾原有的 $('btnCopyKiller').addEventListener('click', ...)
 document.getElementById('btnCopyKiller')?.addEventListener('click', async () => {
