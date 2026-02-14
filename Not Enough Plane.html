@@ -785,6 +785,30 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   box-shadow:0 0 16px rgba(82,230,255,0.18);
 }
 
+.ub-panel{
+  margin-top:10px;
+  padding:10px;
+  border:1px solid rgba(130,229,255,.35);
+  border-radius:10px;
+  background:linear-gradient(160deg, rgba(12,26,48,.65), rgba(26,10,42,.6));
+  box-shadow:0 0 22px rgba(82,230,255,.14) inset;
+}
+.ub-panel .ub-title{
+  font:700 12px/1.2 var(--font-mono);
+  color:var(--c-cyan);
+  letter-spacing:1px;
+  margin-bottom:6px;
+}
+.ub-list{ display:flex; flex-wrap:wrap; gap:6px; max-height:110px; overflow:auto; margin-top:8px; }
+.ub-chip{
+  border:1px solid rgba(157,238,255,.45);
+  border-radius:999px;
+  padding:4px 8px;
+  font:600 10px/1.1 var(--font-mono);
+  color:#d9f9ff;
+  background:rgba(0,0,0,.26);
+}
+
 /* action row */
 .menu-actions{
   display:flex;
@@ -1402,7 +1426,20 @@ input[type="checkbox"] {
               <button id="btnStartFortress" style="border-color:#7ef9c0;color:#7ef9c0">START FORTRESS (BASTION)</button>
               <button id="btnStartDuel" style="border-color:var(--c-yellow);color:var(--c-yellow)">START DUEL (A vs B)</button>
               <button id="btnStartLab" style="border-color:rgba(179,108,255,0.6);color:var(--c-magenta)">START LAB (FORGE)</button>
+              <button id="btnStartUnitBattle" style="border-color:#9deeff;color:#9deeff">START UNIT BATTLE (兵种对战)</button>
             </div>
+          </div>
+
+          <div class="menu-card ub-panel" id="unitBattlePanel">
+            <div class="ub-title">UNIT BATTLE · 兵种批量导入对战</div>
+            <div class="muted" style="font-size:10px">导入多个怪物 Forge JSON（可无限追加），开始后在堡垒准备阶段拖拽半透明预览体调整出生点。</div>
+            <div class="field" style="margin-top:8px"><label>UNIT JSON</label><textarea id="ubJsonInput" placeholder='粘贴 forge JSON 或 {forge:{...}}'></textarea></div>
+            <div class="menu-actions" style="margin-top:8px;justify-content:flex-start;gap:8px">
+              <button id="btnUbImport" class="mini-btn" style="border-color:#9deeff;color:#9deeff">导入兵种</button>
+              <button id="btnUbClear" class="mini-btn" style="border-color:#ff9b72;color:#ff9b72">清空兵种</button>
+              <button id="btnUbExportWinner" class="mini-btn" style="border-color:#7ef9c0;color:#7ef9c0">导出胜者</button>
+            </div>
+            <div id="ubList" class="ub-list"></div>
           </div>
         </div>
 
@@ -3156,11 +3193,14 @@ const addShake = (m, t=0.16) => {
         this.labLockedAssault = true;
         this.spawnLeft = 0;
         this.bossSpawned = false;
-        if (!this.labForgeSpawned && this.labForgeSpec){
+        if (UnitBattle.active){
+          UnitBattle.spawnBattle();
+          textPop(W*0.5, H*0.16, 'UNIT BATTLE START', C.P2);
+        } else if (!this.labForgeSpawned && this.labForgeSpec){
           spawnForgeEnemy(this.labForgeSpec);
           this.labForgeSpawned = true;
+          textPop(W*0.5, H*0.16, 'LAB 敌袭开始', C.E1);
         }
-        textPop(W*0.5, H*0.16, 'LAB 敌袭开始', C.E1);
         spawnShockwave(W*0.5, H*0.16, C.E1, 240, 0.45);
         this.updatePanel();
         return;
@@ -3434,6 +3474,7 @@ const addShake = (m, t=0.16) => {
     },
     handlePointerDown(screenX, screenY, pointerId=null){
       if ((Game.mode!=='fortress' && Game.mode!=='lab' && Game.mode!=='fortress_duel') || Game.state!=='playing') return false;
+      if (UnitBattle.handlePointerDown(screenX, screenY, pointerId)) return true;
       const pt = this.toWorld(screenX, screenY);
       if (this.preview){
         const pv = this.preview;
@@ -3465,11 +3506,13 @@ const addShake = (m, t=0.16) => {
       return false;
     },
     handlePointerMove(screenX, screenY, pointerId=null){
+      if (UnitBattle.handlePointerMove(screenX, screenY, pointerId)) return true;
       if (this.canBuild() && !IS_TOUCH && !this.sellMode){
         this.setPreview(screenX, screenY, pointerId);
       } else if (this.preview && (!this.canBuild() || this.sellMode)){
         this.clearPreview();
       }
+      if (UnitBattle.handlePointerUp(screenX, screenY, pointerId)) return true;
       if (!this.activeDrag || (pointerId!=null && this.activeDrag.pointerId!=null && pointerId!==this.activeDrag.pointerId)) return false;
       const st = this.structures.find(v=>v.id===this.activeDrag.sid);
       if (!st) return false;
@@ -5906,6 +5949,7 @@ if (col===C.E7) return 'glowE7';
       clearObj(b.st);
     }
 
+    if (team==='E' && opts?.modCtx?.owner?.ubTeam!=null) b.ubTeam = opts.modCtx.owner.ubTeam;
     (team==='P'?bulletsP:bulletsE).push(b);
     stampBulletDNA(b);
     return b;
@@ -10879,6 +10923,7 @@ for (const em of e.emitters){
   }
 
   function findEnemyFocus(x,y, maxD=99999){
+    if (UnitBattle.active) return UnitBattle.findOpponent(UnitBattle._source, x, y, maxD);
     if (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') return Fortress.getEnemyTarget(x,y,maxD);
     return Player.alive ? Player : null;
   }
@@ -14064,7 +14109,9 @@ BG_Effect.init();
         // 冻结期间不调用 update（不移动不射击）
         if (chance(0.12)) sparks(e.x, e.y, 'glowP', 2, 120);
       } else if (!(isNetAuthoritative && e.isNetGhost)) {
-        e.update(dt);
+        UnitBattle._source = e;
+      e.update(dt);
+      UnitBattle._source = null;
       }
       // timers for support buffs
       if (e._fortT>0){
@@ -14285,9 +14332,24 @@ BG_Effect.init();
 
        // E bullets vs player
     for(const b of bulletsE){
-      if (!b.alive || !Player.alive || b._phaseGhost) continue;
+      if (!b.alive || b._phaseGhost) continue;
+      if (UnitBattle.active && b.ubTeam!=null){
+        let hitOpp = false;
+        for (const e of enemies){
+          if (!e.alive || e.ubTeam==null || e.ubTeam===b.ubTeam) continue;
+          if (hitCircle(b.x,b.y,b.r,e.x,e.y,e.r)){
+            e.onHit?.(b.dmg);
+            killBullet(b, 'hit', {childMods: propagateMods(b.mods)});
+            sparks(b.x,b.y,'glowE', 8, 260);
+            if (e.hp<=0){ e.alive=false; e.onDeath?.(); }
+            hitOpp = true;
+            break;
+          }
+        }
+        if (hitOpp) continue;
+      }
+      if (!Player.alive) continue;
       if (hitCircle(b.x,b.y,b.r, Player.x,Player.y, Player.r)){
-        // hit hooks for enemy bullets too
         if (b.mods.length){
           for(const k of b.mods) BulletAffixCatalog[k]?.onHit?.(b, Player, null);
         }
@@ -16528,6 +16590,7 @@ function render(dt) {
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
   drawFortress();
+  UnitBattle.drawGhosts();
   drawShockwaves();
   drawParticles();
   drawBeams();
@@ -16560,6 +16623,7 @@ function render(dt) {
     drawPlayer();
   }
   drawTexts();
+  UnitBattle.checkWinner();
 
   // --- 步骤 4: UI 覆盖层 (Screen Space) ---
   // 重置回无缩放状态画 UI
@@ -16893,7 +16957,140 @@ applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
   return e;
 }
 
-  function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild=null, keepLabLayout=false} = {}){
+  
+const UnitBattle = {
+  active:false,
+  units:[],
+  ghosts:[],
+  dragging:null,
+  winner:null,
+  _source:null,
+  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; },
+  parseUnitJSON(txt){
+    const obj = JSON.parse(txt||'{}');
+    const forge = obj?.forge ? obj.forge : obj;
+    if (!forge?.spec) throw new Error('需要 forge/spec JSON');
+    return forge;
+  },
+  importOne(txt){
+    const forge = this.parseUnitJSON(txt);
+    this.units.push(JSON.parse(JSON.stringify(forge)));
+    this.refreshList();
+  },
+  refreshList(){
+    const el=document.getElementById('ubList');
+    if (!el) return;
+    el.innerHTML='';
+    this.units.forEach((u,i)=>{
+      const c=document.createElement('span');
+      c.className='ub-chip';
+      c.textContent=`#${i+1} ${u?.spec?.moveKey||'MIX'} HP:${u?.hp||0}`;
+      el.appendChild(c);
+    });
+  },
+  setupGhosts(){
+    this.ghosts = this.units.map((u,i)=>({
+      idx:i,
+      x: clamp(80 + (i%8)*90, 40, W-40),
+      y: clamp(H*0.18 + ((i/8|0)%4)*58, 60, H*0.45),
+      team: (i%2===0) ? 1 : 2,
+      forge: JSON.parse(JSON.stringify(u)),
+      r: 18
+    }));
+    this.winner = null;
+  },
+  pickGhost(sx,sy){
+    const p=Fortress.toWorld(sx,sy);
+    for(let i=this.ghosts.length-1;i>=0;i--){
+      const g=this.ghosts[i];
+      if (dist2(g.x,g.y,p.x,p.y) <= (g.r+12)*(g.r+12)) return g;
+    }
+    return null;
+  },
+  handlePointerDown(sx,sy,pid){
+    if (!this.active || Fortress.phase!=='fortify') return false;
+    const g=this.pickGhost(sx,sy);
+    if (!g) return false;
+    this.dragging={id:pid,g};
+    return true;
+  },
+  handlePointerMove(sx,sy,pid){
+    if (!this.dragging || (pid!=null && this.dragging.id!=null && pid!==this.dragging.id)) return false;
+    const p=Fortress.toWorld(sx,sy);
+    this.dragging.g.x = clamp(p.x, 28, W-28);
+    this.dragging.g.y = clamp(p.y, 40, H*0.58);
+    return true;
+  },
+  handlePointerUp(_sx,_sy,pid){
+    if (!this.dragging || (pid!=null && this.dragging.id!=null && pid!==this.dragging.id)) return false;
+    this.dragging=null; return true;
+  },
+  spawnBattle(){
+    enemies.length = 0;
+    for (const g of this.ghosts){
+      const e = spawnForgeEnemy(g.forge);
+      if (!e) continue;
+      e.x = g.x; e.y = g.y;
+      e.ubTeam = g.team;
+      e._ubSpec = JSON.parse(JSON.stringify(g.forge));
+      e.noDrop = true; e.score = 0;
+    }
+    this.winner=null;
+  },
+  findOpponent(source, x,y,maxD=99999){
+    if (!source || source.ubTeam==null) return Player.alive?Player:null;
+    let best=null,bestD=maxD*maxD;
+    for (const e of enemies){
+      if (!e.alive || e===source || e.ubTeam==null || e.ubTeam===source.ubTeam) continue;
+      const d2=dist2(x,y,e.x,e.y);
+      if (d2<bestD){ bestD=d2; best=e; }
+    }
+    return best || (Player.alive?Player:null);
+  },
+  checkWinner(){
+    if (!this.active || Fortress.phase!=='assault') return;
+    const alive = enemies.filter(e=>e.alive && e.ubTeam!=null);
+    const teams = new Set(alive.map(e=>e.ubTeam));
+    if (teams.size===1 && alive.length){
+      const t=[...teams][0];
+      if (!this.winner){
+        this.winner = alive[0]._ubSpec || null;
+        textPop(W*0.5, H*0.18, `TEAM ${t} WIN`, C.G);
+      }
+    }
+  },
+  exportWinner(){
+    if (!this.winner) return alert('暂无胜者');
+    const txt = JSON.stringify({type:'forge', forge:this.winner}, null, 2);
+    const io = document.getElementById('ioText');
+    if (io) io.value = txt;
+    try{ navigator.clipboard.writeText(txt); }catch(_){ }
+    textPop(W*0.5, H*0.2, '胜者已导出到 I/O', C.P2);
+  },
+  drawGhosts(){
+    if (!this.active || Fortress.phase!=='fortify') return;
+    ctx.save();
+    for (const g of this.ghosts){
+      const col = g.team===1 ? 'rgba(130,229,255,.62)' : 'rgba(255,155,114,.62)';
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(g.x,g.y,g.r,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=1.2; ctx.stroke();
+      const body = genEnemyBody((g.forge?.spec?.bodySeed||1337) + g.idx*97);
+      const fake = {x:g.x,y:g.y,r:g.r*0.75,body,bodySeed:(g.forge?.spec?.bodySeed||1337),tint:(g.forge?.spec?.baseCol||C.E2),baseCol:(g.forge?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
+      drawEnemyGeneric(fake);
+    }
+    ctx.restore();
+  }
+};
+
+function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild=null, keepLabLayout=false} = {}){
+  if (mode==='unitbattle'){
+    UnitBattle.active = true;
+    UnitBattle.setupGhosts();
+    mode = 'lab';
+  } else {
+    UnitBattle.reset();
+  }
   const savedLabLayout = (keepLabLayout && mode==='lab')
     ? deepClone(Fortress?._labSavedLayout || Fortress?.structures?.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y})) || [])
     : null;
@@ -17144,6 +17341,14 @@ canvas.style.pointerEvents = 'auto';
   if (!btnAutoPilot) return;
   const hideInNetFortressDuel = (Game.mode==='fortress_duel' && !!Game.lastStart?.net);
   btnAutoPilot.style.display = hideInNetFortressDuel ? 'none' : 'inline-block';
+}
+
+
+function setView(view){
+  const toGame = (view==='game');
+  if (ui.menu) ui.menu.style.display = toGame ? 'none' : 'flex';
+  if (ui.hud) ui.hud.style.display = toGame ? 'block' : 'none';
+  if (!toGame) document.body.dataset.menupage = document.body.dataset.menupage || 'home';
 }
 
 function toMenu(){
@@ -19620,6 +19825,10 @@ document.getElementById('btnStartLab')?.addEventListener('click', ()=>{
   const cfg = {mode:'lab', wave:1, forge};
   startRun(cfg);
 });
+document.getElementById('btnStartUnitBattle')?.addEventListener('click', ()=>{
+  if (!UnitBattle.units.length){ alert('请先导入至少一个兵种 JSON'); return; }
+  startRun({mode:'unitbattle', wave:1});
+});
 
 ui.btnRestart?.addEventListener('click', () => {
   const last = Game.lastStart || {};
@@ -19970,6 +20179,16 @@ bindWorkshopCoreFinal();
 bindForgePreviewFinal();
 placeForgePreview();
 refreshForgePreview();
+
+document.getElementById('btnUbImport')?.addEventListener('click', ()=>{
+  const txt = document.getElementById('ubJsonInput')?.value || '';
+  if (!txt.trim()) return alert('请粘贴 JSON');
+  try{ UnitBattle.importOne(txt); textPop(W*0.5,H*0.2,'兵种已导入',C.P2); }
+  catch(err){ alert('导入失败: '+(err?.message||err)); }
+});
+document.getElementById('btnUbClear')?.addEventListener('click', ()=>{ UnitBattle.units.length=0; UnitBattle.refreshList(); });
+document.getElementById('btnUbExportWinner')?.addEventListener('click', ()=>UnitBattle.exportWinner());
+UnitBattle.refreshList();
 toMenu();
 canvas.style.pointerEvents = 'auto';
 mountOverlaysToBody();
