@@ -5540,11 +5540,13 @@ ORBIT_SELF: {
           }
         }
         
-        // 视觉效果：引力场涟漪
-        if(chance(0.08)){
+        // 视觉效果：引力场涟漪（限频，避免场上特效过多）
+        b._gwFxCd = Math.max(0, (b._gwFxCd||0) - dt);
+        if (b._gwFxCd<=0 && chance(0.035)){
+          b._gwFxCd = 0.08 + rand(0,0.06);
           const a = rand(0, Math.PI*2);
           const r = rand(20, b._gwRadius);
-          sparks(b.x + Math.cos(a)*r, b.y + Math.sin(a)*r, b.spr, 2, 120);
+          sparks(b.x + Math.cos(a)*r, b.y + Math.sin(a)*r, b.spr, 1, 90);
         }
       }
     },
@@ -6302,8 +6304,8 @@ function refreshDNAAfterFire(beforeP, beforeE){
   }
 
   // ================= Beam (laser) =================
-  function spawnBeam(x1,y1,x2,y2, width, life, dmg, col){
-    beams.push({x1,y1,x2,y2,width,life,t:0,dmg,col});
+  function spawnBeam(x1,y1,x2,y2, width, life, dmg, col, opts={}){
+    beams.push({x1,y1,x2,y2,width,life,t:0,dmg,col, team:opts.team||null, ubTeam:(opts.ubTeam??null), owner:(opts.owner||null), noHitT:0});
   }
 
   function distPointSeg2(px,py,x1,y1,x2,y2){
@@ -6475,85 +6477,114 @@ function refreshDNAAfterFire(beforeP, beforeE){
     const dx0 = tx - obj.x, dy0 = ty - obj.y;
     const d0 = Math.hypot(dx0,dy0) || 1;
 
-    const steerDirect = (spMul=1)=>{
-      const sp = (62 + (obj.r||12)*1.55) * spMul;
-      obj.x += (dx0/d0) * sp * dt;
-      obj.y += (dy0/d0) * sp * dt;
+    const steerTo = (x,y,spMul=1)=>{
+      const dx=x-obj.x, dy=y-obj.y;
+      const d = Math.hypot(dx,dy) || 1;
+      const sp = (60 + (obj.r||12)*1.45) * spMul;
+      obj.x += (dx/d) * sp * dt;
+      obj.y += (dy/d) * sp * dt;
     };
 
     const blocks = Array.isArray(structures)
       ? structures.filter(st=>st && st.hp>0 && st.type!=='mine')
       : [];
-    if (!blocks.length){ steerDirect(1.06); return; }
+    if (!blocks.length){ steerTo(tx,ty,1.08); return; }
 
     const pad = (obj.r||12) + 3;
-    const isLineBlocked = (x1,y1,x2,y2)=>{
+    const isBlocked = (x1,y1,x2,y2)=>{
       for (const st of blocks){
         if (segmentIntersectsOrientedRect(x1,y1,x2,y2,st,pad)) return true;
       }
       return false;
     };
 
-    if (!isLineBlocked(obj.x,obj.y,tx,ty)){
-      steerDirect(1.12);
+    if (!isBlocked(obj.x,obj.y,tx,ty)){
+      steerTo(tx,ty,1.12);
       return;
     }
 
     const threatOf = (st)=>({
-      turret:7.5,gatling:8.0,sniper:7.0,missile:8.2,tesla:8.6,flame:7.2,mortar:7.8,dronepad:6.8,pulse:6.6,
-      wall:2.0,heavywall:2.5,bunker:3.1,shield:2.8,barricade:1.5,taunt:2.1
-    }[st?.type] || 1.8);
+      turret:8.2,gatling:8.6,sniper:7.6,missile:8.8,tesla:9.0,flame:7.6,mortar:8.2,dronepad:7.2,pulse:7.1,
+      wall:2.2,heavywall:2.8,bunker:3.4,shield:3.1,barricade:1.8,taunt:2.4
+    }[st?.type] || 2.0);
 
-    const makeBypassPts = (st)=>{
-      const hw = (st.w||20)*0.5 + pad + 8;
-      const hh = (st.h||20)*0.5 + pad + 8;
-      const c = Math.cos(st.rot||0), sn = Math.sin(st.rot||0);
-      const local = [[ hw, hh],[ hw,-hh],[-hw, hh],[-hw,-hh],[ hw,0],[-hw,0],[0,hh],[0,-hh]];
-      return local.map(([lx,ly])=>({x:st.x + lx*c - ly*sn, y:st.y + lx*sn + ly*c, st}));
+    // Visibility graph (obstacle-corner nodes + start/goal) with A*.
+    const nodes=[{x:obj.x,y:obj.y,id:0,st:null},{x:tx,y:ty,id:1,st:null}];
+    const addNode=(x,y,st)=>{
+      if (x<20 || x>W-20 || y<20 || y>H-20) return;
+      nodes.push({x,y,id:nodes.length,st:st||null});
     };
 
-    let best = null;
-    const blockers = blocks.filter(st=>segmentIntersectsOrientedRect(obj.x,obj.y,tx,ty,st,pad));
-    for (const st of blockers){
-      for (const p of makeBypassPts(st)){
-        if (p.x<24 || p.x>W-24 || p.y<24 || p.y>H-24) continue;
-        if (isLineBlocked(obj.x,obj.y,p.x,p.y)) continue;
-        const toGoalBlocked = isLineBlocked(p.x,p.y,tx,ty);
-        const baseCost = Math.hypot(p.x-obj.x, p.y-obj.y) + Math.hypot(tx-p.x, ty-p.y);
-        let cost = baseCost + threatOf(st)*34 + (toGoalBlocked?90:0);
-
-        for (const s2 of blocks){
-          const dd = Math.hypot(p.x-s2.x, p.y-s2.y);
-          const rad = Math.max(s2.w||20, s2.h||20)*0.75 + 22;
-          if (dd < rad) cost += threatOf(s2) * (1 - dd/rad + 0.12) * 9;
-        }
-        if (Array.isArray(allies)){
-          for (const a of allies){
-            if (!a || a===obj || !a.alive) continue;
-            const dd = Math.hypot(p.x-a.x, p.y-a.y);
-            if (dd < 48) cost += (48-dd) * 0.9;
-          }
-        }
-        if (!best || cost < best.cost) best = {x:p.x, y:p.y, cost};
+    for (const st of blocks){
+      const hw=(st.w||20)*0.5 + pad + 10;
+      const hh=(st.h||20)*0.5 + pad + 10;
+      const c=Math.cos(st.rot||0), sn=Math.sin(st.rot||0);
+      const local=[[ hw, hh],[ hw,-hh],[-hw, hh],[-hw,-hh],[ hw,0],[-hw,0],[0,hh],[0,-hh]];
+      for (const [lx,ly] of local){
+        addNode(st.x + lx*c - ly*sn, st.y + lx*sn + ly*c, st);
       }
     }
 
-    if (!best){
-      const tx2 = tx + (-dy0/d0) * 36;
-      const ty2 = ty + (dx0/d0) * 36;
-      const dx = tx2-obj.x, dy = ty2-obj.y;
-      const d = Math.hypot(dx,dy) || 1;
-      const sp = 52 + (obj.r||12)*1.25;
-      obj.x += (dx/d) * sp * dt;
-      obj.y += (dy/d) * sp * dt;
+    const n=nodes.length;
+    const graph=Array.from({length:n}, ()=>[]);
+    for (let i=0;i<n;i++){
+      for (let j=i+1;j<n;j++){
+        const a=nodes[i], b=nodes[j];
+        if (isBlocked(a.x,a.y,b.x,b.y)) continue;
+        let w = Math.hypot(b.x-a.x, b.y-a.y);
+        if (b.st) w += threatOf(b.st)*22;
+
+        for (const st of blocks){
+          const dd = Math.hypot(b.x-st.x, b.y-st.y);
+          const rad = Math.max(st.w||20, st.h||20)*0.75 + 24;
+          if (dd < rad) w += threatOf(st) * (1 - dd/rad + 0.1) * 6.5;
+        }
+        if (Array.isArray(allies)){
+          for (const al of allies){
+            if (!al || al===obj || !al.alive) continue;
+            const dd = Math.hypot(b.x-al.x, b.y-al.y);
+            if (dd < 56) w += (56-dd) * 0.35;
+          }
+        }
+
+        graph[i].push([j,w]);
+        graph[j].push([i,w]);
+      }
+    }
+
+    const startId=0, goalId=1;
+    const g=Array(n).fill(Infinity), f=Array(n).fill(Infinity), prev=Array(n).fill(-1), open=[startId];
+    g[startId]=0;
+    f[startId]=Math.hypot(nodes[startId].x-nodes[goalId].x, nodes[startId].y-nodes[goalId].y);
+
+    let found=false, guard=0;
+    while (open.length && guard<1200){
+      guard++;
+      let bestIdx=0;
+      for (let i=1;i<open.length;i++) if (f[open[i]]<f[open[bestIdx]]) bestIdx=i;
+      const cur=open.splice(bestIdx,1)[0];
+      if (cur===goalId){ found=true; break; }
+      for (const [nx,wc] of graph[cur]){
+        const ng = g[cur] + wc;
+        if (ng >= g[nx]) continue;
+        prev[nx]=cur;
+        g[nx]=ng;
+        f[nx]=ng + Math.hypot(nodes[nx].x-nodes[goalId].x, nodes[nx].y-nodes[goalId].y);
+        if (!open.includes(nx)) open.push(nx);
+      }
+    }
+
+    if (!found){
+      // fallback: follow tangent-ish direction instead of smashing nearest wall
+      steerTo(obj.x + (-dy0/d0)*28 + dx0*0.45, obj.y + (dx0/d0)*28 + dy0*0.45, 1.0);
       return;
     }
 
-    const dx = best.x-obj.x, dy = best.y-obj.y;
-    const d = Math.hypot(dx,dy) || 1;
-    const sp = 59 + (obj.r||12)*1.45;
-    obj.x += (dx/d) * sp * dt;
-    obj.y += (dy/d) * sp * dt;
+    const path=[];
+    for (let cur=goalId; cur!==-1; cur=prev[cur]) path.push(cur);
+    path.reverse();
+    const nextNode = nodes[path[Math.min(1, path.length-1)]] || nodes[goalId];
+    steerTo(nextNode.x, nextNode.y, 1.0);
   }
 
 
@@ -11509,7 +11540,7 @@ function spawnAt(o, a, sp, opt={}){
         const ty = (o.y + 10) + Math.sin(finalA) * 1200;
 
         // 渲染激光束
-        spawnBeam(o.x, o.y + 10, tx, ty, 9, 0.18, (this.dmg || (14 + d * 1.45)), beamCol);
+        spawnBeam(o.x, o.y + 10, tx, ty, 9, 0.18, (this.dmg || (14 + d * 1.45)), beamCol, {team:ctx.team, ubTeam:o?.ubTeam, owner:o});
 
         // 视觉反馈
         sparks(o.x, o.y + 10, 'glowY', 18, 620);
@@ -12478,7 +12509,10 @@ function setupRivalEmittersFromBuild(e, build){
   const RivalCatalog = makeEmitterCatalog({
     team:'E',
     getOwner: ()=>e,
-    getTarget: ()=> (Player.alive ? Player : null),
+    getTarget: ()=>{
+      if (UnitBattle.active) return UnitBattle.findOpponent(e, e.x, e.y, 2000) || null;
+      return (Player.alive ? Player : null);
+    },
     getFireRate: ()=> clamp(b.fireRate||1, 0.5, 3.0),
     getDmgMul: ()=> (b.dmgMul||1),
     getLv: ()=> Player.lv, // scale with player level (same as你之前风格)
@@ -13071,15 +13105,30 @@ function updateBeams(dt){
   for(const b of beams){
     b.t += dt;
     b.life -= dt;
+    b.noHitT = Math.max(0, (b.noHitT||0) - dt);
 
-    if (Game.state==='playing' && Player.alive && Player.invuln<=0){
+    if (UnitBattle.active && b.team==='E' && b.ubTeam!=null && b.noHitT<=0){
+      let target = null;
+      let bestD2 = Infinity;
+      for (const e of enemies){
+        if (!e?.alive || e.ubTeam==null || e.ubTeam===b.ubTeam) continue;
+        if (b.owner && e===b.owner) continue;
+        const d2 = distPointSeg2(e.x,e.y, b.x1,b.y1,b.x2,b.y2);
+        const rr = (e.r + b.width) * (e.r + b.width);
+        if (d2 > rr) continue;
+        if (d2 < bestD2){ bestD2 = d2; target = e; }
+      }
+      if (target){
+        target.onHit?.(b.dmg||0);
+        sparks(target.x, target.y, 'glowE', 6, 220);
+        b.noHitT = 0.08;
+      }
+    } else if (Game.state==='playing' && Player.alive && Player.invuln<=0){
       const d2 = distPointSeg2(Player.x,Player.y, b.x1,b.y1, b.x2,b.y2);
       const rr = (Player.r + b.width) * (Player.r + b.width);
       if (d2 <= rr){
-        // shield 完全免疫激光伤害（只消耗少量 shield 时间）
         if (Player.shield > 0){
           Player.shield = Math.max(0, Player.shield - 0.35);
-          // 给一段无敌帧防止每帧重复扣 shield
           Player.invuln = Math.max(Player.invuln, 0.18);
           sparks(Player.x, Player.y, 'glowP2', 6, 280);
           textPop(Player.x, Player.y-16, 'BLOCKED', C.P2);
@@ -17456,6 +17505,15 @@ const UnitBattle = {
         del.className='ub-unit-del'; del.type='button'; del.textContent='×'; del.title='删除该兵种';
         del.addEventListener('click', (ev)=>{ ev.stopPropagation(); this.removeUnit(team.id, i); });
         unit.appendChild(del); unit.appendChild(cv); unit.appendChild(meta);
+        unit.title = '点击复制该兵种 JSON';
+        unit.addEventListener('click', async ()=>{
+          const txt = JSON.stringify({type:'forge', forge:u}, null, 2);
+          const io = document.getElementById('ioText');
+          if (io) io.value = txt;
+          const ok = await copyToClipboardRobust(txt);
+          textPop(W*0.5,H*0.2, ok ? `已复制 ${team.name} #${i+1}` : '已写入 I/O（手动复制）', ok ? C.P2 : C.Y);
+          if (!ok) alert('复制失败：已写入 I/O 面板，请手动复制。');
+        });
         row.appendChild(unit);
       });
       card.appendChild(head); card.appendChild(row);
