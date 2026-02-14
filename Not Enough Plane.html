@@ -795,6 +795,47 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 }
 .menu-actions button{ flex:1; min-width:190px; }
 
+/* ================= DEV EDITOR ================= */
+.dev-badge{
+  position:fixed;
+  top:max(12px, env(safe-area-inset-top));
+  left:12px;
+  z-index:55;
+  pointer-events:none;
+  font:700 11px/1.2 var(--font-mono);
+  letter-spacing:1px;
+  color:#000;
+  background:var(--c-yellow);
+  border:1px solid rgba(255,255,255,0.85);
+  border-radius:4px;
+  padding:6px 8px;
+  box-shadow:0 0 14px rgba(255,176,32,0.55);
+}
+.dev-editor{
+  position:fixed;
+  z-index:70;
+  width:min(460px, 92vw);
+  max-height:min(78vh, 760px);
+  overflow:auto;
+  color:#d7f7ff;
+  background:rgba(6,12,32,0.96);
+  border:1px solid rgba(82,230,255,0.42);
+  border-left:2px solid var(--c-cyan);
+  box-shadow:0 16px 32px rgba(0,0,0,.45);
+  border-radius:8px;
+  padding:12px;
+  pointer-events:auto;
+}
+.dev-editor h3{ margin:0 0 6px; font:700 15px/1.2 var(--font-mono); color:var(--c-cyan); }
+.dev-editor .dev-muted{ font-size:11px; opacity:.75; margin-bottom:8px; }
+.dev-editor .dev-grid{ display:grid; grid-template-columns:1fr 120px; gap:6px 8px; }
+.dev-editor label{ font:600 11px/1.2 var(--font-mono); opacity:.8; align-self:center; }
+.dev-editor input,.dev-editor textarea,.dev-editor select{
+  width:100%; background:rgba(0,0,0,.38); color:#fff; border:1px solid rgba(255,255,255,.18); border-radius:4px; padding:6px 8px;
+}
+.dev-editor textarea{ min-height:120px; resize:vertical; font-family:var(--font-mono); }
+.dev-editor .dev-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+
 /* hide workshop SAVE */
 #btnSaveBuilds{ display:none !important; }
 
@@ -1319,6 +1360,7 @@ input[type="checkbox"] {
       <div class="hint">DOUBLE TAP TO DETONATE BOMB</div>
     </div>
     <button id="btnCompactUI" class="ui-fab">UI</button>
+    <div id="devBadge" class="dev-badge" style="display:none">DEV MODE</div>
 
     <!-- Main Menu -->
     <div id="menu" class="screen">
@@ -1946,6 +1988,7 @@ input[type="checkbox"] {
     btnRevive: $('btnRevive'),
     btnOption: $('btnOption'),
     btnCompactUI: $('btnCompactUI'),
+    devBadge: $('devBadge'),
 
     fortressPanel: $('fortressPanel'),
     fortressPhase: $('fortressPhase'),
@@ -3889,6 +3932,7 @@ function recoverLocalControl(){
 }
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (DevEditor.handleCanvasPointerDown(e)) return;
     if (Game.state !== 'playing') return;
     ensureAudio();
     checkDoubleTap();
@@ -3926,6 +3970,7 @@ function recoverLocalControl(){
   }, {passive: false});
 
   canvas.addEventListener('pointermove', (e) => {
+    DevEditor.handleCanvasPointerMove(e);
     if ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress.handlePointerMove(e.clientX, e.clientY, e.pointerId)){
       e.preventDefault?.();
       return;
@@ -3965,6 +4010,7 @@ function recoverLocalControl(){
 
   canvas.addEventListener('pointerup',     (e) => endPointer(e), {passive: true});
   canvas.addEventListener('pointercancel', (e) => endPointer(e), {passive: true});
+  canvas.addEventListener('dblclick', (e)=>{ DevEditor.handleCanvasDoubleClick(e); }, {passive:false});
 
   document.addEventListener('touchmove', (e) => {
     if (e.target === canvas) e.preventDefault();
@@ -17393,6 +17439,233 @@ Game.state = 'playing';
   }
 
 
+const DevEditor = {
+  active:false,
+  clickCount:0,
+  clickResetT:null,
+  frozen:false,
+  panel:null,
+  dragBullet:null,
+  titleEl:null,
+
+  worldToScreen(x,y){
+    const z = Camera.zoom || 1;
+    return { x:(x - W*0.5)*z + W*0.5, y:(y - H*0.5)*z + H*0.5 };
+  },
+  screenToWorld(x,y){
+    const z = Camera.zoom || 1;
+    return { x:(x - W*0.5)/z + W*0.5, y:(y - H*0.5)/z + H*0.5 };
+  },
+  notify(msg,col=C.Y){ textPop(W*0.5, H*0.45, msg, col); },
+  toggle(on){
+    this.active = (on==null)? !this.active : !!on;
+    if (ui.devBadge) ui.devBadge.style.display = this.active ? 'block' : 'none';
+    if (!this.active) this.close();
+    this.notify(this.active ? 'DEV MODE ON' : 'DEV MODE OFF', this.active?C.G:C.E1);
+  },
+  bindMenuTitleUnlock(){
+    this.titleEl = document.querySelector('#menu .brand .title');
+    if (!this.titleEl) return;
+    this.titleEl.style.cursor = 'pointer';
+    this.titleEl.addEventListener('click', ()=>{
+      if (Game.state!=='menu') return;
+      this.clickCount++;
+      clearTimeout(this.clickResetT);
+      this.clickResetT = setTimeout(()=>this.clickCount=0, 1600);
+      if (this.clickCount >= 7){
+        this.clickCount = 0;
+        this.toggle();
+      }
+    });
+  },
+  freeze(v){
+    this.frozen = !!v;
+    if (this.frozen && Game.state==='playing'){
+      Game.state='paused';
+      const panel = document.getElementById('pausePanel');
+      if (panel) panel.style.display = 'none';
+      ui.btnPause.textContent = 'DEV';
+    }
+    if (!this.frozen && Game.state==='paused'){
+      Game.state='playing';
+      ui.btnPause.textContent = 'PAUSE';
+    }
+  },
+  close(){
+    if (this.panel){ this.panel.remove(); this.panel=null; }
+    this.dragBullet = null;
+    this.freeze(false);
+  },
+  makePanel(title, target, schema, opts={}){
+    this.close();
+    const panel = document.createElement('div');
+    panel.className='dev-editor';
+    panel.style.left = Math.round((opts.left ?? (W*0.5)) - 180)+'px';
+    panel.style.top = Math.round((opts.top ?? (H*0.5)) - 120)+'px';
+
+    const h = document.createElement('h3'); h.textContent = title; panel.appendChild(h);
+    const m = document.createElement('div'); m.className='dev-muted';
+    m.textContent = '可编辑几乎所有字段；JSON 区可改 emitter/wrapper/baseMods/bulletAffix。';
+    panel.appendChild(m);
+
+    const grid = document.createElement('div'); grid.className='dev-grid';
+    for (const f of schema){
+      const lb=document.createElement('label'); lb.textContent=f.label;
+      const inp = f.type==='textarea' ? document.createElement('textarea') : document.createElement('input');
+      if (f.type && f.type!=='textarea') inp.type = f.type;
+      inp.value = f.get();
+      const apply=()=>{ f.set(inp.value); };
+      inp.addEventListener('change', apply);
+      if (f.type==='range' || f.type==='number') inp.addEventListener('input', apply);
+      grid.appendChild(lb); grid.appendChild(inp);
+    }
+    panel.appendChild(grid);
+
+    const dataTitle = document.createElement('div');
+    dataTitle.className='dev-muted';
+    dataTitle.style.marginTop='8px';
+    dataTitle.textContent='JSON 深度编辑（包含 emitter / wrapper / basemods / bulletaffix 等）';
+    panel.appendChild(dataTitle);
+
+    const ta = document.createElement('textarea');
+    ta.value = JSON.stringify(target, null, 2);
+    panel.appendChild(ta);
+
+    const actions = document.createElement('div'); actions.className='dev-actions';
+    const mkBtn=(txt,fn)=>{ const b=document.createElement('button'); b.className='mini-btn'; b.textContent=txt; b.addEventListener('click',fn); return b; };
+    actions.appendChild(mkBtn('应用 JSON', ()=>{
+      try{
+        const obj = JSON.parse(ta.value||'{}');
+        Object.assign(target, obj);
+        this.notify('JSON APPLIED', C.G);
+      }catch(e){ this.notify('JSON ERROR', C.E1); }
+    }));
+    if (opts.onClone) actions.appendChild(mkBtn('克隆', opts.onClone));
+    if (opts.onDelete) actions.appendChild(mkBtn('删除', opts.onDelete));
+    if (opts.onExport) actions.appendChild(mkBtn('导出', opts.onExport));
+    actions.appendChild(mkBtn('完成编辑', ()=>this.close()));
+    panel.appendChild(actions);
+
+    panel.addEventListener('pointerdown', e=>e.stopPropagation());
+    document.body.appendChild(panel);
+    this.panel = panel;
+    this.freeze(true);
+  },
+
+  pickAt(cx,cy){
+    const w = this.screenToWorld(cx,cy);
+    let best = null, bestD=1e9;
+    const offer=(type,obj,x,y,rad=28)=>{
+      const d = Math.hypot(w.x-x, w.y-y);
+      if (d<rad && d<bestD){ bestD=d; best={type,obj,x,y}; }
+    };
+    for (const e of enemies) if (e.alive) offer('enemy', e, e.x,e.y, Math.max(26,e.r||24));
+    for (const b of bulletsP) if (b.alive) offer('bullet', b, b.x,b.y, 14);
+    for (const b of bulletsE) if (b.alive) offer('bullet', b, b.x,b.y, 14);
+    if ((Game.mode==='fortress'||Game.mode==='lab'||Game.mode==='fortress_duel') && Fortress?.structures){
+      for (const st of Fortress.structures) if ((st.hp||0)>0) offer('fort', st, st.x, st.y, Math.max(st.w||24, st.h||24));
+    }
+    offer('player', Player, Player.x, Player.y, 30);
+    return {pick:best, world:w};
+  },
+
+  openFor(type, obj, sx, sy){
+    if (!obj) return;
+    if (type==='enemy'){
+      const schema=[
+        {label:'HP', type:'number', get:()=>obj.hp, set:v=>obj.hp=+v||0},
+        {label:'MAX HP', type:'number', get:()=>obj.maxHp??obj.hp, set:v=>obj.maxHp=+v||obj.hp},
+        {label:'RADIUS', type:'number', get:()=>obj.r||18, set:v=>obj.r=+v||18},
+        {label:'SPEED', type:'number', get:()=>obj.spd||0, set:v=>obj.spd=+v||0},
+        {label:'SCORE', type:'number', get:()=>obj.score||0, set:v=>obj.score=+v||0},
+      ];
+      this.makePanel('怪物编辑器', obj, schema, {left:sx,top:sy});
+      return;
+    }
+    if (type==='bullet'){
+      const schema=[
+        {label:'X', type:'number', get:()=>obj.x, set:v=>obj.x=+v||0},
+        {label:'Y', type:'number', get:()=>obj.y, set:v=>obj.y=+v||0},
+        {label:'VX', type:'number', get:()=>obj.vx||0, set:v=>obj.vx=+v||0},
+        {label:'VY', type:'number', get:()=>obj.vy||0, set:v=>obj.vy=+v||0},
+        {label:'DMG', type:'number', get:()=>obj.dmg||0, set:v=>obj.dmg=+v||0},
+        {label:'R', type:'number', get:()=>obj.r||2, set:v=>obj.r=+v||2},
+        {label:'LIFE', type:'number', get:()=>obj.life||0, set:v=>obj.life=+v||0},
+      ];
+      this.dragBullet = obj;
+      this.makePanel('子弹编辑器（支持拖拽改坐标）', obj, schema, {
+        left:sx, top:sy,
+        onClone:()=>{
+          const c = {...obj, x:obj.x+20, y:obj.y+20, alive:true};
+          (bulletsP.includes(obj)?bulletsP:bulletsE).push(c);
+          this.notify('BULLET CLONED', C.G);
+        },
+        onDelete:()=>{ killBullet(obj,'dev_delete',{childMods:[]}); this.close(); },
+        onExport:()=>{ openIO(); setIOText(JSON.stringify(obj,null,2)); this.notify('EXPORTED TO I/O', C.Y); },
+      });
+      return;
+    }
+    if (type==='fort'){
+      const schema=[
+        {label:'X', type:'number', get:()=>obj.x, set:v=>obj.x=+v||obj.x},
+        {label:'Y', type:'number', get:()=>obj.y, set:v=>obj.y=+v||obj.y},
+        {label:'W', type:'number', get:()=>obj.w||20, set:v=>obj.w=+v||20},
+        {label:'H', type:'number', get:()=>obj.h||20, set:v=>obj.h=+v||20},
+        {label:'HP', type:'number', get:()=>obj.hp||0, set:v=>obj.hp=+v||0},
+        {label:'CD', type:'number', get:()=>obj.cd||0, set:v=>obj.cd=+v||0},
+      ];
+      this.makePanel('堡垒物品编辑器', obj, schema, {left:sx, top:sy});
+      return;
+    }
+    if (type==='player'){
+      const schema=[
+        {label:'HP', type:'number', get:()=>Player.hp, set:v=>Player.hp=+v||0},
+        {label:'MAX HP', type:'number', get:()=>Player.maxHp, set:v=>Player.maxHp=+v||1},
+        {label:'XP', type:'number', get:()=>Player.xp, set:v=>Player.xp=+v||0},
+        {label:'LVL', type:'number', get:()=>Player.lv, set:v=>Player.lv=Math.max(1,+v||1)},
+        {label:'SHIELD T', type:'number', get:()=>Player.shield, set:v=>Player.shield=Math.max(0,+v||0)},
+        {label:'MATERIAL', type:'number', get:()=>Fortress.stock||0, set:v=>Fortress.stock=Math.max(0,+v||0)},
+      ];
+      this.makePanel('玩家/资源编辑器', Player, schema, {left:sx, top:sy});
+    }
+  },
+
+  handleCanvasPointerDown(e){
+    if (!this.active || Game.state!=='playing') return false;
+    const inPanel = e.target && this.panel && this.panel.contains(e.target);
+    if (inPanel) return false;
+    const hit = this.pickAt(e.clientX, e.clientY);
+    if (!hit.pick) return false;
+    this.openFor(hit.pick.type, hit.pick.obj, e.clientX, e.clientY);
+    e.preventDefault?.();
+    return true;
+  },
+  handleCanvasPointerMove(e){
+    if (!this.active || !this.dragBullet || !this.panel) return false;
+    const w = this.screenToWorld(e.clientX, e.clientY);
+    this.dragBullet.x = w.x;
+    this.dragBullet.y = w.y;
+    return false;
+  },
+  handleHudClick(e){
+    if (!this.active || Game.state!=='playing') return false;
+    const id = e.target?.id;
+    if (!id) return false;
+    const map = new Set(['hpText','xpText','lvText','bombText','odText','magText','shText','fortressMat','fortressCore']);
+    if (!map.has(id)) return false;
+    const r = e.target.getBoundingClientRect();
+    this.openFor('player', Player, r.left + r.width*0.5, r.top + 20);
+    e.preventDefault?.();
+    return true;
+  },
+  handleCanvasDoubleClick(e){
+    if (!this.active || Game.state!=='playing') return false;
+    return this.handleCanvasPointerDown(e);
+  }
+};
+
+
+
 
   // ================= Loop =================
   let lastT = performance.now();
@@ -19228,6 +19501,7 @@ function buildForgeMoveChips() {
 }
 
 function initMenuUI(){
+  DevEditor.bindMenuTitleUnlock();
   // 顶部导航切页
   for(const b of document.querySelectorAll('#menu .nav-btn[data-page]')){
     b.addEventListener('click', ()=>setMenuPage(b.dataset.page));
@@ -19729,6 +20003,8 @@ document.getElementById('btnResumePause')?.addEventListener('click', ()=>{
     toMenu();
   });
 })();
+
+document.addEventListener('click', (e)=>{ DevEditor.handleHudClick(e); }, {passive:false});
 
 document.getElementById('btnStartChallenge')?.addEventListener('click', () => {
   // 读取输入框，默认为 1
