@@ -2567,7 +2567,19 @@ playerHit(){
 
   // New: darker rolling bassline
   { name:'IRON_LOOP_Gm', bpm:146, root:43, scale:[0,2,3,5,7,8,10], prog:[0,2,5,6, 0,6,5,2], arpPat:[0,1,0,1, 2,3,2,3, 0,2,1,2, 3,1,0,1], lead:[10,7,5,7, 10,12,10,7, 5,7,8,7, 5,3,5,7], bars:999, vibe:'dark',
-    drums:{kick:[0,6,8,12], snare:[4,12], hatOdd:false} }
+    drums:{kick:[0,6,8,12], snare:[4,12], hatOdd:false} },
+
+  // New: broken-beat lydian color (distinct major #4 flavor)
+  { name:'AETHER_LYDIAN_C', bpm:126, root:36, scale:[0,2,4,6,7,9,11], prog:[0,4,1,5, 0,3,4,1], arpPat:[0,2,3,2, 1,3,2,3, 0,1,2,3, 3,2,1,0], lead:[11,9,7,9, 11,13,14,13, 11,9,7,6, 7,9,11,9], bars:999, vibe:'bright',
+    drums:{kick:[0,5,8,13], snare:[4,12], hatOdd:true} },
+
+  // New: tribal minor pulse (off-grid accents)
+  { name:'TRIBAL_PULSE_Dm', bpm:152, root:38, scale:[0,2,3,5,7,8,10], prog:[0,2,6,5, 0,5,3,6], arpPat:[0,1,2,1, 3,2,1,2, 0,2,3,2, 1,0,2,3], lead:[7,5,3,5, 7,8,10,8, 7,5,7,10, 12,10,8,7], bars:999, vibe:'dark',
+    drums:{kick:[0,3,8,11,14], snare:[6,12], hatOdd:false} },
+
+  // New: slow synthwave dusk groove
+  { name:'DUSK_SYNTH_Bb', bpm:118, root:46, scale:[0,2,4,5,7,9,10], prog:[0,5,4,1, 0,3,5,4], arpPat:[0,2,1,2, 0,3,2,3, 1,2,0,2, 3,2,1,2], lead:[9,7,5,4, 5,7,9,10, 12,10,9,7, 5,4,2,4], bars:999, vibe:'mid',
+    drums:{kick:[0,8,10,12], snare:[4,12], hatOdd:true} }
   ];
   const Music = {
   playing:false,
@@ -14655,25 +14667,29 @@ BG_Effect.init();
     // P bullets vs enemies
     
    
+    const pBulletN = bulletsP.length;
+    const eBulletN = bulletsE.length;
+    const hasOrbitSelf = !!(Player.gunMods && Player.gunMods.includes('ORBIT_SELF'));
+    const enemyFloodPreserveP = (!hasOrbitSelf && pBulletN<=26 && eBulletN>=Math.max(80, pBulletN*2.6));
+
     for(const bp of bulletsP){
       if (!bp.alive || bp.noHitT>0 || bp._phaseGhost) continue;
       
       for(const be of bulletsE){
         if (!be.alive || be.noHitT>0 || be._phaseGhost) continue;
         
-        // 检测碰撞 (半径相加)
         if (hitCircle(bp.x, bp.y, bp.r, be.x, be.y, be.r)){
-          // 双方销毁
-          killBullet(bp, 'clash');
-          killBullet(be, 'clash');
-          
-          // 对撞视觉效果 (白色火花，位置在两者中间)
+          if (enemyFloodPreserveP){
+            killBullet(be, 'clash');
+            bp.noHitT = Math.max(bp.noHitT||0, 0.03);
+          } else {
+            killBullet(bp, 'clash');
+            killBullet(be, 'clash');
+          }
           const mx = (bp.x + be.x) * 0.5;
           const my = (bp.y + be.y) * 0.5;
           sparks(mx, my, 'glowW', 6, 180);
-           
-          
-          break; // bp 已经没了，跳出内层循环，检查下一个 bp
+          if (!bp.alive) break;
         }
       }
     }
