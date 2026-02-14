@@ -3165,7 +3165,7 @@ const addShake = (m, t=0.16) => {
       if (!ui.fortressPanel) return;
       const on = (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Game.state==='playing';
       const ubHudOn = !!UnitBattle.active;
-      ui.fortressPanel.style.display = (on && (this.phase==='fortify' || ubHudOn)) ? 'block' : 'none';
+      ui.fortressPanel.style.display = (on && this.phase==='fortify') ? 'block' : 'none';
       if (ui.hpPanel) ui.hpPanel.style.display = (ubHudOn ? 'none' : 'block');
       if (!on) return;
       const phaseText = (Game.mode==='fortress_duel')
@@ -3724,6 +3724,7 @@ const addShake = (m, t=0.16) => {
       this.stock += refund;
       this.undoStack.push({type:'sell', structure:st, index:idx, refund});
       sparks(st.x,st.y,'glowY', 6, 140);
+      SFX.pickup?.();
       this.updatePanel();
       this.snapshotLabLayout();
       return true;
@@ -3950,7 +3951,7 @@ const addShake = (m, t=0.16) => {
           for (const e of enemies){
             if (!e.alive) continue;
             if (dist2(st.x,st.y,e.x,e.y) < 140*140){
-              e._freezeT = Math.max(e._freezeT||0, 0.16);
+              e._towerSlowT = Math.max(e._towerSlowT||0, 0.20);
             }
           }
         } else if (st.type==='mine'){
@@ -14611,10 +14612,17 @@ BG_Effect.init();
         if (chance(0.12)) sparks(e.x, e.y, 'glowP', 2, 120);
       } else if (!(isNetAuthoritative && e.isNetGhost)) {
         UnitBattle._source = e;
-      e.update(dt);
-      UnitBattle._source = null;
+        e.update(dt);
+        UnitBattle._source = null;
+        if (e._towerSlowT > 0){
+          const slowK = 0.38;
+          e.x = lerp(prevEx, e.x, slowK);
+          e.y = lerp(prevEy, e.y, slowK);
+          if (chance(0.06)) sparks(e.x, e.y, 'glowP', 1, 70);
+        }
       }
       // timers for support buffs
+      if (e._towerSlowT>0) e._towerSlowT = Math.max(0, e._towerSlowT - dt);
       if (e._fortT>0){
         e._fortT = Math.max(0, e._fortT - dt);
         e.armor = Math.max(e.armor||0, 2);
@@ -17501,6 +17509,35 @@ const UnitBattle = {
   },
   totalUnits(){ return this.teams.reduce((n,t)=>n + ((t.units||[]).length), 0); },
   clearAll(){ this.teams.length=0; this.refreshList(); },
+  autoFillRandomTeamsIfEmpty(){
+    if (this.totalUnits() > 0) return false;
+    if (typeof randomizeForgeState!=='function' || typeof readForgeSpecFromUI!=='function') return false;
+    const snap = deepClone(ForgeState);
+    this.teams.length = 0;
+    try{
+      const teamN = randi(2,3);
+      for (let i=0;i<teamN;i++){
+        const teamId = this.addTeam();
+        const t = this.teams.find(v=>v.id===teamId);
+        if (!t) continue;
+        t.name = `AUTO TEAM ${teamId}`;
+        const unitN = randi(2,6);
+        for (let j=0;j<unitN;j++){
+          randomizeForgeState();
+          const u = deepClone(readForgeSpecFromUI());
+          if (u) t.units.push(u);
+        }
+      }
+    } finally {
+      const restored = deepClone(snap);
+      for (const k of Object.keys(ForgeState)) delete ForgeState[k];
+      Object.assign(ForgeState, restored);
+      if (typeof syncForgeUIFromState==='function') syncForgeUIFromState();
+      if (typeof saveForge==='function') saveForge();
+    }
+    this.refreshList();
+    return this.totalUnits() > 0;
+  },
   parseUnitJSON(txt){
     const obj = JSON.parse(txt||'{}');
     const raw = obj?.forge ? obj.forge : obj;
@@ -20551,6 +20588,7 @@ document.getElementById('btnStartUnitBattle')?.addEventListener('click', ()=>{
   if (!m) return;
   m.classList.add('show');
   UnitBattle.ensureDefaultTeam();
+  UnitBattle.autoFillRandomTeamsIfEmpty();
   UnitBattle.refreshList();
   requestAnimationFrame(()=>m.classList.add('visible'));
 });
