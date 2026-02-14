@@ -6351,6 +6351,40 @@ function refreshDNAAfterFire(beforeP, beforeE){
     return true;
   }
 
+  function resolveEnemyFortressCollision(obj, structures, prevX, prevY){
+    if (!obj || !Array.isArray(structures) || !structures.length) return;
+    let pushed = false;
+    for (let iter=0; iter<4; iter++){
+      let hit = false;
+      for (const fs of structures){
+        if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+        if (pushCircleOutRect(obj, fs)){
+          hit = true;
+          pushed = true;
+        }
+      }
+      if (!hit) break;
+    }
+    if (!pushed) return;
+
+    // 兜底：若仍有重叠，回退到上一帧位置后再推一次，避免穿墙
+    let overlapped = false;
+    for (const fs of structures){
+      if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+      if (circleRectOverlap(obj.x, obj.y, obj.r||10, fs)){ overlapped = true; break; }
+    }
+    if (!overlapped) return;
+
+    obj.x = prevX;
+    obj.y = prevY;
+    for (const fs of structures){
+      if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+      pushCircleOutRect(obj, fs);
+    }
+    if (Number.isFinite(obj.vx)) obj.vx *= 0.6;
+    if (Number.isFinite(obj.vy)) obj.vy *= 0.6;
+  }
+
   // ================= Supplies =================
   const Supply = {
     WXP:{ spr:'glowP', col:C.P1, name:'XP', apply(){ addXP(10 + randi(0,8)); textPop(Player.x,Player.y-16,'XP+',C.P1); beep({f:760,t:0.04,g:0.02,slide:1.12}); } },
@@ -14233,6 +14267,7 @@ BG_Effect.init();
         repairEnemyPose(e, 'runtime');
         if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
       }
+      const prevEx = e.x, prevEy = e.y;
       e.hit = Math.max(0, e.hit-dt);
       // ------ FREEZE_HIT 支持 ------
       if (e._freezeT > 0){
@@ -14259,10 +14294,7 @@ BG_Effect.init();
 
       if (Game.mode==='fortress' || Game.mode==='lab'){
         let siegeTarget = Fortress.pickStrategicTarget(e.x, e.y, 420);
-        for (const fs of Fortress.structures){
-          if (fs.hp<=0 || fs.type === 'mine') continue; 
-          pushCircleOutRect(e, fs);
-        }
+        resolveEnemyFortressCollision(e, Fortress.structures, prevEx, prevEy);
 
         // 近战拆墙/拆塔逻辑：敌人会先拆防线，再图谋旗帜
         if (siegeTarget && siegeTarget.type!=='flag'){
