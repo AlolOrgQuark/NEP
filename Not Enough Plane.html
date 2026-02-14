@@ -9919,7 +9919,7 @@ function spawnEnemyCoreFromSpecs(spec, d){
 
   e.baseCol = spec.baseCol;
   e.tint = spec.tint || null;
-  e.bodySeed = (spec.bodySeed ^ randi(0, 1e9))|0;
+  e.bodySeed = ((spec.bodySeed ?? 1337) | 0);
   e.body = genEnemyBody(e.bodySeed);
   e.waveBulletMods = spec.waveBulletMods || [];
   
@@ -17345,7 +17345,7 @@ if (!e.body){
   e.bodySeed = (spec.bodySeed ?? 1337)|0;
   e.body = genEnemyBody(e.bodySeed);
 }
-applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
+applyBodyOverrides(e.body, spec.bodyOpt || {});
   
   if (spec.bodyScale != null){
     e.r = Math.max(8, e.r * clamp(+spec.bodyScale || 1, 0.5, 2.2));
@@ -20123,30 +20123,29 @@ function exportForgeJSON(){
 function importForgeJSON(str) {
   let obj;
   try { obj = JSON.parse(str); } catch(e){ alert('Invalid JSON'); return; }
-  
-  const data = obj.forge || obj;
-  
-  // 基础属性
-  ForgeState.isBoss = !!data.isBoss;
-  ForgeState.hp = data.hp || 900;
-  ForgeState.col = data.col || 'rgb(255,77,109)';
 
-  // --- 核心修正：兼容 moveKeys 和 moveKey ---
-  if (Array.isArray(data.moveKeys) && data.moveKeys.length > 0) {
-    ForgeState.moveKeys = data.moveKeys;
+  const dataRoot = obj.forge || obj;
+  const spec = dataRoot?.spec || dataRoot;
+
+  // 基础属性（优先读取 forge.spec）
+  ForgeState.isBoss = !!dataRoot.isBoss;
+  ForgeState.hp = dataRoot.hp || 900;
+  ForgeState.col = spec.baseCol || spec.col || dataRoot.col || 'rgb(255,77,109)';
+
+  // 兼容 moveKeys / moveKey（优先 spec）
+  if (Array.isArray(spec.moveKeys) && spec.moveKeys.length > 0) {
+    ForgeState.moveKeys = spec.moveKeys;
   } else {
-    // 为旧格式或不规范数据提供后备
-    ForgeState.moveKeys = [data.moveKey || 'DRIFT'];
+    ForgeState.moveKeys = [spec.moveKey || dataRoot.moveKey || 'DRIFT'];
   }
-  // 确保旧的 moveKey 属性也同步
   ForgeState.moveKey = ForgeState.moveKeys[0];
 
-  ForgeState.mods = data.mods || [];
-  ForgeState.traits = data.traits || [];
-  ForgeState.bodyKind = data.bodyKind || 'AUTO';
-  ForgeState.bodySeed = data.bodySeed || 1337;
-  ForgeState.bodyScale = data.bodyScale || 1.0;
-  ForgeState.bodyOpt = data.bodyOpt || {};
+  ForgeState.mods = spec.waveBulletMods || dataRoot.mods || [];
+  ForgeState.traits = dataRoot.traits || spec.traits || [];
+  ForgeState.bodyKind = spec.bodyKind || dataRoot.bodyKind || 'AUTO';
+  ForgeState.bodySeed = (spec.bodySeed ?? dataRoot.bodySeed ?? 1337);
+  ForgeState.bodyScale = (spec.bodyScale ?? dataRoot.bodyScale ?? 1.0);
+  ForgeState.bodyOpt = spec.bodyOpt || dataRoot.bodyOpt || {};
 
   // 重置 Emitter State
   ForgeState.slot1 = { layer1:'', layer2:'', layer1Cfg:{}, layer2Cfg:{}, baseMods:[] };
@@ -20155,9 +20154,9 @@ function importForgeJSON(str) {
   ForgeState.em1 = { type:'AIM', cd:1.2, speed:220 };
   ForgeState.em2 = { type:'RING', cd:2.2, speed:180 };
 
-  const emittersIn = Array.isArray(data.emitters) ? data.emitters : [data.slot1, data.slot2].filter(Boolean);
-  const first = emittersIn[0] || data.slot1 || null;
-  const second = emittersIn[1] || data.slot2 || null;
+  const emittersIn = Array.isArray(spec.emitters) ? spec.emitters : (Array.isArray(dataRoot.emitters) ? dataRoot.emitters : [spec.slot1, spec.slot2, dataRoot.slot1, dataRoot.slot2].filter(Boolean));
+  const first = emittersIn[0] || spec.slot1 || dataRoot.slot1 || null;
+  const second = emittersIn[1] || spec.slot2 || dataRoot.slot2 || null;
 
   // 兼容 UI 的双层 wrapper 展示（超过两层仍完整保存在 extraEmitters/emittersIn）
   const parseSlot = (srcSlotData, targetSlotNum) => {
