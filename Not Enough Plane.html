@@ -17867,6 +17867,7 @@ const UnitBattle = {
       ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=1.2; ctx.stroke();
       const body = genEnemyBody((g.forge?.spec?.bodySeed||1337));
       applyBodyOverrides(body, g.forge?.spec?.bodyOpt || {});
+      if (g.forge?.spec?.bodyKind && g.forge.spec.bodyKind !== 'AUTO') body.kind = g.forge.spec.bodyKind;
       const fake = {x:g.x,y:g.y,r:g.r*0.75,body,bodySeed:(g.forge?.spec?.bodySeed||1337),tint:(g.forge?.spec?.baseCol||C.E2),baseCol:(g.forge?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
       drawEnemyGeneric(fake);
       ctx.fillStyle = 'rgba(255,255,255,0.95)';
@@ -20163,25 +20164,41 @@ function importForgeJSON(str) {
     if (!srcSlotData) return;
     const emState = (targetSlotNum===1) ? ForgeState.em1 : ForgeState.em2;
     const slotState = ForgeState[`slot${targetSlotNum}`];
-    let current = srcSlotData;
+
+    const normalizeForParse = (it) => {
+      if (!it) return null;
+      if (it.type === '_COMPOSITE' && it._compositeInstance) {
+        try{ return serializeEmitterRecursive(it._compositeInstance) || it._compositeInstance; }catch(_){ return it._compositeInstance; }
+      }
+      if (it._composite) {
+        try{ return serializeEmitterRecursive(it) || it; }catch(_){ return it; }
+      }
+      return it;
+    };
+
+    let current = normalizeForParse(srcSlotData);
     const layersFound = [];
-    while (current && current.isWrapper) {
-      layersFound.push({ type: current.wrapperType, cfg: current.compCfg });
-      current = current.inner || current.innerA || current.innerB;
+    while (current && (current.isWrapper || current.wrapperType || current._composite)) {
+      layersFound.push({
+        type: current.wrapperType || current._composite,
+        cfg: current.compCfg || current._compCfg || {}
+      });
+      current = normalizeForParse(current.inner || current._base || current.innerA || current._emA || current.innerB || current._emB);
     }
+
     if (current) {
-      emState.type = current.type || 'AIM';
-      emState.cd = current.cd || 1.0;
-      emState.speed = current.speed || 200;
-      slotState.baseMods = current.mods || [];
+      emState.type = current.type || (current.cfg?.type) || 'AIM';
+      emState.cd = current.cd ?? current.cfg?.baseCd ?? 1.0;
+      emState.speed = current.speed ?? current.cfg?.speed ?? 200;
+      slotState.baseMods = Array.isArray(current.mods) ? current.mods : (current.cfg?.mods || []);
     }
     if (layersFound.length > 0) {
-      slotState.layer2 = layersFound[0].type;
-      slotState.layer2Cfg = layersFound[0].cfg;
+      slotState.layer2 = layersFound[0].type || '';
+      slotState.layer2Cfg = layersFound[0].cfg || {};
     }
     if (layersFound.length > 1) {
-      slotState.layer1 = layersFound[1].type;
-      slotState.layer1Cfg = layersFound[1].cfg;
+      slotState.layer1 = layersFound[1].type || '';
+      slotState.layer1Cfg = layersFound[1].cfg || {};
     }
   };
 
