@@ -2559,7 +2559,15 @@ playerHit(){
 
   // Half-time feel (鼓组完全不同)
   { name:'HALF_TIME_Cm', bpm:150, root: 36, scale:[0,2,3,5,7,8,10], prog:[0,3,5,6, 0,2,5,3], arpPat:[0,1,0,2, 0,1,3,1, 0,2,1,2, 3,1,0,1], lead:[12,10,9,10, 12,14,12,10, 9,10,12,10, 9,7,9,10], bars:999, vibe:'dark',
-    drums:{kick:[0,8,11], snare:[8], hatOdd:true} }
+    drums:{kick:[0,8,11], snare:[8], hatOdd:true} },
+
+  // New: upbeat cyber house
+  { name:'NOVA_HOUSE_Fm', bpm:134, root:41, scale:[0,2,3,5,7,8,10], prog:[0,5,3,4, 0,4,5,3], arpPat:[0,2,1,2, 0,2,3,2, 1,2,0,2, 3,2,1,2], lead:[7,9,10,9, 7,5,4,5, 7,9,12,10, 9,7,5,4], bars:999, vibe:'bright',
+    drums:{kick:[0,4,8,12], snare:[4,12], hatOdd:true} },
+
+  // New: darker rolling bassline
+  { name:'IRON_LOOP_Gm', bpm:146, root:43, scale:[0,2,3,5,7,8,10], prog:[0,2,5,6, 0,6,5,2], arpPat:[0,1,0,1, 2,3,2,3, 0,2,1,2, 3,1,0,1], lead:[10,7,5,7, 10,12,10,7, 5,7,8,7, 5,3,5,7], bars:999, vibe:'dark',
+    drums:{kick:[0,6,8,12], snare:[4,12], hatOdd:false} }
   ];
   const Music = {
   playing:false,
@@ -18053,7 +18061,7 @@ function toMenu(){
   forceCloseTextPromptModal();
 }
 function mountOverlaysToBody(){
-  for (const id of ['gameover','pausePanel']){
+  for (const id of ['gameover','pausePanel','textPromptModal']){
     const el = document.getElementById(id);
     if (el && el.parentElement !== document.body){
       document.body.appendChild(el);
