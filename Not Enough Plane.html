@@ -828,6 +828,7 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 
 /* Unit battle modal */
 #unitBattleModal{ position:fixed; inset:0; z-index:26000; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.65); opacity:0; pointer-events:none; transition:opacity .22s ease; }
+#unitBattleModal:not(.show){ display:none !important; }
 #unitBattleModal.show{ display:flex; }
 #unitBattleModal.visible{ opacity:1; pointer-events:auto; }
 #unitBattleModal .ub-modal-card{ width:min(780px,94vw); max-height:min(86vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.92), rgba(24,8,40,.9)); border:1px solid rgba(130,229,255,.42); box-shadow:0 18px 50px rgba(0,0,0,.55); padding:14px; border-radius:12px; transform:translateY(18px) scale(.96); opacity:0; transition:transform .26s cubic-bezier(.2,.9,.2,1), opacity .26s ease; }
@@ -3103,16 +3104,30 @@ const addShake = (m, t=0.16) => {
       if (!this.sellMode){
         if (this.selected===item) this.placeRot = (((this.placeRot||0) + Math.PI/4) % (Math.PI*2));
         this.selected = item;
+        if (this.canBuild()){
+          const nextRot = (this.placeRot||0);
+          if (this.preview){
+            this.preview.item = this.selected;
+            this.preview.rot = nextRot;
+          } else {
+            const sx = Number.isFinite(Input?.tx) ? Input.tx : (W*0.5);
+            const sy = Number.isFinite(Input?.ty) ? Input.ty : (H*0.6);
+            const p = this.resolvePlacementPoint(sx, sy);
+            this.preview = {x:p.x, y:p.y, item:this.selected, rot:nextRot};
+            this.previewPointerId = null;
+          }
+        }
+      } else {
+        this.clearPreview();
       }
-      this.clearPreview();
       this.syncSelectionUI();
     },
     snapshotLabLayout(){
       if (Game.mode!=='lab') return;
-      this._labSavedLayout = this.structures.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y}));
+      this._labSavedLayout = this.structures.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y,rot:(st.rot||0)}));
     },
     currentLayout(){
-      return this.structures.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y}));
+      return this.structures.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y,rot:(st.rot||0)}));
     },
     estimateLayoutCost(layout){
       if (!Array.isArray(layout)) return 0;
@@ -3129,7 +3144,7 @@ const addShake = (m, t=0.16) => {
         const cfg = this.catalog[it?.type];
         if (!cfg) continue;
         if (used + cfg.cost > budget) continue;
-        out.push({type:it.type, x:it.x, y:it.y});
+        out.push({type:it.type, x:it.x, y:it.y, rot:(it.rot||0)});
         used += cfg.cost;
       }
       return out;
@@ -3167,9 +3182,11 @@ const addShake = (m, t=0.16) => {
       for (const it of finalLayout){
         const cfg = this.catalog[it?.type];
         if (!cfg) continue;
+        const minY = (isLab ? 30 : H*0.4);
+        const maxY = (isLab ? (H-30) : (H-70));
         this.structures.push({
-          id:this.sid++, x:clamp(+it.x||W*0.5, 30, W-30), y:clamp(+it.y||H*0.6, H*0.4, H-70),
-          w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,cd:cfg.cd||0,cost:cfg.cost
+          id:this.sid++, x:clamp(+it.x||W*0.5, 30, W-30), y:clamp(+it.y||H*0.6, minY, maxY),
+          w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,rot:(+it.rot||0),cd:cfg.cd||0,cost:cfg.cost
         });
       }
       if (isFort){
@@ -3308,8 +3325,9 @@ const addShake = (m, t=0.16) => {
     },
     resolvePlacementPoint(screenX, screenY){
       const pt = this.toWorld(screenX, screenY);
-      const minY = (Game.mode==='fortress_duel') ? (H*0.50) : 60; 
-      return {x:clamp(pt.x, 30, W-30), y:clamp(pt.y, minY, H-70)};
+      const minY = (Game.mode==='fortress_duel') ? (H*0.50) : 30;
+      const maxY = (Game.mode==='fortress_duel') ? (H-70) : (H-30);
+      return {x:clamp(pt.x, 30, W-30), y:clamp(pt.y, minY, maxY)};
     },
     clearPreview(){
       this.preview = null;
@@ -4098,7 +4116,7 @@ function recoverLocalControl(){
       if (!Input.active) return;
       updateDragInput(e.clientX, e.clientY);
     }
-  }, {passive: true});
+  }, {passive: false});
 
   function endPointer(e){
     if (e) DevEditor.onCanvasPointerUp(e);
@@ -12489,6 +12507,7 @@ function grantPlayerEmitter(){
 
   // ================= Damage =================
   function onPlayerHit(dmg, slow=0){
+    if (UnitBattle.active) return;
     if (Player.invuln>0) return;
     SFX.playerHit();
 
@@ -14079,6 +14098,7 @@ BG_Effect.init();
     Player.magnetT = Math.max(0, Player.magnetT-dt);
     Player.overdriveT = Math.max(0, Player.overdriveT-dt);
     Player.slowT = Math.max(0, Player.slowT-dt);
+    if (UnitBattle.active) Player.invuln = Math.max(Player.invuln||0, 999);
     Player.invuln = Math.max(0, Player.invuln-dt);
     Player.shield = Math.max(0, Player.shield-dt);
     
@@ -17056,7 +17076,11 @@ const UnitBattle = {
   },
   refreshList(){
     const el=document.getElementById('ubList');
-    if (!el) return;
+    const modal=document.getElementById('unitBattleModal');
+    if (!el || !modal) return;
+    const modalCard = modal.querySelector('.ub-modal-card');
+    if (modalCard && !el.closest('#unitBattleModal')) modalCard.appendChild(el);
+    el.style.display = modal.classList.contains('show') ? 'grid' : 'none';
     el.innerHTML='';
     this.units.forEach((u,i)=>{
       const card=document.createElement('div');
@@ -17110,7 +17134,7 @@ const UnitBattle = {
     if (!this.dragging || (pid!=null && this.dragging.id!=null && pid!==this.dragging.id)) return false;
     const p=Fortress.toWorld(sx,sy);
     this.dragging.g.x = clamp(p.x, 28, W-28);
-    this.dragging.g.y = clamp(p.y, 40, H*0.58);
+    this.dragging.g.y = clamp(p.y, 40, H-40);
     return true;
   },
   handlePointerUp(_sx,_sy,pid){
@@ -17216,7 +17240,9 @@ function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild
     UnitBattle.reset();
   }
   const savedLabLayout = (keepLabLayout && mode==='lab')
-    ? deepClone(Fortress?._labSavedLayout || Fortress?.structures?.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y})) || [])
+    ? deepClone((Fortress?.structures?.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y,rot:(st.rot||0)}))?.length
+        ? Fortress.structures.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y,rot:(st.rot||0)}))
+        : (Fortress?._labSavedLayout || [])))
     : null;
   // 1. Reset
   resetGame();
@@ -19962,6 +19988,7 @@ document.getElementById('btnStartUnitBattle')?.addEventListener('click', ()=>{
   const m = document.getElementById('unitBattleModal');
   if (!m) return;
   m.classList.add('show');
+  UnitBattle.refreshList();
   requestAnimationFrame(()=>m.classList.add('visible'));
 });
 
@@ -20067,6 +20094,7 @@ ui.btnFortImportLayout?.addEventListener('click', ()=>Fortress.importLabLayout()
 document.addEventListener('pointerdown', (e)=>{
   if ((Game.mode!=='fortress' && Game.mode!=='lab' && Game.mode!=='fortress_duel') || !Fortress.preview) return;
   if (e.target === canvas) return;
+  if (e.target?.closest?.('#fortressPanel')) return;
   Fortress.clearPreview();
 }, {passive:true, capture:true});
 
@@ -20158,14 +20186,14 @@ document.getElementById('btnPauseRetry')?.addEventListener('click', () => {
     return;
   }
 
-  if (last.mode === 'lab') {
+  if (last.mode === 'lab' || last.mode === 'unitbattle') {
     if (typeof readForgeSpecFromUI === 'function') {
       currentForge = readForgeSpecFromUI();
     }
   }
 
   startRun({
-    keepLabLayout: (last.mode==='lab'),
+    keepLabLayout: (last.mode==='lab' || last.mode==='unitbattle'),
     mode: last.mode || 'survival',
     wave: (last.mode === 'survival') ? (parseInt(ui.inpWave.value) || 1) : (last.wave || 1),
     forge: currentForge
@@ -20362,7 +20390,7 @@ function closeUnitBattleModal(){
   const m = document.getElementById('unitBattleModal');
   if (!m) return;
   m.classList.remove('visible');
-  setTimeout(()=>m.classList.remove('show'), 240);
+  setTimeout(()=>{ m.classList.remove('show'); UnitBattle.refreshList(); }, 240);
 }
 document.getElementById('btnUbClose')?.addEventListener('click', closeUnitBattleModal);
 document.getElementById('unitBattleModal')?.addEventListener('click', (e)=>{ if (e.target?.id==='unitBattleModal') closeUnitBattleModal(); });
