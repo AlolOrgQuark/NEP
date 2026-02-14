@@ -5763,6 +5763,7 @@ if (col===C.E7) return 'glowE7';
 
   function spawnBullet(team,x,y,vx,vy,opts={}){
     if ((bulletsP.length + bulletsE.length) >= 500) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(vx) || !Number.isFinite(vy)) return null;
     const b = bulletPool.get();
     // 清除 affix 残留字段（防止池回收污染）
     b._phaseGhost  = false;
@@ -7153,6 +7154,7 @@ MARK_AND_SEEK:{
         r:2.8, dmg: 10 + d*0.65,
         col, style:1, life:2.0
       });
+      if (!b) return;
       b.turnAfter = 0.45;
       sparks(e.x,e.y, sprFromColor(col,'E'), 8, 420);
     });
@@ -9126,19 +9128,32 @@ function mmxDesiredVel(e, dt, d){
 
   // 2. 运行幽灵的一帧逻辑
   const g = m.ghost;
+  if (!Number.isFinite(g.x)) g.x = e.x;
+  if (!Number.isFinite(g.y)) g.y = e.y;
+
   const startX = g.x;
   const startY = g.y;
-  
+
   // 让幽灵在“平行世界”里走一步
-  g.move(dt); 
-  
+  g.move(dt);
+
+  // 幽灵异常时，立即回退到稳定速度，防止 NaN 扩散到实体坐标
+  if (!Number.isFinite(g.x) || !Number.isFinite(g.y)){
+    g.x = e.x;
+    g.y = e.y;
+    return {vx: Number.isFinite(m.vx) ? m.vx : 0, vy: Math.max(50, Number.isFinite(m.vy) ? m.vy : (80 + d*3.0))};
+  }
+
   // 3. 逆向计算速度 (Velocity Inference)
   // 既然我们知道幽灵从 A 走到了 B，那么需要的速度就是 (B-A)/dt
   const safeDt = Math.max(dt, 0.001); // 防止除以零
   const targetVx = (g.x - startX) / (safeDt*3);
   const targetVy = (g.y - startY) / (safeDt*3);
 
-  return {vx: targetVx, vy: targetVy};
+  return {
+    vx: Number.isFinite(targetVx) ? targetVx : 0,
+    vy: Number.isFinite(targetVy) ? targetVy : (80 + d*3.0)
+  };
 }
 
 function mmxMaybeSwitch(e, d){
@@ -12662,6 +12677,53 @@ function updateBeams(dt){
     texts.length=w;
   }
   
+  function repairEnemyPose(e, reason='runtime'){
+  if (!e) return false;
+  let patched = false;
+
+  const fallbackX = clamp(
+    Number.isFinite(e.tx) ? e.tx :
+    Number.isFinite(e.cx) ? e.cx :
+    Number.isFinite(e.mmx?.ocx) ? e.mmx.ocx :
+    (Number.isFinite(Player?.x) ? Player.x : W*0.5),
+    18, W-18
+  );
+  const fallbackY = clamp(
+    Number.isFinite(e.ty) ? e.ty :
+    Number.isFinite(e.cy) ? e.cy :
+    Number.isFinite(e.holdY) ? e.holdY :
+    Number.isFinite(e.mmx?.ocy) ? e.mmx.ocy :
+    -42,
+    -120, H*0.72
+  );
+
+  if (!Number.isFinite(e.x)) { e.x = fallbackX; patched = true; }
+  if (!Number.isFinite(e.y)) { e.y = fallbackY; patched = true; }
+
+  if (e.mmx){
+    const m = e.mmx;
+    if (!Number.isFinite(m.vx)) m.vx = 0;
+    if (!Number.isFinite(m.vy)) m.vy = 80 + Game.difficulty*3.0;
+    if (!Number.isFinite(m.driftVx)) m.driftVx = 0;
+    if (!Number.isFinite(m.driftVy)) m.driftVy = 90 + Game.difficulty*2.0;
+    if (!Number.isFinite(m.ocx)) m.ocx = e.x;
+    if (!Number.isFinite(m.ocy)) m.ocy = clamp(e.y, H*0.12, H*0.30);
+    if (!Number.isFinite(m.orad)) m.orad = 0;
+    if (!Number.isFinite(m.oradT)) m.oradT = 64;
+    if (!Number.isFinite(m.oa)) m.oa = 0;
+    if (!Number.isFinite(m.nextT)) m.nextT = rand(1.4, 2.8);
+  }
+
+  if (e.tx != null && !Number.isFinite(e.tx)) e.tx = e.x;
+  if (e.ty != null && !Number.isFinite(e.ty)) e.ty = e.y;
+
+  if (patched){
+    e._repairedAt = Game.time;
+    if (reason==='runtime') sparks(e.x, e.y, 'glowW', 5, 140);
+  }
+  return patched;
+}
+
   function separateEnemies(dt){
   const pad = 18;
   for(let i=0;i<enemies.length;i++){
@@ -13905,6 +13967,10 @@ BG_Effect.init();
     // enemies
     for(const e of enemies){
       if (!e.alive) continue;
+      if (!Number.isFinite(e.x) || !Number.isFinite(e.y)){
+        repairEnemyPose(e, 'runtime');
+        if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
+      }
       e.hit = Math.max(0, e.hit-dt);
       // ------ FREEZE_HIT 支持 ------
       if (e._freezeT > 0){
@@ -13954,6 +14020,11 @@ BG_Effect.init();
           e.alive = false;
           spawnShockwave(e.x, H-62, C.E1, 120, 0.3);
         }
+      }
+
+      if (!Number.isFinite(e.x) || !Number.isFinite(e.y)){
+        repairEnemyPose(e, 'runtime');
+        if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) continue;
       }
 
       if (e.y > H/Camera.zoom + 220) e.alive=false;
@@ -15596,8 +15667,10 @@ Game.bossAlive = frame.game.bossAlive;
         e.tint = (state.tint != null) ? state.tint : (specData.tint || specData.col);
         e.maxHp = state.maxHp;
         e.hp = state.hp;
-        e.x = state.x; e.y = state.y;
-        e.vx = state.vx; e.vy = state.vy;
+        e.x = Number.isFinite(state.x) ? state.x : (Number.isFinite(e.x) ? e.x : W*0.5);
+        e.y = Number.isFinite(state.y) ? state.y : (Number.isFinite(e.y) ? e.y : -40);
+        e.vx = Number.isFinite(state.vx) ? state.vx : (Number.isFinite(e.vx) ? e.vx : 0);
+        e.vy = Number.isFinite(state.vy) ? state.vy : (Number.isFinite(e.vy) ? e.vy : (80 + d*3.0));
         e.r = state.r;
         e.spawnId = state.spawnId;
 
@@ -15621,7 +15694,7 @@ Game.bossAlive = frame.game.bossAlive;
         e._protoBaseCol = specData.baseCol;
 
         if (e.mmx && state.mmxState) Object.assign(e.mmx, state.mmxState);
-
+        repairEnemyPose(e, 'rewind');
 
         if (state.isBoss) {
           e.draw = () => {
