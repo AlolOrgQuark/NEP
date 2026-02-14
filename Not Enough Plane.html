@@ -1472,6 +1472,7 @@ input[type="checkbox"] {
               <button id="btnStartLab" style="border-color:rgba(179,108,255,0.6);color:var(--c-magenta)">START LAB (FORGE)</button>
               <button id="btnStartUnitBattle" style="border-color:#9deeff;color:#9deeff">START UNIT BATTLE</button>
             </div>
+            <div id="ubList" class="ub-list"></div>
           </div>
 
         </div>
@@ -6430,6 +6431,40 @@ function refreshDNAAfterFire(beforeP, beforeE){
     }
     if (Number.isFinite(obj.vx)) obj.vx *= 0.45;
     if (Number.isFinite(obj.vy)) obj.vy *= 0.45;
+  }
+
+  function resolveEnemyFortressCollision(obj, structures, prevX, prevY){
+    if (!obj || !Array.isArray(structures) || !structures.length) return;
+    let pushed = false;
+    for (let iter=0; iter<4; iter++){
+      let hit = false;
+      for (const fs of structures){
+        if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+        if (pushCircleOutRect(obj, fs)){
+          hit = true;
+          pushed = true;
+        }
+      }
+      if (!hit) break;
+    }
+    if (!pushed) return;
+
+    // 兜底：若仍有重叠，回退到上一帧位置后再推一次，避免穿墙
+    let overlapped = false;
+    for (const fs of structures){
+      if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+      if (circleRectOverlap(obj.x, obj.y, obj.r||10, fs)){ overlapped = true; break; }
+    }
+    if (!overlapped) return;
+
+    obj.x = prevX;
+    obj.y = prevY;
+    for (const fs of structures){
+      if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+      pushCircleOutRect(obj, fs);
+    }
+    if (Number.isFinite(obj.vx)) obj.vx *= 0.6;
+    if (Number.isFinite(obj.vy)) obj.vy *= 0.6;
   }
 
   // ================= Supplies =================
