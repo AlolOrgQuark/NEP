@@ -3111,7 +3111,7 @@ const addShake = (m, t=0.16) => {
         return;
       }
 
-      this.spawnLeft = 14 + Math.floor(Game.wave*3.1);
+      this.spawnLeft = 8 + Math.floor(Game.wave*3.1);
       this.bossSpawned = false;
       WaveDirector.onWave(Game.wave);
       this.spawnCd = 0.25;
@@ -16336,7 +16336,7 @@ const DiffConfig = {
     this.mode = parseInt(mode) ?? 1;
   },
   // 生成间隔倍率：越大约慢（Casual = 2.2倍间隔，即怪物少一半以上）
-  get spawnRateMul() { return [2.2, 1.0, 0.75, 0.5][this.mode]; }, 
+  get spawnRateMul() { return [2.2, 1.5, 0.9, 0.5][this.mode]; }, 
   // 敌人血量倍率
   get enemyHpMul()   { return [0.5, 1.0, 1.4, 2.0][this.mode]; },
   // 额外词条数量 (Casual 无额外，Hell +2)
