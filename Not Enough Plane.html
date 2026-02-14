@@ -6516,20 +6516,29 @@ function refreshDNAAfterFire(beforeP, beforeE){
       }
       return false;
     };
+    const breakCostLine = (x1,y1,x2,y2, arr=blocksRaw)=>{
+      let t = 0;
+      const siegeDps = 44;
+      for (const st of arr){
+        if (!st || st.hp<=0) continue;
+        if (!segmentIntersectsOrientedRect(x1,y1,x2,y2,st,pad)) continue;
+        t += Math.max(1, st.hp||1) / siegeDps;
+        t += (st.type==='shield' || st.type==='bunker') ? 0.35 : 0.12;
+      }
+      return t;
+    };
 
     if (!isBlocked(obj.x,obj.y,tx,ty)){
       steerTo(tx,ty,1.12);
       return;
     }
 
-    // Replan throttle to avoid O(N^2 * enemyCount) spikes when fortress has many blocks.
     obj._pathRecalcCd = Math.max(0, (obj._pathRecalcCd||0) - dt);
     if (obj._pathNext && obj._pathRecalcCd>0){
       steerTo(obj._pathNext.x, obj._pathNext.y, 1.0);
       return;
     }
 
-    // If layout is very dense, use bounded-angle local search (fast fallback).
     if (blocksRaw.length > 26){
       let best=null;
       const baseA = Math.atan2(dy0, dx0);
@@ -6559,41 +6568,23 @@ function refreshDNAAfterFire(beforeP, beforeE){
       wall:2.2,heavywall:2.8,bunker:3.4,shield:3.1,barricade:1.8,taunt:2.4
     }[st?.type] || 2.0);
 
-
-    const breakCostLine = (x1,y1,x2,y2, arr)=>{
-      let t = 0;
-      const siegeDps = 44;
-      for (const st of arr){
-        if (!st || st.hp<=0) continue;
-        if (!segmentIntersectsOrientedRect(x1,y1,x2,y2,st,pad)) continue;
-        const hp = Math.max(1, st.hp||1);
-        t += hp / siegeDps;
-        t += (st.type==='shield' || st.type==='bunker') ? 0.35 : 0.12;
-      }
-      return t;
-    };
-
-    // Keep graph small: only consider blockers + nearby structures.
-    const nearLine = [];
+    const nearLine=[];
     for (const st of blocksRaw){
       const dSeg = Math.sqrt(distPointSeg2(st.x, st.y, obj.x, obj.y, tx, ty));
-      if (dSeg < Math.max(140, d0*0.55)) nearLine.push(st);
+      if (dSeg < Math.max(160, d0*0.7)) nearLine.push(st);
     }
-    const blocks = nearLine.length ? nearLine.slice(0, 20) : blocksRaw.slice(0, 20);
+    const blocks = nearLine.length ? nearLine.slice(0, 28) : blocksRaw.slice(0, 28);
 
-    // Visibility graph (obstacle-corner nodes + start/goal) with A*.
     const nodes=[{x:obj.x,y:obj.y,id:0,st:null},{x:tx,y:ty,id:1,st:null}];
     const addNode=(x,y,st)=>{
       if (x<20 || x>W-20 || y<20 || y>H-20) return;
       nodes.push({x,y,id:nodes.length,st:st||null});
     };
-
     for (const st of blocks){
-      const hw=(st.w||20)*0.5 + pad + 10;
-      const hh=(st.h||20)*0.5 + pad + 10;
+      const hw=(st.w||20)*0.5 + pad + 8;
+      const hh=(st.h||20)*0.5 + pad + 8;
       const c=Math.cos(st.rot||0), sn=Math.sin(st.rot||0);
-      const local=[[ hw, hh],[ hw,-hh],[-hw, hh],[-hw,-hh]];
-      for (const [lx,ly] of local){
+      for (const [lx,ly] of [[ hw, hh],[ hw,-hh],[-hw, hh],[-hw,-hh],[0,hh],[0,-hh],[hw,0],[-hw,0]]){
         addNode(st.x + lx*c - ly*sn, st.y + lx*sn + ly*c, st);
       }
     }
@@ -6607,20 +6598,18 @@ function refreshDNAAfterFire(beforeP, beforeE){
         let w = Math.hypot(b.x-a.x, b.y-a.y);
         if (b.st) w += threatOf(b.st)*18;
         w += breakCostLine(a.x,a.y,b.x,b.y,blocks) * 110;
-
         for (const st of blocks){
           const dd = Math.hypot(b.x-st.x, b.y-st.y);
           const rad = Math.max(st.w||20, st.h||20)*0.75 + 24;
-          if (dd < rad) w += threatOf(st) * (1 - dd/rad + 0.1) * 5.0;
+          if (dd < rad) w += threatOf(st) * (1 - dd/rad + 0.1) * 4.5;
         }
         if (Array.isArray(allies)){
           for (const al of allies){
             if (!al || al===obj || !al.alive) continue;
             const dd = Math.hypot(b.x-al.x, b.y-al.y);
-            if (dd < 56) w += (56-dd) * 0.26;
+            if (dd < 56) w += (56-dd) * 0.24;
           }
         }
-
         graph[i].push([j,w]);
         graph[j].push([i,w]);
       }
@@ -6632,7 +6621,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
     f[startId]=Math.hypot(nodes[startId].x-nodes[goalId].x, nodes[startId].y-nodes[goalId].y);
 
     let found=false, guard=0;
-    while (open.length && guard<900){
+    while (open.length && guard<1100){
       guard++;
       let bestIdx=0;
       for (let i=1;i<open.length;i++) if (f[open[i]]<f[open[bestIdx]]) bestIdx=i;
@@ -21040,7 +21029,8 @@ function showLargeTextPrompt({title='粘贴文本', label='TEXT', placeholder='�
     if (t) t.textContent = title;
     if (l) l.textContent = label;
     input.placeholder = placeholder || '';
-    input.value = defaultValue || '';
+    input.value = '';
+    if (defaultValue) input.value = defaultValue;
 
     const close = (val)=>{
       modal.classList.remove('visible');
@@ -21049,6 +21039,7 @@ function showLargeTextPrompt({title='粘贴文本', label='TEXT', placeholder='�
       cancel.removeEventListener('click', onCancel);
       modal.removeEventListener('click', onBg);
       input.removeEventListener('keydown', onKey);
+      input.value = '';
       resolve(val);
     };
     const onOk = ()=>close((input.value||'').trim() || null);
