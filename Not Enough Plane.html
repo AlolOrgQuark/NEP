@@ -800,7 +800,10 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   letter-spacing:1px;
   margin-bottom:6px;
 }
-.ub-list{ display:flex; flex-wrap:wrap; gap:6px; max-height:110px; overflow:auto; margin-top:8px; }
+.ub-list{ display:flex; flex-wrap:nowrap; gap:8px; overflow-x:auto; overflow-y:hidden; margin-top:8px; padding-bottom:4px; -webkit-overflow-scrolling:touch; }
+
+.ub-list::-webkit-scrollbar{ height:6px; }
+.ub-list::-webkit-scrollbar-thumb{ background:rgba(157,238,255,.35); border-radius:8px; }
 .ub-chip{
   border:1px solid rgba(157,238,255,.45);
   border-radius:999px;
@@ -834,9 +837,11 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 #unitBattleModal .ub-modal-card{ width:min(780px,94vw); max-height:min(86vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.92), rgba(24,8,40,.9)); border:1px solid rgba(130,229,255,.42); box-shadow:0 18px 50px rgba(0,0,0,.55); padding:14px; border-radius:12px; transform:translateY(18px) scale(.96); opacity:0; transition:transform .26s cubic-bezier(.2,.9,.2,1), opacity .26s ease; }
 #unitBattleModal.visible .ub-modal-card{ transform:translateY(0) scale(1); opacity:1; }
 #unitBattleModal textarea{ min-height:180px; }
-.ub-unit-card{ width:80px; border:1px solid rgba(157,238,255,.35); border-radius:10px; padding:4px; background:rgba(0,0,0,.24); display:flex; flex-direction:column; gap:4px; align-items:center; }
+.ub-unit-card{ position:relative; flex:0 0 auto; width:86px; border:1px solid rgba(157,238,255,.35); border-radius:10px; padding:4px; background:rgba(0,0,0,.24); display:flex; flex-direction:column; gap:4px; align-items:center; }
 .ub-unit-icon{ width:64px; height:64px; border:1px solid rgba(157,238,255,.3); background:radial-gradient(circle at 50% 50%, rgba(157,238,255,.12), rgba(0,0,0,.2)); }
 .ub-unit-meta{ font:600 9px/1.15 var(--font-mono); color:#c8f4ff; text-align:center; word-break:break-word; }
+.ub-unit-del{ position:absolute; top:-6px; right:-6px; width:18px; height:18px; border-radius:999px; border:1px solid rgba(255,120,120,.7); background:rgba(28,0,0,.85); color:#ffb3b3; font:700 11px/1 var(--font-mono); display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
+.ub-unit-del:hover{ background:rgba(90,0,0,.92); color:#fff; }
 
 /* action row */
 .menu-actions{
@@ -3249,6 +3254,18 @@ const addShake = (m, t=0.16) => {
       }
 
       if (Game.mode==='lab'){
+        this._labAssaultStart = {
+          layout: deepClone(this.currentLayout()),
+          selected: this.selected,
+          placeRot: this.placeRot||0,
+          sellMode: !!this.sellMode
+        };
+        if (UnitBattle.active){
+          UnitBattle.assaultSnapshot = {
+            ghosts: deepClone(UnitBattle.ghosts||[]),
+            units: deepClone(UnitBattle.units||[])
+          };
+        }
         this.labLockedAssault = true;
         this.spawnLeft = 0;
         this.bossSpawned = false;
@@ -6001,6 +6018,9 @@ if (col===C.E7) return 'glowE7';
     b.depth = opts.depth ?? 0;
     b.fortressSafe = !!opts.fortressSafe || ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && team==='P');
 
+    const srcOwner = opts?.modCtx?.owner || UnitBattle._bulletSource?.owner || UnitBattle._source || null;
+    b.owner = srcOwner || null;
+
     // assign mods (affixes)
     if (opts.mods && opts.mods.length){
       applyBulletMods(b, opts.mods, opts.modCtx || null);
@@ -6009,7 +6029,13 @@ if (col===C.E7) return 'glowE7';
       clearObj(b.st);
     }
 
-    if (team==='E' && opts?.modCtx?.owner?.ubTeam!=null) b.ubTeam = opts.modCtx.owner.ubTeam;
+    if (team==='E'){
+      if (opts?.ubTeam!=null) b.ubTeam = opts.ubTeam;
+      else if (opts?.modCtx?.owner?.ubTeam!=null) b.ubTeam = opts.modCtx.owner.ubTeam;
+      else if (UnitBattle._bulletSource?.ubTeam!=null) b.ubTeam = UnitBattle._bulletSource.ubTeam;
+      else if (srcOwner?.ubTeam!=null) b.ubTeam = srcOwner.ubTeam;
+      else b.ubTeam = null;
+    }
     (team==='P'?bulletsP:bulletsE).push(b);
     stampBulletDNA(b);
     return b;
@@ -6135,6 +6161,8 @@ function refreshDNAAfterFire(beforeP, beforeE){
     if(reason==='oob') b._diedAtEdge=true
     
     // 1. 触发 Affix 的 onDeath 钩子 (逻辑层)
+    const prevBulletSource = UnitBattle._bulletSource;
+    UnitBattle._bulletSource = b;
     if (b.mods.length){
       for (const k of b.mods){
         const m = BulletAffixCatalog[k];
@@ -6146,6 +6174,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
       // 执行后立即移除，防止无限递归
       b.onDeath = null; 
     }
+    UnitBattle._bulletSource = prevBulletSource;
 
     // 2. 视觉特效：自然消散 (expire)
     // 修改点：放宽深度限制，允许 depth <= 4 (分裂弹) 产生特效
@@ -6253,39 +6282,72 @@ function refreshDNAAfterFire(beforeP, beforeE){
   };
 
 
+  function tryHitUnitBattleOpponentByBullet(b){
+    if (!UnitBattle.active || !b?.alive || b.team!=='E' || b.ubTeam==null || b.noHitT>0 || b._phaseGhost) return false;
+    let target = null;
+    let bestD2 = Infinity;
+    for (const e of enemies){
+      if (!e?.alive || e.ubTeam==null || e.ubTeam===b.ubTeam) continue;
+      if (b.owner && e===b.owner) continue;
+      if (!hitCircle(b.x,b.y,b.r||2,e.x,e.y,e.r||10)) continue;
+      const d2 = dist2(b.x,b.y,e.x,e.y);
+      if (d2 < bestD2){ bestD2=d2; target=e; }
+    }
+    if (!target) return false;
+    if (b.mods.length){
+      for (const k of b.mods) BulletAffixCatalog[k]?.onHit?.(b, target, null);
+    }
+    target.onHit?.(b.dmg||0);
+    sparks(b.x,b.y,'glowE', 8, 260);
+    if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; }
+    else killBullet(b, 'hit', {childMods: propagateMods(b.mods)});
+    if ((target.hp||0)<=0){ target.alive=false; target.onDeath?.(); }
+    return true;
+  }
+
   function circleRectOverlap(cx, cy, cr, rect){
+    const rot = rect.rot||0;
+    const c = Math.cos(rot), sn = Math.sin(rot);
+    const dx = cx - rect.x, dy = cy - rect.y;
+    const lx = dx*c + dy*sn;
+    const ly = -dx*sn + dy*c;
     const hw = rect.w*0.5, hh = rect.h*0.5;
-    const nx = clamp(cx, rect.x-hw, rect.x+hw);
-    const ny = clamp(cy, rect.y-hh, rect.y+hh);
-    return dist2(cx, cy, nx, ny) <= cr*cr;
+    const nx = clamp(lx, -hw, hw);
+    const ny = clamp(ly, -hh, hh);
+    return dist2(lx, ly, nx, ny) <= cr*cr;
   }
 
   function pushCircleOutRect(obj, rect){
+    const rot = rect.rot||0;
+    const c = Math.cos(rot), sn = Math.sin(rot);
+    const dx0 = obj.x - rect.x, dy0 = obj.y - rect.y;
+    let lx = dx0*c + dy0*sn;
+    let ly = -dx0*sn + dy0*c;
     const hw = rect.w*0.5, hh = rect.h*0.5;
-    const left = rect.x - hw, right = rect.x + hw;
-    const top = rect.y - hh, bottom = rect.y + hh;
-    const nx = clamp(obj.x, left, right);
-    const ny = clamp(obj.y, top, bottom);
-    const dx = obj.x - nx, dy = obj.y - ny;
+    const nx = clamp(lx, -hw, hw);
+    const ny = clamp(ly, -hh, hh);
+    const dx = lx - nx, dy = ly - ny;
     const rr = (obj.r||10) + 1;
     const d2 = dx*dx + dy*dy;
     if (d2 >= rr*rr) return false;
     if (d2 > 1e-6){
       const d = Math.sqrt(d2);
       const k = (rr - d) / d;
-      obj.x += dx * k;
-      obj.y += dy * k;
-      return true;
+      lx += dx * k;
+      ly += dy * k;
+    } else {
+      const padL = Math.abs(lx + hw);
+      const padR = Math.abs(hw - lx);
+      const padT = Math.abs(ly + hh);
+      const padB = Math.abs(hh - ly);
+      const m = Math.min(padL, padR, padT, padB);
+      if (m===padL) lx = -hw - rr;
+      else if (m===padR) lx = hw + rr;
+      else if (m===padT) ly = -hh - rr;
+      else ly = hh + rr;
     }
-    const padL = Math.abs(obj.x - left);
-    const padR = Math.abs(right - obj.x);
-    const padT = Math.abs(obj.y - top);
-    const padB = Math.abs(bottom - obj.y);
-    const m = Math.min(padL, padR, padT, padB);
-    if (m===padL) obj.x = left - rr;
-    else if (m===padR) obj.x = right + rr;
-    else if (m===padT) obj.y = top - rr;
-    else obj.y = bottom + rr;
+    obj.x = rect.x + (lx*c - ly*sn);
+    obj.y = rect.y + (lx*sn + ly*c);
     return true;
   }
 
@@ -12549,11 +12611,14 @@ function grantPlayerEmitter(){
       if (!Number.isFinite(b.bounce)) b.bounce = 0;
 
       // affix onUpdate
+      const prevBulletSource = UnitBattle._bulletSource;
+      UnitBattle._bulletSource = b;
       if (b.mods.length){
         for(const k of b.mods){
           BulletAffixCatalog[k]?.onUpdate?.(b, dt, null);
         }
       }
+      UnitBattle._bulletSource = prevBulletSource;
 
       // delayed homing
       if (b.turnAfter > 0) {
@@ -12658,6 +12723,8 @@ if (b.homing > 0){
         b.x += px * b.waveA * s * dt;
         b.y += py * b.waveA * s * dt;
       }
+
+      if (UnitBattle.active && b.team==='E' && tryHitUnitBattleOpponentByBullet(b)) continue;
 
       if ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && b.team==='E' && !b.fortressSafe){
         const shieldHit = Fortress.pickShieldInterceptor(b.x, b.y, b.r||2);
@@ -14398,19 +14465,7 @@ BG_Effect.init();
     for(const b of bulletsE){
       if (!b.alive || b._phaseGhost) continue;
       if (UnitBattle.active){
-        let hitOpp = false;
-        for (const e of enemies){
-          if (!e.alive || e.ubTeam==null || b.ubTeam==null || e.ubTeam===b.ubTeam) continue;
-          if (hitCircle(b.x,b.y,b.r,e.x,e.y,e.r)){
-            e.onHit?.(b.dmg);
-            killBullet(b, 'hit', {childMods: propagateMods(b.mods)});
-            sparks(b.x,b.y,'glowE', 8, 260);
-            if (e.hp<=0){ e.alive=false; e.onDeath?.(); }
-            hitOpp = true;
-            break;
-          }
-        }
-        if (hitOpp) continue;
+        if (tryHitUnitBattleOpponentByBullet(b)) continue;
         continue;
       }
       if (!Player.alive) continue;
@@ -17039,7 +17094,9 @@ const UnitBattle = {
   dragging:null,
   winner:null,
   _source:null,
-  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; },
+  _bulletSource:null,
+  assaultSnapshot:null,
+  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; this._bulletSource=null; },
   parseUnitJSON(txt){
     const obj = JSON.parse(txt||'{}');
     const raw = obj?.forge ? obj.forge : obj;
@@ -17080,7 +17137,7 @@ const UnitBattle = {
     if (!el || !modal) return;
     const modalCard = modal.querySelector('.ub-modal-card');
     if (modalCard && !el.closest('#unitBattleModal')) modalCard.appendChild(el);
-    el.style.display = modal.classList.contains('show') ? 'grid' : 'none';
+    el.style.display = modal.classList.contains('show') ? 'flex' : 'none';
     el.innerHTML='';
     this.units.forEach((u,i)=>{
       const card=document.createElement('div');
@@ -17099,6 +17156,17 @@ const UnitBattle = {
       const meta=document.createElement('div');
       meta.className='ub-unit-meta';
       meta.textContent=`#${i+1} ${u?.spec?.moveKey||'MIX'} HP:${u?.hp||0}`;
+      const del=document.createElement('button');
+      del.className='ub-unit-del';
+      del.type='button';
+      del.textContent='×';
+      del.title='删除该兵种';
+      del.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        UnitBattle.units.splice(i,1);
+        UnitBattle.refreshList();
+      });
+      card.appendChild(del);
       card.appendChild(cv);
       card.appendChild(meta);
       el.appendChild(card);
@@ -17235,14 +17303,19 @@ function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild
   if (mode==='unitbattle'){
     UnitBattle.active = true;
     UnitBattle.setupGhosts();
+    if (keepLabLayout && UnitBattle.assaultSnapshot?.ghosts?.length){
+      UnitBattle.ghosts = deepClone(UnitBattle.assaultSnapshot.ghosts);
+    }
     mode = 'lab';
   } else {
     UnitBattle.reset();
   }
   const savedLabLayout = (keepLabLayout && mode==='lab')
-    ? deepClone((Fortress?.structures?.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y,rot:(st.rot||0)}))?.length
-        ? Fortress.structures.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y,rot:(st.rot||0)}))
-        : (Fortress?._labSavedLayout || [])))
+    ? deepClone((Fortress?._labAssaultStart?.layout?.length
+        ? Fortress._labAssaultStart.layout
+        : (Fortress?.structures?.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y,rot:(st.rot||0)}))?.length
+            ? Fortress.structures.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y,rot:(st.rot||0)}))
+            : (Fortress?._labSavedLayout || []))))
     : null;
   // 1. Reset
   resetGame();
@@ -17425,6 +17498,11 @@ if (mode === 'lab'){
     Fortress.labForgeSpec = forge || JSON.parse(localStorage.getItem(LS_FORGE) || 'null');
     if (savedLabLayout?.length) Fortress.applyLabLayout(savedLabLayout);
     else Fortress.snapshotLabLayout();
+    if (keepLabLayout && Fortress._labAssaultStart){
+      Fortress.selected = Fortress._labAssaultStart.selected || Fortress.selected;
+      Fortress.placeRot = Fortress._labAssaultStart.placeRot || 0;
+      Fortress.sellMode = !!Fortress._labAssaultStart.sellMode;
+    }
     Fortress.updatePanel();
 
     textPop(W*0.5, 92, 'LAB FORTRESS PREP', C.P2);
