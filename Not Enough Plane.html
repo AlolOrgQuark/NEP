@@ -851,7 +851,15 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 .ub-team-units::-webkit-scrollbar-thumb{ background:rgba(157,238,255,.35); border-radius:8px; }
 #ubImportModal{ position:fixed; inset:0; z-index:28000; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
 #ubImportModal.show{ display:flex; }
-#ubImportModal .card{ width:min(560px,92vw); background:linear-gradient(160deg, rgba(8,16,34,.94), rgba(24,8,40,.92)); border:1px solid rgba(130,229,255,.42); border-radius:10px; padding:12px; }
+#ubImportModal .card{ width:min(620px,94vw); background:linear-gradient(160deg, rgba(8,16,34,.94), rgba(24,8,40,.92)); border:1px solid rgba(130,229,255,.42); border-radius:10px; padding:12px; }
+#ubImportModal textarea{ min-height:300px; }
+#ubWinnerModal{ position:fixed; inset:0; z-index:28100; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.58); }
+#ubWinnerModal.show{ display:flex; }
+#ubWinnerModal .card{ width:min(760px,95vw); max-height:min(82vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.95), rgba(24,8,40,.93)); border:1px solid rgba(255,210,138,.45); border-radius:10px; padding:12px; }
+.ub-winner-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.ub-winner-item{ position:relative; width:120px; border:1px solid rgba(255,210,138,.45); border-radius:10px; padding:6px; background:rgba(0,0,0,.24); cursor:pointer; }
+.ub-winner-item:hover{ box-shadow:0 0 0 1px rgba(255,210,138,.45) inset; }
+.ub-winner-meta{ font:600 10px/1.2 var(--font-mono); color:#ffe3b0; text-align:center; margin-top:4px; }
 
 /* action row */
 .menu-actions{
@@ -1849,6 +1857,16 @@ input[type="checkbox"] {
     <div class="menu-actions" style="margin-top:8px;justify-content:flex-start;gap:8px">
       <button id="btnUbImportConfirm" class="mini-btn" style="border-color:#9deeff;color:#9deeff">添加到队伍</button>
     </div>
+  </div>
+</div>
+<div id="ubWinnerModal" aria-hidden="true">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+      <div class="ub-title" id="ubWinnerTitle" style="margin:0">胜者导出</div>
+      <button id="btnUbWinnerClose" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">关闭</button>
+    </div>
+    <div class="muted" style="font-size:10px">点击下方任意兵种预览块即可复制其 JSON 到剪贴板并写入 I/O 面板。</div>
+    <div id="ubWinnerList" class="ub-winner-grid"></div>
   </div>
 </div>
 
@@ -6447,6 +6465,42 @@ function refreshDNAAfterFire(beforeP, beforeE){
     if (Number.isFinite(obj.vx)) obj.vx *= 0.35;
     if (Number.isFinite(obj.vy)) obj.vy *= 0.35;
   }
+
+  function applyEnemyPathSteer(obj, target, structures, dt){
+    if (!obj || !target || !Array.isArray(structures) || !structures.length) return;
+    const tx = target.x ?? obj.x, ty = target.y ?? obj.y;
+    let dx = tx - obj.x, dy = ty - obj.y;
+    const d = Math.hypot(dx,dy) || 1;
+    let ux = dx/d, uy = dy/d;
+    const lateralX = -uy, lateralY = ux;
+    const look = 46 + (obj.r||12)*1.8;
+
+    const blockedScore = (dirX, dirY)=>{
+      let score = 0;
+      const sx = obj.x + dirX*look, sy = obj.y + dirY*look;
+      for (const fs of structures){
+        if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+        if (circleRectOverlap(sx, sy, (obj.r||10)+2, fs)) score += 1;
+      }
+      return score;
+    };
+
+    const fwd = blockedScore(ux, uy);
+    if (fwd > 0){
+      const l = blockedScore(ux + lateralX*0.85, uy + lateralY*0.85);
+      const r = blockedScore(ux - lateralX*0.85, uy - lateralY*0.85);
+      const side = (l <= r) ? 1 : -1;
+      ux += lateralX * side * 0.95;
+      uy += lateralY * side * 0.95;
+      const nd = Math.hypot(ux,uy) || 1;
+      ux/=nd; uy/=nd;
+    }
+
+    const steerSp = 52 + (obj.r||12)*1.2;
+    obj.x += ux * steerSp * dt;
+    obj.y += uy * steerSp * dt;
+  }
+
 
   // ================= Supplies =================
   const Supply = {
@@ -14358,6 +14412,8 @@ BG_Effect.init();
       if (Game.mode==='fortress' || Game.mode==='lab'){
         let siegeTarget = Fortress.pickStrategicTarget(e.x, e.y, 420);
         resolveEnemyFortressCollision(e, Fortress.structures, prevEx, prevEy);
+        if (siegeTarget) applyEnemyPathSteer(e, siegeTarget, Fortress.structures, dt);
+        resolveEnemyFortressCollision(e, Fortress.structures, prevEx, prevEy);
 
         // 近战拆墙/拆塔逻辑：敌人会先拆防线，再图谋旗帜
         if (siegeTarget && siegeTarget.type!=='flag'){
@@ -16823,6 +16879,22 @@ function render(dt) {
   if (Game.state !== 'menu') Multiplayer.drawPeerBullets();
 
   for (const e of enemies) if (e.alive) e.draw();
+  if (UnitBattle.active){
+    ctx.save();
+    ctx.font='700 10px "Consolas", monospace';
+    ctx.textAlign='center';
+    ctx.textBaseline='bottom';
+    for (const e of enemies){
+      if (!e?.alive || e.ubTeam==null) continue;
+      const col = (e.ubTeam%2===1) ? '#9deeff' : '#ffb58a';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      const y = e.y - (e.r||14) - 8;
+      ctx.fillRect(e.x-14, y-10, 28, 11);
+      ctx.fillStyle = col;
+      ctx.fillText(`T${e.ubTeam}`, e.x, y);
+    }
+    ctx.restore();
+  }
   drawSupplies();
     if (AutoPilot.active && Player.alive) {
     ctx.save();
@@ -17193,7 +17265,8 @@ const UnitBattle = {
   _bulletSource:null,
   assaultSnapshot:null,
   importTargetTeamId:null,
-  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; this.winnerTeam=null; this._bulletSource=null; },
+  winnerPool:[],
+  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; this.winnerTeam=null; this._bulletSource=null; this.winnerPool=[]; },
   ensureDefaultTeam(){ if (!this.teams.length) this.addTeam(); },
   makeTeamName(id){ return `TEAM ${id}`; },
   addTeam(){
@@ -17360,18 +17433,34 @@ const UnitBattle = {
       e.noDrop = true; e.score = 0;
       const baseMove = e.move?.bind(e);
       e.move = (dt)=>{
-        // Unit battle: target-driven major direction, base move only as tiny jitter modifier.
-        if (baseMove) baseMove(dt*0.08);
-        const t = UnitBattle.findOpponent(e, e.x, e.y, 1600);
+        if (baseMove) baseMove(dt*0.05);
+        const t = UnitBattle.findOpponent(e, e.x, e.y, 1800);
         if (!t) return;
         const tx = (t.x ?? e.x), ty = (t.y ?? e.y);
         const dx = tx - e.x, dy = ty - e.y;
         const d = Math.hypot(dx,dy) || 1;
-        const ux = dx/d, uy = dy/d;
-        const sp = 120 + (e.r||14)*2.8;
-        const sway = Math.sin((Game.time||0)*3.2 + (e.bodySeed||0)*0.01) * 18;
-        e.x += (ux*sp + (-uy)*sway) * dt;
-        e.y += (uy*sp + (ux)*sway) * dt;
+        let vx = (dx/d), vy = (dy/d);
+
+        // path steering: avoid fortress blocks instead of always straight break-through.
+        const look = 64 + (e.r||14)*2;
+        const structures = Fortress.structures || [];
+        for (const fs of structures){
+          if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+          const nx = clamp(e.x, fs.x-fs.w*0.55, fs.x+fs.w*0.55);
+          const ny = clamp(e.y, fs.y-fs.h*0.55, fs.y+fs.h*0.55);
+          const ox = e.x - nx, oy = e.y - ny;
+          const od = Math.hypot(ox,oy) || 1;
+          const danger = Math.max(0, 1 - od/(look+Math.max(fs.w,fs.h)*0.45));
+          if (danger<=0) continue;
+          vx += (ox/od) * danger * 1.8;
+          vy += (oy/od) * danger * 1.8;
+        }
+
+        const nd = Math.hypot(vx,vy) || 1;
+        vx/=nd; vy/=nd;
+        const sp = 122 + (e.r||14)*2.8;
+        e.x += vx * sp * dt;
+        e.y += vy * sp * dt;
       };
     }
     this.winner=null;
@@ -20624,6 +20713,7 @@ function openUbImportModal(teamId){
   const t = UnitBattle.teams.find(v=>v.id===teamId);
   const title = document.getElementById('ubImportTitle');
   if (title) title.textContent = `添加兵种到 ${t?.name || ('TEAM '+teamId)}`;
+  const ta=document.getElementById('ubJsonInput'); if (ta) ta.value='';
   if (m) m.classList.add('show');
 }
 function closeUbImportModal(){
@@ -20642,12 +20732,55 @@ document.getElementById('btnUbImportConfirm')?.addEventListener('click', ()=>{
 document.getElementById('btnUbImportCancel')?.addEventListener('click', closeUbImportModal);
 document.getElementById('btnUbAddTeam')?.addEventListener('click', ()=>{ const id=UnitBattle.addTeam(); openUbImportModal(id); });
 document.getElementById('btnUbClear')?.addEventListener('click', ()=>{ UnitBattle.clearAll(); });
+
+function closeUbWinnerModal(){ document.getElementById('ubWinnerModal')?.classList.remove('show'); }
+function exportUbWinnerByIndex(idx){
+  const chosen = UnitBattle.winnerPool?.[idx];
+  if (!chosen) return;
+  const txt = JSON.stringify({type:'forge', forge:chosen}, null, 2);
+  const io = document.getElementById('ioText');
+  if (io) io.value = txt;
+  try{ navigator.clipboard.writeText(txt); }catch(_){ }
+  textPop(W*0.5, H*0.2, `已导出 TEAM ${UnitBattle.winnerTeam} #${idx+1}`, C.P2);
+  closeUbWinnerModal();
+}
+function openUbWinnerModal(){
+  const m = document.getElementById('ubWinnerModal');
+  const list = document.getElementById('ubWinnerList');
+  const title = document.getElementById('ubWinnerTitle');
+  if (!m || !list) return;
+  if (title) title.textContent = `TEAM ${UnitBattle.winnerTeam} 胜者兵种导出`;
+  list.innerHTML='';
+  (UnitBattle.winnerPool||[]).forEach((u,i)=>{
+    const item=document.createElement('div');
+    item.className='ub-winner-item';
+    const cv=document.createElement('canvas');
+    cv.width=92; cv.height=92; cv.style.width='100%'; cv.style.height='92px';
+    const g=cv.getContext('2d');
+    if (g){
+      g.clearRect(0,0,92,92);
+      const seed=((u?.spec?.bodySeed)||1337) + i*41;
+      const body=genEnemyBody(seed);
+      const fake={x:46,y:52,r:20,body,bodySeed:seed,tint:(u?.spec?.baseCol||C.E2),baseCol:(u?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
+      drawEnemyGenericBody(g, fake, body, fake.baseCol, 20, 0.0, 0.0);
+    }
+    const meta=document.createElement('div');
+    meta.className='ub-winner-meta';
+    meta.textContent=`#${i+1} ${(u?.spec?.moveKey||'MIX')} HP:${u?.hp||0}`;
+    item.appendChild(cv); item.appendChild(meta);
+    item.addEventListener('click', ()=>exportUbWinnerByIndex(i));
+    list.appendChild(item);
+  });
+  m.classList.add('show');
+}
+document.getElementById('btnUbWinnerClose')?.addEventListener('click', closeUbWinnerModal);
+document.getElementById('ubWinnerModal')?.addEventListener('click', (e)=>{ if (e.target?.id==='ubWinnerModal') closeUbWinnerModal(); });
 document.getElementById('btnUbExportWinner')?.addEventListener('click', ()=>UnitBattle.exportWinner());
 function closeUnitBattleModal(){
   const m = document.getElementById('unitBattleModal');
   if (!m) return;
   m.classList.remove('visible');
-  setTimeout(()=>{ m.classList.remove('show'); closeUbImportModal(); UnitBattle.refreshList(); }, 240);
+  setTimeout(()=>{ m.classList.remove('show'); closeUbImportModal(); closeUbWinnerModal(); UnitBattle.refreshList(); }, 240);
 }
 document.getElementById('btnUbClose')?.addEventListener('click', closeUnitBattleModal);
 document.getElementById('unitBattleModal')?.addEventListener('click', (e)=>{ if (e.target?.id==='unitBattleModal') closeUnitBattleModal(); });
