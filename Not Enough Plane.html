@@ -856,6 +856,13 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 #ubWinnerModal{ position:fixed; inset:0; z-index:28100; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.58); }
 #ubWinnerModal.show{ display:flex; }
 #ubWinnerModal .card{ width:min(760px,95vw); max-height:min(82vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.95), rgba(24,8,40,.93)); border:1px solid rgba(255,210,138,.45); border-radius:10px; padding:12px; }
+#textPromptModal{ position:fixed; inset:0; z-index:28250; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.62); opacity:0; pointer-events:none; transition:opacity .22s ease; }
+#textPromptModal.show{ display:flex; }
+#textPromptModal.visible{ opacity:1; pointer-events:auto; }
+#textPromptModal .card{ width:min(860px,96vw); max-height:min(86vh,900px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.95), rgba(24,8,40,.93)); border:1px solid rgba(157,238,255,.42); border-radius:12px; padding:12px; transform:translateY(18px) scale(.96); opacity:0; transition:transform .24s cubic-bezier(.2,.9,.2,1),opacity .24s ease; }
+#textPromptModal.visible .card{ transform:translateY(0) scale(1); opacity:1; }
+#textPromptModal textarea{ min-height:380px; font:600 12px/1.35 var(--font-mono); }
+
 .ub-winner-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 .ub-winner-item{ position:relative; width:120px; border:1px solid rgba(255,210,138,.45); border-radius:10px; padding:6px; background:rgba(0,0,0,.24); cursor:pointer; }
 .ub-winner-item:hover{ box-shadow:0 0 0 1px rgba(255,210,138,.45) inset; }
@@ -1870,6 +1877,18 @@ input[type="checkbox"] {
     </div>
     <div class="muted" style="font-size:10px">点击下方任意兵种预览块即可复制其 JSON 到剪贴板并写入 I/O 面板。</div>
     <div id="ubWinnerList" class="ub-winner-grid"></div>
+  </div>
+</div>
+<div id="textPromptModal" aria-hidden="true">
+  <div class="card cyber-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+      <div class="ub-title" id="textPromptTitle" style="margin:0">粘贴文本</div>
+      <button id="btnTextPromptCancel" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">取消</button>
+    </div>
+    <div class="field"><label id="textPromptLabel">TEXT</label><textarea id="textPromptInput" placeholder="在此粘贴完整 JSON"></textarea></div>
+    <div class="menu-actions" style="margin-top:8px;justify-content:flex-start;gap:8px">
+      <button id="btnTextPromptConfirm" class="mini-btn" style="border-color:#9deeff;color:#9deeff">确认导入</button>
+    </div>
   </div>
 </div>
 
@@ -3265,7 +3284,7 @@ const addShake = (m, t=0.16) => {
       if (mode!=='lab' && mode!=='fortress' && mode!=='fortress_duel') return false;
       let txt='';
       try{ txt=await navigator.clipboard.readText(); }catch(_){ }
-      if (!txt){ txt = prompt('粘贴阵型 JSON'); if (!txt) return false; }
+      if (!txt){ txt = await showLargeTextPrompt({title:'导入阵型', label:'LAYOUT JSON', placeholder:'粘贴完整阵型 JSON（不限长度）'}); if (!txt) return false; }
       try{
         const obj = JSON.parse(txt);
         const layout = Array.isArray(obj) ? obj : obj.layout;
@@ -6520,8 +6539,8 @@ function refreshDNAAfterFire(beforeP, beforeE){
         const px = clamp(obj.x + Math.cos(a)*probe, 20, W-20);
         const py = clamp(obj.y + Math.sin(a)*probe, 20, H-20);
         let cost = Math.hypot(px-obj.x, py-obj.y) + Math.hypot(tx-px, ty-py);
-        if (isBlocked(obj.x,obj.y,px,py)) cost += 220;
-        if (isBlocked(px,py,tx,ty)) cost += 150;
+        cost += breakCostLine(obj.x,obj.y,px,py,blocksRaw) * 120;
+        cost += breakCostLine(px,py,tx,ty,blocksRaw) * 120;
         for (const st of blocksRaw){
           const dd = Math.hypot(px-st.x, py-st.y);
           const rad = Math.max(st.w||20, st.h||20)*0.75 + 24;
@@ -6539,6 +6558,20 @@ function refreshDNAAfterFire(beforeP, beforeE){
       turret:8.2,gatling:8.6,sniper:7.6,missile:8.8,tesla:9.0,flame:7.6,mortar:8.2,dronepad:7.2,pulse:7.1,
       wall:2.2,heavywall:2.8,bunker:3.4,shield:3.1,barricade:1.8,taunt:2.4
     }[st?.type] || 2.0);
+
+
+    const breakCostLine = (x1,y1,x2,y2, arr)=>{
+      let t = 0;
+      const siegeDps = 44;
+      for (const st of arr){
+        if (!st || st.hp<=0) continue;
+        if (!segmentIntersectsOrientedRect(x1,y1,x2,y2,st,pad)) continue;
+        const hp = Math.max(1, st.hp||1);
+        t += hp / siegeDps;
+        t += (st.type==='shield' || st.type==='bunker') ? 0.35 : 0.12;
+      }
+      return t;
+    };
 
     // Keep graph small: only consider blockers + nearby structures.
     const nearLine = [];
@@ -6573,6 +6606,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
         if (isBlocked(a.x,a.y,b.x,b.y, blocks)) continue;
         let w = Math.hypot(b.x-a.x, b.y-a.y);
         if (b.st) w += threatOf(b.st)*18;
+        w += breakCostLine(a.x,a.y,b.x,b.y,blocks) * 110;
 
         for (const st of blocks){
           const dd = Math.hypot(b.x-st.x, b.y-st.y);
@@ -14558,9 +14592,11 @@ BG_Effect.init();
       }
 
       if (Game.mode==='fortress' || Game.mode==='lab'){
-        let siegeTarget = Fortress.pickStrategicTarget(e.x, e.y, 420);
+        let siegeTarget = null;
+        if (UnitBattle.active && e.ubTeam!=null) siegeTarget = UnitBattle.findOpponent(e, e.x, e.y, 1800);
+        else siegeTarget = Fortress.pickStrategicTarget(e.x, e.y, 420);
         resolveEnemyFortressCollision(e, Fortress.structures, prevEx, prevEy);
-        if (siegeTarget) applyEnemyPathSteer(e, siegeTarget, Fortress.structures, dt);
+        if (siegeTarget) applyEnemyPathSteer(e, siegeTarget, Fortress.structures, dt, (UnitBattle.active&&e.ubTeam!=null)?enemies.filter(o=>o&&o.alive&&o!==e&&o.ubTeam===e.ubTeam):[]);
         resolveEnemyFortressCollision(e, Fortress.structures, prevEx, prevEy);
 
         // 近战拆墙/拆塔逻辑：敌人会先拆防线，再图谋旗帜
@@ -17614,9 +17650,7 @@ const UnitBattle = {
       e.ubTeam = g.team;
       e._ubSpec = JSON.parse(JSON.stringify(g.forge));
       e.noDrop = true; e.score = 0;
-      const baseMove = e.move?.bind(e);
       e.move = (dt)=>{
-        if (baseMove) baseMove(dt*0.03);
         const t = UnitBattle.findOpponent(e, e.x, e.y, 1800);
         if (!t) return;
         const allies = enemies.filter(o=>o && o.alive && o!==e && o.ubTeam===e.ubTeam);
@@ -20901,7 +20935,7 @@ document.getElementById('btnUbExportAll')?.addEventListener('click', async ()=>{
 });
 document.getElementById('btnUbImportAll')?.addEventListener('click', async ()=>{
   let txt = await readFromClipboardRobust();
-  if (!txt) txt = prompt('粘贴队伍 JSON（{type:"unitbattle_teams",teams:[...] }）') || '';
+  if (!txt) txt = (await showLargeTextPrompt({title:'导入全部队伍', label:'TEAM JSON', placeholder:'粘贴队伍 JSON（{type:"unitbattle_teams",teams:[...] }）'})) || '';
   if (!txt.trim()) return;
   try{
     UnitBattle.applyTeamsPayload(txt);
@@ -20990,6 +21024,48 @@ requestAnimationFrame(step);
   }, {capture:true, passive:true});
 })();
 
+
+function showLargeTextPrompt({title='粘贴文本', label='TEXT', placeholder='在此粘贴', defaultValue=''}={}){
+  return new Promise((resolve)=>{
+    const modal = document.getElementById('textPromptModal');
+    const input = document.getElementById('textPromptInput');
+    const t = document.getElementById('textPromptTitle');
+    const l = document.getElementById('textPromptLabel');
+    const ok = document.getElementById('btnTextPromptConfirm');
+    const cancel = document.getElementById('btnTextPromptCancel');
+    if (!modal || !input || !ok || !cancel){
+      resolve(prompt(title, defaultValue) || null);
+      return;
+    }
+    if (t) t.textContent = title;
+    if (l) l.textContent = label;
+    input.placeholder = placeholder || '';
+    input.value = defaultValue || '';
+
+    const close = (val)=>{
+      modal.classList.remove('visible');
+      setTimeout(()=>modal.classList.remove('show'), 180);
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+      modal.removeEventListener('click', onBg);
+      input.removeEventListener('keydown', onKey);
+      resolve(val);
+    };
+    const onOk = ()=>close((input.value||'').trim() || null);
+    const onCancel = ()=>close(null);
+    const onBg = (e)=>{ if (e.target?.id==='textPromptModal') close(null); };
+    const onKey = (e)=>{ if ((e.ctrlKey||e.metaKey) && e.key==='Enter') onOk(); if (e.key==='Escape') onCancel(); };
+
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+    modal.addEventListener('click', onBg);
+    input.addEventListener('keydown', onKey);
+
+    modal.classList.add('show');
+    requestAnimationFrame(()=>modal.classList.add('visible'));
+    setTimeout(()=>input.focus(), 30);
+  });
+}
 
 // 代码位置：建议放在 extractEnemyForForge 之后，或其它工具函数附近
 async function copyToClipboardRobust(text) {
