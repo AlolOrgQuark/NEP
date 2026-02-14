@@ -747,7 +747,8 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   transition:max-height .28s ease, opacity .24s ease, transform .24s ease, padding .24s ease, border-color .24s ease;
 }
 .acc[open] .acc-body{
-  max-height:960px;
+  max-height:5000px;
+  overflow:visible;
   opacity:1;
   transform:translateY(0);
   padding:10px 12px 12px;
@@ -785,6 +786,56 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   box-shadow:0 0 16px rgba(82,230,255,0.18);
 }
 
+.ub-panel{
+  margin-top:10px;
+  padding:10px;
+  border:1px solid rgba(130,229,255,.35);
+  border-radius:10px;
+  background:linear-gradient(160deg, rgba(12,26,48,.65), rgba(26,10,42,.6));
+  box-shadow:0 0 22px rgba(82,230,255,.14) inset;
+}
+.ub-panel .ub-title{
+  font:700 12px/1.2 var(--font-mono);
+  color:var(--c-cyan);
+  letter-spacing:1px;
+  margin-bottom:6px;
+}
+.ub-list{ display:flex; flex-wrap:wrap; gap:6px; max-height:110px; overflow:auto; margin-top:8px; }
+.ub-chip{
+  border:1px solid rgba(157,238,255,.45);
+  border-radius:999px;
+  padding:4px 8px;
+  font:600 10px/1.1 var(--font-mono);
+  color:#d9f9ff;
+  background:rgba(0,0,0,.26);
+}
+
+/* Forge extra emitter mobile overflow fixes */
+#forgeExtraEmittersList, #forgeExtraEmittersList *{ box-sizing:border-box; }
+#forgeExtraEmittersList{ overflow-x:hidden; }
+.forge-extra-card{ width:100%; min-width:0; overflow:hidden; border-radius:8px; }
+.forge-extra-title{ display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:6px; }
+.forge-extra-title-text{ min-width:0; word-break:break-word; white-space:normal; line-height:1.25; }
+.forge-extra-wrap{ border:1px dashed rgba(179,108,255,0.35); padding:6px; margin-bottom:6px; width:100%; min-width:0; overflow:hidden; }
+.forge-extra-wrap-row{ border:1px solid rgba(179,108,255,0.25); padding:6px; background:rgba(179,108,255,0.08); width:100%; min-width:0; overflow:hidden; }
+.forge-extra-wrap-top{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.forge-extra-wrap-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+.forge-extra-wrap-actions .mini-btn{ flex:0 0 auto; }
+@media (max-width:700px){
+  .forge-extra-wrap-top{ align-items:stretch; }
+  .forge-extra-wrap-top .forge-extra-select{ flex:1 1 100% !important; width:100%; }
+}
+
+/* Unit battle modal */
+#unitBattleModal{ position:fixed; inset:0; z-index:26000; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.65); opacity:0; transition:opacity .22s ease; }
+#unitBattleModal.show{ display:flex; opacity:1; }
+#unitBattleModal .ub-modal-card{ width:min(780px,94vw); max-height:min(86vh,860px); overflow:auto; background:linear-gradient(160deg, rgba(8,16,34,.92), rgba(24,8,40,.9)); border:1px solid rgba(130,229,255,.42); box-shadow:0 18px 50px rgba(0,0,0,.55); padding:14px; border-radius:12px; transform:translateY(18px) scale(.96); opacity:0; transition:transform .26s cubic-bezier(.2,.9,.2,1), opacity .26s ease; }
+#unitBattleModal.show .ub-modal-card{ transform:translateY(0) scale(1); opacity:1; }
+#unitBattleModal textarea{ min-height:180px; }
+.ub-unit-card{ width:80px; border:1px solid rgba(157,238,255,.35); border-radius:10px; padding:4px; background:rgba(0,0,0,.24); display:flex; flex-direction:column; gap:4px; align-items:center; }
+.ub-unit-icon{ width:64px; height:64px; border:1px solid rgba(157,238,255,.3); background:radial-gradient(circle at 50% 50%, rgba(157,238,255,.12), rgba(0,0,0,.2)); }
+.ub-unit-meta{ font:600 9px/1.15 var(--font-mono); color:#c8f4ff; text-align:center; word-break:break-word; }
+
 /* action row */
 .menu-actions{
   display:flex;
@@ -794,59 +845,6 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   margin-top:10px;
 }
 .menu-actions button{ flex:1; min-width:190px; }
-
-/* ================= DEV EDITOR ================= */
-.dev-badge{
-  position:fixed;
-  top:max(12px, env(safe-area-inset-top));
-  left:12px;
-  z-index:55;
-  pointer-events:none;
-  font:700 11px/1.2 var(--font-mono);
-  letter-spacing:1px;
-  color:#000;
-  background:var(--c-yellow);
-  border:1px solid rgba(255,255,255,0.85);
-  border-radius:4px;
-  padding:6px 8px;
-  box-shadow:0 0 14px rgba(255,176,32,0.55);
-}
-.dev-editor{
-  position:fixed;
-  z-index:70;
-  width:min(340px, 78vw);
-  max-height:min(62vh, 560px);
-  overflow:auto;
-  color:#d7f7ff;
-  background:rgba(6,12,32,0.72);
-  border:1px solid rgba(82,230,255,0.42);
-  border-left:2px solid var(--c-cyan);
-  box-shadow:0 10px 22px rgba(0,0,0,.38);
-  border-radius:8px;
-  padding:10px;
-  pointer-events:auto;
-  backdrop-filter:blur(4px);
-  -webkit-backdrop-filter:blur(4px);
-}
-.dev-dragbar{
-  cursor:move;
-  user-select:none;
-  font:700 11px/1.2 var(--font-mono);
-  opacity:.9;
-  margin:-4px -4px 8px;
-  padding:6px 8px;
-  border:1px dashed rgba(82,230,255,.35);
-  border-radius:6px;
-}
-.dev-editor h3{ margin:0 0 6px; font:700 15px/1.2 var(--font-mono); color:var(--c-cyan); }
-.dev-editor .dev-muted{ font-size:11px; opacity:.75; margin-bottom:8px; }
-.dev-editor .dev-grid{ display:grid; grid-template-columns:1fr 120px; gap:6px 8px; }
-.dev-editor label{ font:600 11px/1.2 var(--font-mono); opacity:.8; align-self:center; }
-.dev-editor input,.dev-editor textarea,.dev-editor select{
-  width:100%; background:rgba(0,0,0,.38); color:#fff; border:1px solid rgba(255,255,255,.18); border-radius:4px; padding:6px 8px;
-}
-.dev-editor textarea{ min-height:120px; resize:vertical; font-family:var(--font-mono); }
-.dev-editor .dev-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
 
 /* hide workshop SAVE */
 #btnSaveBuilds{ display:none !important; }
@@ -1372,7 +1370,6 @@ input[type="checkbox"] {
       <div class="hint">DOUBLE TAP TO DETONATE BOMB</div>
     </div>
     <button id="btnCompactUI" class="ui-fab">UI</button>
-    <div id="devBadge" class="dev-badge" style="display:none">DEV MODE</div>
 
     <!-- Main Menu -->
     <div id="menu" class="screen">
@@ -1456,8 +1453,10 @@ input[type="checkbox"] {
               <button id="btnStartFortress" style="border-color:#7ef9c0;color:#7ef9c0">START FORTRESS (BASTION)</button>
               <button id="btnStartDuel" style="border-color:var(--c-yellow);color:var(--c-yellow)">START DUEL (A vs B)</button>
               <button id="btnStartLab" style="border-color:rgba(179,108,255,0.6);color:var(--c-magenta)">START LAB (FORGE)</button>
+              <button id="btnStartUnitBattle" style="border-color:#9deeff;color:#9deeff">START UNIT BATTLE</button>
             </div>
           </div>
+
         </div>
 
         <!-- WORKSHOP -->
@@ -1804,6 +1803,26 @@ input[type="checkbox"] {
 </div>
 
 <!-- Import/Export Drawer -->
+
+
+<div id="unitBattleModal" aria-hidden="true">
+  <div class="ub-modal-card cyber-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+      <div class="ub-title" style="margin:0">UNIT BATTLE · 兵种批量导入对战</div>
+      <button id="btnUbClose" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">CLOSE</button>
+    </div>
+    <div class="muted" style="font-size:10px">导入多个怪物 Forge JSON（支持 {type:&quot;forge&quot;,forge:{...}} 与 {spec:{...}}），可无限追加。进入后先自由布置堡垒，再拖动半透明预览体调整刷怪点。</div>
+    <div class="field" style="margin-top:8px"><label>UNIT JSON</label><textarea id="ubJsonInput" placeholder='粘贴 forge JSON'></textarea></div>
+    <div class="menu-actions" style="margin-top:8px;justify-content:flex-start;gap:8px">
+      <button id="btnUbImport" class="mini-btn" style="border-color:#9deeff;color:#9deeff">导入兵种</button>
+      <button id="btnUbClear" class="mini-btn" style="border-color:#ff9b72;color:#ff9b72">清空兵种</button>
+      <button id="btnUbStart" class="mini-btn" style="border-color:#7ef9c0;color:#7ef9c0">开始兵种对战</button>
+      <button id="btnUbExportWinner" class="mini-btn" style="border-color:#ffd28a;color:#ffd28a">导出胜者</button>
+    </div>
+    <div id="ubList" class="ub-list"></div>
+  </div>
+</div>
+
 <div class="drawer" id="ioDrawer" aria-hidden="true">
   <div class="drawer-top">
     <div class="t">IMPORT / EXPORT</div>
@@ -3064,9 +3083,9 @@ const addShake = (m, t=0.16) => {
         ui.btnFortRepairFlag.style.display = (Game.mode!=='lab' && this.phase==='fortify') ? 'inline-block' : 'none';
         ui.btnFortRepairFlag.disabled = this.stock < 6 || this.flagHp >= this.flagMaxHp;
       }
-      const canLabIO = (Game.mode==='lab' && this.phase==='fortify');
-      if (ui.btnFortExportLayout) ui.btnFortExportLayout.style.display = canLabIO ? 'inline-block' : 'none';
-      if (ui.btnFortImportLayout) ui.btnFortImportLayout.style.display = canLabIO ? 'inline-block' : 'none';
+      const canLayoutIO = ((Game.mode==='lab' || Game.mode==='fortress' || Game.mode==='fortress_duel') && this.phase==='fortify');
+      if (ui.btnFortExportLayout) ui.btnFortExportLayout.style.display = canLayoutIO ? 'inline-block' : 'none';
+      if (ui.btnFortImportLayout) ui.btnFortImportLayout.style.display = canLayoutIO ? 'inline-block' : 'none';
     },
     syncSelectionUI(){
       const map = Object.keys(this.catalog);
@@ -3086,11 +3105,60 @@ const addShake = (m, t=0.16) => {
       if (Game.mode!=='lab') return;
       this._labSavedLayout = this.structures.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y}));
     },
-    applyLabLayout(layout){
+    currentLayout(){
+      return this.structures.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y}));
+    },
+    estimateLayoutCost(layout){
+      if (!Array.isArray(layout)) return 0;
+      return layout.reduce((sum,it)=>{
+        const cfg = this.catalog[it?.type];
+        return sum + (cfg?.cost || 0);
+      },0);
+    },
+    trimLayoutToBudget(layout, budget){
+      if (!Array.isArray(layout)) return [];
+      let used = 0;
+      const out = [];
+      for (const it of layout){
+        const cfg = this.catalog[it?.type];
+        if (!cfg) continue;
+        if (used + cfg.cost > budget) continue;
+        out.push({type:it.type, x:it.x, y:it.y});
+        used += cfg.cost;
+      }
+      return out;
+    },
+    applyLabLayout(layout, opts={}){
       if (!Array.isArray(layout)) return false;
+      const mode = Game.mode;
+      const isLab = mode==='lab';
+      const isFort = (mode==='fortress' || mode==='fortress_duel');
+      if (!isLab && !isFort) return false;
+
+      let finalLayout = layout.slice();
+      let spent = 0;
+      const prevLayout = this.currentLayout();
+      const prevStock = this.stock;
+
+      if (isFort){
+        const total = this.estimateLayoutCost(finalLayout);
+        if (total > this.stock){
+          const autoTrim = !!opts.autoTrim;
+          let chooseTrim = autoTrim;
+          if (!autoTrim){
+            chooseTrim = confirm(`导入阵型需要 ${total} 材料，当前仅有 ${Math.floor(this.stock)}。
+确定自动裁剪到预算内吗？
+选择“取消”将放弃导入。`);
+          }
+          if (!chooseTrim) return false;
+          finalLayout = this.trimLayoutToBudget(finalLayout, this.stock);
+        }
+        spent = this.estimateLayoutCost(finalLayout);
+      }
+
       this.structures.length = 0;
       this.sid = 1;
-      for (const it of layout){
+      for (const it of finalLayout){
         const cfg = this.catalog[it?.type];
         if (!cfg) continue;
         this.structures.push({
@@ -3098,17 +3166,21 @@ const addShake = (m, t=0.16) => {
           w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,cd:cfg.cd||0,cost:cfg.cost
         });
       }
+      if (isFort){
+        this.stock = Math.max(0, this.stock - spent);
+        this.undoStack.push({type:'import_layout', prevLayout, prevStock});
+      }
       this.snapshotLabLayout();
       this.updatePanel();
-      this.snapshotLabLayout();
       return true;
     },
     async exportLabLayout(){
-      if (Game.mode!=='lab') return false;
-      this.snapshotLabLayout();
-      const payload = JSON.stringify({type:'lab_layout', layout:this._labSavedLayout||[]});
+      const mode = Game.mode;
+      if (mode!=='lab' && mode!=='fortress' && mode!=='fortress_duel') return false;
+      if (mode==='lab') this.snapshotLabLayout();
+      const payload = JSON.stringify({type:'layout', mode, layout:(mode==='lab' ? (this._labSavedLayout||[]) : this.currentLayout())});
       let ok=false;
-      try { await navigator.clipboard.writeText(payload); ok=true; } catch(_){}
+      try { await navigator.clipboard.writeText(payload); ok=true; } catch(_){ }
       if (!ok){
         const ta=document.createElement('textarea'); ta.value=payload; ta.style.position='fixed'; ta.style.left='-9999px';
         document.body.appendChild(ta); ta.select();
@@ -3119,9 +3191,10 @@ const addShake = (m, t=0.16) => {
       return ok;
     },
     async importLabLayout(){
-      if (Game.mode!=='lab') return false;
+      const mode = Game.mode;
+      if (mode!=='lab' && mode!=='fortress' && mode!=='fortress_duel') return false;
       let txt='';
-      try{ txt=await navigator.clipboard.readText(); }catch(_){}
+      try{ txt=await navigator.clipboard.readText(); }catch(_){ }
       if (!txt){ txt = prompt('粘贴阵型 JSON'); if (!txt) return false; }
       try{
         const obj = JSON.parse(txt);
@@ -3156,11 +3229,14 @@ const addShake = (m, t=0.16) => {
         this.labLockedAssault = true;
         this.spawnLeft = 0;
         this.bossSpawned = false;
-        if (!this.labForgeSpawned && this.labForgeSpec){
+        if (UnitBattle.active){
+          UnitBattle.spawnBattle();
+          textPop(W*0.5, H*0.16, 'UNIT BATTLE START', C.P2);
+        } else if (!this.labForgeSpawned && this.labForgeSpec){
           spawnForgeEnemy(this.labForgeSpec);
           this.labForgeSpawned = true;
+          textPop(W*0.5, H*0.16, 'LAB 敌袭开始', C.E1);
         }
-        textPop(W*0.5, H*0.16, 'LAB 敌袭开始', C.E1);
         spawnShockwave(W*0.5, H*0.16, C.E1, 240, 0.45);
         this.updatePanel();
         return;
@@ -3434,6 +3510,7 @@ const addShake = (m, t=0.16) => {
     },
     handlePointerDown(screenX, screenY, pointerId=null){
       if ((Game.mode!=='fortress' && Game.mode!=='lab' && Game.mode!=='fortress_duel') || Game.state!=='playing') return false;
+      if (UnitBattle.handlePointerDown(screenX, screenY, pointerId)) return true;
       const pt = this.toWorld(screenX, screenY);
       if (this.preview){
         const pv = this.preview;
@@ -3465,11 +3542,13 @@ const addShake = (m, t=0.16) => {
       return false;
     },
     handlePointerMove(screenX, screenY, pointerId=null){
+      if (UnitBattle.handlePointerMove(screenX, screenY, pointerId)) return true;
       if (this.canBuild() && !IS_TOUCH && !this.sellMode){
         this.setPreview(screenX, screenY, pointerId);
       } else if (this.preview && (!this.canBuild() || this.sellMode)){
         this.clearPreview();
       }
+      if (UnitBattle.handlePointerUp(screenX, screenY, pointerId)) return true;
       if (!this.activeDrag || (pointerId!=null && this.activeDrag.pointerId!=null && pointerId!==this.activeDrag.pointerId)) return false;
       const st = this.structures.find(v=>v.id===this.activeDrag.sid);
       if (!st) return false;
@@ -3511,6 +3590,15 @@ const addShake = (m, t=0.16) => {
         this.stock = Math.max(0, this.stock - (a.refund||0));
         const idx = Math.max(0, Math.min(this.structures.length, a.index|0));
         this.structures.splice(idx,0,a.structure);
+      } else if (a.type==='import_layout'){
+        this.stock = (a.prevStock ?? this.stock);
+        this.structures.length = 0;
+        this.sid = 1;
+        for (const it of (a.prevLayout||[])){
+          const cfg = this.catalog[it?.type];
+          if (!cfg) continue;
+          this.structures.push({id:this.sid++, x:clamp(+it.x||W*0.5, 30, W-30), y:clamp(+it.y||H*0.6, H*0.4, H-70), w:cfg.w,h:cfg.h,hp:cfg.hp,maxHp:cfg.hp,col:cfg.col,type:cfg.type,cd:cfg.cd||0,cost:cfg.cost});
+        }
       }
       this.updatePanel();
       this.snapshotLabLayout();
@@ -5897,6 +5985,7 @@ if (col===C.E7) return 'glowE7';
       clearObj(b.st);
     }
 
+    if (team==='E' && opts?.modCtx?.owner?.ubTeam!=null) b.ubTeam = opts.modCtx.owner.ubTeam;
     (team==='P'?bulletsP:bulletsE).push(b);
     stampBulletDNA(b);
     return b;
@@ -10615,6 +10704,7 @@ for (const em of e.emitters){
           e.hp = e.maxHp;
           e.score = Math.round(e.score * proto.scoreMul);
           amplifyFortressEnemy(e, proto, d);
+          applySpawnEntropy(e);
 
           normalizeFortressSpawn(e);
           resolveSpawnOverlap(e, 12);
@@ -10689,6 +10779,7 @@ for (const em of e.emitters){
         e.emCdMul = (e.emCdMul || 1.0) * DiffConfig.fireCdMul;
         e.hp = e.maxHp;
         e.score = Math.round(e.score * proto.scoreMul);
+        applySpawnEntropy(e);
 
         normalizeFortressSpawn(e);
         resolveSpawnOverlap(e, 12);
@@ -10868,6 +10959,7 @@ for (const em of e.emitters){
   }
 
   function findEnemyFocus(x,y, maxD=99999){
+    if (UnitBattle.active) return UnitBattle.findOpponent(UnitBattle._source, x, y, maxD);
     if (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') return Fortress.getEnemyTarget(x,y,maxD);
     return Player.alive ? Player : null;
   }
@@ -12232,6 +12324,7 @@ function grantPlayerEmitter(){
 
   function firePlayer(dt){
     if (!Player.alive) return;
+    if (UnitBattle.active) return;
     if (isFortressPrepPhase()) return;
     Player.fireCd -= dt;
     if (Player.fireCd>0) return;
@@ -12306,6 +12399,7 @@ function grantPlayerEmitter(){
 
   // ================= Bomb =================
   function useBomb(){
+    if (UnitBattle.active) return;
     if (Player.bomb<=0) return;
     Player.bomb--;
     ui.bombText.textContent = Player.bomb;
@@ -12826,6 +12920,22 @@ function updateBeams(dt){
     }
   }
 }
+
+  function applySpawnEntropy(e){
+    if (!e || e.type==='BOSS') return;
+    const seq = (Game.spawnSeq = (Game.spawnSeq||0) + 1);
+    const entropy = ((Date.now() & 0xfffffff) ^ ((Game.wave||1)*2654435761) ^ (seq*2246822519) ^ (randi(0, 0x7fffffff))) >>> 0;
+    e.bodySeed = ((e.bodySeed||0) ^ entropy) >>> 0;
+    e.body = genEnemyBody(e.bodySeed);
+
+    const laneJitter = clamp(W*0.08 + rand(0, W*0.12), 24, W*0.22);
+    e.x = clamp(e.x + rand(-laneJitter, laneJitter), 24, W-24);
+    if (e.cx!=null) e.cx = clamp(e.cx + rand(-laneJitter*0.5, laneJitter*0.5), W*0.18, W*0.82);
+    if (e.phase!=null){
+      const amp = W*0.30;
+      e.phase = Math.asin(clamp((e.x-W*0.5)/amp, -1, 1));
+    }
+  }
 
   function resolveSpawnOverlap(e, tries=10){
   if (e.type==='BOSS') return;
@@ -14037,7 +14147,9 @@ BG_Effect.init();
         // 冻结期间不调用 update（不移动不射击）
         if (chance(0.12)) sparks(e.x, e.y, 'glowP', 2, 120);
       } else if (!(isNetAuthoritative && e.isNetGhost)) {
-        e.update(dt);
+        UnitBattle._source = e;
+      e.update(dt);
+      UnitBattle._source = null;
       }
       // timers for support buffs
       if (e._fortT>0){
@@ -14258,9 +14370,25 @@ BG_Effect.init();
 
        // E bullets vs player
     for(const b of bulletsE){
-      if (!b.alive || !Player.alive || b._phaseGhost) continue;
+      if (!b.alive || b._phaseGhost) continue;
+      if (UnitBattle.active){
+        let hitOpp = false;
+        for (const e of enemies){
+          if (!e.alive || e.ubTeam==null || b.ubTeam==null || e.ubTeam===b.ubTeam) continue;
+          if (hitCircle(b.x,b.y,b.r,e.x,e.y,e.r)){
+            e.onHit?.(b.dmg);
+            killBullet(b, 'hit', {childMods: propagateMods(b.mods)});
+            sparks(b.x,b.y,'glowE', 8, 260);
+            if (e.hp<=0){ e.alive=false; e.onDeath?.(); }
+            hitOpp = true;
+            break;
+          }
+        }
+        if (hitOpp) continue;
+        continue;
+      }
+      if (!Player.alive) continue;
       if (hitCircle(b.x,b.y,b.r, Player.x,Player.y, Player.r)){
-        // hit hooks for enemy bullets too
         if (b.mods.length){
           for(const k of b.mods) BulletAffixCatalog[k]?.onHit?.(b, Player, null);
         }
@@ -16501,6 +16629,7 @@ function render(dt) {
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
   drawFortress();
+  UnitBattle.drawGhosts();
   drawShockwaves();
   drawParticles();
   drawBeams();
@@ -16533,6 +16662,7 @@ function render(dt) {
     drawPlayer();
   }
   drawTexts();
+  UnitBattle.checkWinner();
 
   // --- 步骤 4: UI 覆盖层 (Screen Space) ---
   // 重置回无缩放状态画 UI
@@ -16866,7 +16996,197 @@ applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
   return e;
 }
 
-  function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild=null, keepLabLayout=false} = {}){
+  
+const UnitBattle = {
+  active:false,
+  units:[],
+  ghosts:[],
+  dragging:null,
+  winner:null,
+  _source:null,
+  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; },
+  parseUnitJSON(txt){
+    const obj = JSON.parse(txt||'{}');
+    const raw = obj?.forge ? obj.forge : obj;
+    if (raw?.spec) return raw;
+
+    const emitters = Array.isArray(raw?.emitters)
+      ? raw.emitters
+      : [raw?.slot1, raw?.slot2].filter(Boolean);
+    if (!emitters.length) throw new Error('不是 forge 格式：缺少 spec 或 emitters/slot1/slot2');
+
+    const spec = {
+      moveKey: (Array.isArray(raw.moveKeys) && raw.moveKeys.length ? raw.moveKeys[0] : raw.moveKey) || 'DRIFT',
+      moveKeys: (Array.isArray(raw.moveKeys) && raw.moveKeys.length ? raw.moveKeys : [raw.moveKey || 'DRIFT']),
+      baseCol: raw.baseCol || raw.col || raw.tint || C.E2,
+      tint: raw.tint || raw.baseCol || raw.col || C.E2,
+      bodySeed: raw.bodySeed ?? 1337,
+      bodyKind: raw.bodyKind || 'AUTO',
+      bodyScale: raw.bodyScale ?? 1,
+      bodyOpt: raw.bodyOpt || {},
+      emitters: emitters,
+      waveBulletMods: Array.isArray(raw.mods) ? raw.mods : []
+    };
+    return {
+      isBoss: !!raw.isBoss,
+      hp: Math.max(20, (+raw.hp||240)),
+      traits: Array.isArray(raw.traits) ? raw.traits : [],
+      spec
+    };
+  },
+  importOne(txt){
+    const forge = this.parseUnitJSON(txt);
+    this.units.push(JSON.parse(JSON.stringify(forge)));
+    this.refreshList();
+  },
+  refreshList(){
+    const el=document.getElementById('ubList');
+    if (!el) return;
+    el.innerHTML='';
+    this.units.forEach((u,i)=>{
+      const card=document.createElement('div');
+      card.className='ub-unit-card';
+      const cv=document.createElement('canvas');
+      cv.className='ub-unit-icon';
+      cv.width=64; cv.height=64;
+      const g=cv.getContext('2d');
+      if (g){
+        g.clearRect(0,0,64,64);
+        const seed=((u?.spec?.bodySeed)||1337) + i*131;
+        const body=genEnemyBody(seed);
+        const fake={x:32,y:34,r:14,body,bodySeed:seed,tint:(u?.spec?.baseCol||C.E2),baseCol:(u?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
+        drawEnemyGenericBody(g, fake, body, fake.baseCol, 14, 0.0, 0.0);
+      }
+      const meta=document.createElement('div');
+      meta.className='ub-unit-meta';
+      meta.textContent=`#${i+1} ${u?.spec?.moveKey||'MIX'} HP:${u?.hp||0}`;
+      card.appendChild(cv);
+      card.appendChild(meta);
+      el.appendChild(card);
+    });
+  },
+  setupGhosts(){
+    this.ghosts = this.units.map((u,i)=>({
+      idx:i,
+      x: clamp(80 + (i%8)*90, 40, W-40),
+      y: clamp(H*0.18 + ((i/8|0)%4)*58, 60, H*0.45),
+      team: (i%2===0) ? 1 : 2,
+      forge: JSON.parse(JSON.stringify(u)),
+      r: 18
+    }));
+    this.winner = null;
+  },
+  pickGhost(sx,sy){
+    const p=Fortress.toWorld(sx,sy);
+    for(let i=this.ghosts.length-1;i>=0;i--){
+      const g=this.ghosts[i];
+      if (dist2(g.x,g.y,p.x,p.y) <= (g.r+12)*(g.r+12)) return g;
+    }
+    return null;
+  },
+  handlePointerDown(sx,sy,pid){
+    if (!this.active || Fortress.phase!=='fortify') return false;
+    const g=this.pickGhost(sx,sy);
+    if (!g) return false;
+    this.dragging={id:pid,g};
+    return true;
+  },
+  handlePointerMove(sx,sy,pid){
+    if (!this.dragging || (pid!=null && this.dragging.id!=null && pid!==this.dragging.id)) return false;
+    const p=Fortress.toWorld(sx,sy);
+    this.dragging.g.x = clamp(p.x, 28, W-28);
+    this.dragging.g.y = clamp(p.y, 40, H*0.58);
+    return true;
+  },
+  handlePointerUp(_sx,_sy,pid){
+    if (!this.dragging || (pid!=null && this.dragging.id!=null && pid!==this.dragging.id)) return false;
+    this.dragging=null; return true;
+  },
+  spawnBattle(){
+    enemies.length = 0;
+    for (const g of this.ghosts){
+      const e = spawnForgeEnemy(g.forge);
+      if (!e) continue;
+      e.x = g.x; e.y = g.y;
+      e.ubTeam = g.team;
+      e._ubSpec = JSON.parse(JSON.stringify(g.forge));
+      e.noDrop = true; e.score = 0;
+    }
+    this.winner=null;
+  },
+  findOpponent(source, x,y,maxD=99999){
+    if (!source || source.ubTeam==null) return Fortress.pickStrategicTarget(x,y,maxD) || null;
+    let bestEnemy=null,bestD=maxD*maxD;
+    for (const e of enemies){
+      if (!e.alive || e===source || e.ubTeam==null || e.ubTeam===source.ubTeam) continue;
+      const d2=dist2(x,y,e.x,e.y);
+      if (d2<bestD){ bestD=d2; bestEnemy=e; }
+    }
+
+    let bestStruct=null, bestStructScore=-1e18;
+    const structs = Fortress.structures || [];
+    for (const st of structs){
+      if (!st || (st.hp||0)<=0) continue;
+      const d2 = dist2(x,y,st.x,st.y);
+      if (d2 > maxD*maxD) continue;
+      const laneW = (Math.abs(st.x-W*0.5)<180 && st.y>H*0.42) ? 1.8 : 1.0;
+      const hpW = 1.0 + (1.0 - clamp((st.hp||1)/Math.max(1, st.maxHp||1),0,1))*1.2;
+      const score = laneW*1.4 + hpW + (1/(1+Math.sqrt(d2)*0.012));
+      if (score > bestStructScore){ bestStructScore = score; bestStruct = st; }
+    }
+
+    if (!bestEnemy) return bestStruct || null;
+    if (!bestStruct) return bestEnemy;
+
+    const enemyDist = Math.sqrt(bestD);
+    const structDist = Math.hypot(bestStruct.x-x, bestStruct.y-y);
+    const preferBreak = structDist < enemyDist*1.15;
+    return preferBreak ? bestStruct : bestEnemy;
+  },
+  checkWinner(){
+    if (!this.active || Fortress.phase!=='assault') return;
+    const alive = enemies.filter(e=>e.alive && e.ubTeam!=null);
+    const teams = new Set(alive.map(e=>e.ubTeam));
+    if (teams.size===1 && alive.length){
+      const t=[...teams][0];
+      if (!this.winner){
+        this.winner = alive[0]._ubSpec || null;
+        textPop(W*0.5, H*0.18, `TEAM ${t} WIN`, C.G);
+      }
+    }
+  },
+  exportWinner(){
+    if (!this.winner) return alert('暂无胜者');
+    const txt = JSON.stringify({type:'forge', forge:this.winner}, null, 2);
+    const io = document.getElementById('ioText');
+    if (io) io.value = txt;
+    try{ navigator.clipboard.writeText(txt); }catch(_){ }
+    textPop(W*0.5, H*0.2, '胜者已导出到 I/O', C.P2);
+  },
+  drawGhosts(){
+    if (!this.active || Fortress.phase!=='fortify') return;
+    ctx.save();
+    for (const g of this.ghosts){
+      const col = g.team===1 ? 'rgba(130,229,255,.62)' : 'rgba(255,155,114,.62)';
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(g.x,g.y,g.r,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=1.2; ctx.stroke();
+      const body = genEnemyBody((g.forge?.spec?.bodySeed||1337) + g.idx*97);
+      const fake = {x:g.x,y:g.y,r:g.r*0.75,body,bodySeed:(g.forge?.spec?.bodySeed||1337),tint:(g.forge?.spec?.baseCol||C.E2),baseCol:(g.forge?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
+      drawEnemyGeneric(fake);
+    }
+    ctx.restore();
+  }
+};
+
+function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild=null, keepLabLayout=false} = {}){
+  if (mode==='unitbattle'){
+    UnitBattle.active = true;
+    UnitBattle.setupGhosts();
+    mode = 'lab';
+  } else {
+    UnitBattle.reset();
+  }
   const savedLabLayout = (keepLabLayout && mode==='lab')
     ? deepClone(Fortress?._labSavedLayout || Fortress?.structures?.filter(st=>st && st.hp>0).map(st=>({type:st.type,x:st.x,y:st.y})) || [])
     : null;
@@ -17117,6 +17437,14 @@ canvas.style.pointerEvents = 'auto';
   if (!btnAutoPilot) return;
   const hideInNetFortressDuel = (Game.mode==='fortress_duel' && !!Game.lastStart?.net);
   btnAutoPilot.style.display = hideInNetFortressDuel ? 'none' : 'inline-block';
+}
+
+
+function setView(view){
+  const toGame = (view==='game');
+  if (ui.menu) ui.menu.style.display = toGame ? 'none' : 'flex';
+  if (ui.hud) ui.hud.style.display = toGame ? 'block' : 'none';
+  if (!toGame) document.body.dataset.menupage = document.body.dataset.menupage || 'home';
 }
 
 function toMenu(){
@@ -17454,343 +17782,15 @@ Game.state = 'playing';
 
 const DevEditor = {
   active:false,
-  clickCount:0,
-  clickResetT:null,
-  frozen:false,
-  panel:null,
-  dragBullet:null,
-  titleEl:null,
-  tapCanvas:null,
-  tapHud:null,
-
-  TAP_MS: 230,
-  TAP_MOVE: 14,
-
-  screenToWorld(x,y){
-    const z = Camera.zoom || 1;
-    return { x:(x - W*0.5)/z + W*0.5, y:(y - H*0.5)/z + H*0.5 };
-  },
-  notify(msg,col=C.Y){ textPop(W*0.5, H*0.45, msg, col); },
-  toggle(on){
-    this.active = (on==null)? !this.active : !!on;
-    if (ui.devBadge) ui.devBadge.style.display = this.active ? 'block' : 'none';
-    if (!this.active) this.close();
-    this.notify(this.active ? 'DEV MODE ON' : 'DEV MODE OFF', this.active?C.G:C.E1);
-  },
-  bindMenuTitleUnlock(){
-    this.titleEl = document.querySelector('#menu .brand .title');
-    if (!this.titleEl) return;
-    this.titleEl.style.cursor = 'pointer';
-    this.titleEl.addEventListener('click', ()=>{
-      if (Game.state!=='menu') return;
-      this.clickCount++;
-      clearTimeout(this.clickResetT);
-      this.clickResetT = setTimeout(()=>this.clickCount=0, 1600);
-      if (this.clickCount >= 7){
-        this.clickCount = 0;
-        this.toggle();
-      }
-    });
-  },
-  freeze(v){
-    this.frozen = !!v;
-    if (this.frozen && Game.state==='playing'){
-      Game.state='paused';
-      const panel = document.getElementById('pausePanel');
-      if (panel) panel.style.display = 'none';
-      ui.btnPause.textContent = 'DEV';
-    }
-    if (!this.frozen && Game.state==='paused'){
-      Game.state='playing';
-      ui.btnPause.textContent = 'PAUSE';
-    }
-  },
-  close(){
-    if (this.panel){ this.panel.remove(); this.panel=null; }
-    this.dragBullet = null;
-    this.freeze(false);
-  },
-
-  makePanel(title, target, schema, opts={}){
-    this.close();
-    const panel = document.createElement('div');
-    panel.className='dev-editor';
-    panel.style.left = Math.round((opts.left ?? (W*0.5)) - 150)+'px';
-    panel.style.top = Math.round((opts.top ?? (H*0.5)) - 100)+'px';
-
-    const dragBar = document.createElement('div');
-    dragBar.className = 'dev-dragbar';
-    dragBar.textContent = '拖拽移动窗口';
-    panel.appendChild(dragBar);
-
-    const h = document.createElement('h3'); h.textContent = title; panel.appendChild(h);
-    const m = document.createElement('div'); m.className='dev-muted';
-    m.textContent = '短按松手触发；长按不会触发，避免干扰拖拽操作。';
-    panel.appendChild(m);
-
-    const grid = document.createElement('div'); grid.className='dev-grid';
-    for (const f of schema){
-      const lb=document.createElement('label'); lb.textContent=f.label;
-      const inp = document.createElement('input');
-      inp.type = f.type || 'text';
-      inp.value = f.get();
-      const apply=()=>{ f.set(inp.value); };
-      inp.addEventListener('change', apply);
-      if (inp.type==='range' || inp.type==='number') inp.addEventListener('input', apply);
-      grid.appendChild(lb); grid.appendChild(inp);
-    }
-    panel.appendChild(grid);
-
-    const dataTitle = document.createElement('div');
-    dataTitle.className='dev-muted';
-    dataTitle.style.marginTop='8px';
-    dataTitle.textContent='JSON 深度编辑（emitter / wrapper / basemods / bulletaffix）';
-    panel.appendChild(dataTitle);
-
-    const ta = document.createElement('textarea');
-    ta.value = JSON.stringify(target, null, 2);
-    panel.appendChild(ta);
-
-    const actions = document.createElement('div'); actions.className='dev-actions';
-    const mkBtn=(txt,fn)=>{ const b=document.createElement('button'); b.className='mini-btn'; b.textContent=txt; b.addEventListener('click',fn); return b; };
-    actions.appendChild(mkBtn('应用 JSON', ()=>{
-      try{
-        const obj = JSON.parse(ta.value||'{}');
-        Object.assign(target, obj);
-        this.notify('JSON APPLIED', C.G);
-      }catch(_){ this.notify('JSON ERROR', C.E1); }
-    }));
-    if (opts.onClone) actions.appendChild(mkBtn('克隆', opts.onClone));
-    if (opts.onDelete) actions.appendChild(mkBtn('删除', opts.onDelete));
-    if (opts.onExport) actions.appendChild(mkBtn('导出', opts.onExport));
-    actions.appendChild(mkBtn('完成编辑', ()=>this.close()));
-    panel.appendChild(actions);
-
-    panel.addEventListener('pointerdown', e=>e.stopPropagation());
-
-    dragBar.addEventListener('pointerdown', (ev)=>{
-      ev.preventDefault();
-      ev.stopPropagation();
-      const st = panel.getBoundingClientRect();
-      const ox = ev.clientX - st.left;
-      const oy = ev.clientY - st.top;
-      const move = (me)=>{
-        panel.style.left = Math.round(clamp(me.clientX - ox, 8, W - 40)) + 'px';
-        panel.style.top = Math.round(clamp(me.clientY - oy, 8, H - 40)) + 'px';
-      };
-      const up = ()=>{ window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
-      window.addEventListener('pointermove', move, {passive:true});
-      window.addEventListener('pointerup', up, {passive:true});
-    });
-
-    document.body.appendChild(panel);
-    this.panel = panel;
-    this.freeze(true);
-  },
-
-  pickAt(cx,cy){
-    const w = this.screenToWorld(cx,cy);
-    let best = null, bestD=1e9;
-    const offer=(type,obj,x,y,rad=28)=>{
-      const d = Math.hypot(w.x-x, w.y-y);
-      if (d<rad && d<bestD){ bestD=d; best={type,obj}; }
-    };
-    for (const e of enemies) if (e.alive) offer('enemy', e, e.x,e.y, Math.max(26,e.r||24));
-    for (const b of bulletsP) if (b.alive) offer('bullet', b, b.x,b.y, 14);
-    for (const b of bulletsE) if (b.alive) offer('bullet', b, b.x,b.y, 14);
-    if ((Game.mode==='fortress'||Game.mode==='lab'||Game.mode==='fortress_duel') && Fortress?.structures){
-      for (const st of Fortress.structures) if ((st.hp||0)>0) offer('fort', st, st.x, st.y, Math.max(st.w||24, st.h||24));
-    }
-    return best;
-  },
-
-  openFor(type, obj, sx, sy){
-    if (!obj) return;
-    if (type==='enemy'){
-      const schema=[
-        {label:'HP', type:'number', get:()=>obj.hp, set:v=>obj.hp=+v||0},
-        {label:'MAX HP', type:'number', get:()=>obj.maxHp??obj.hp, set:v=>obj.maxHp=+v||obj.hp},
-        {label:'RADIUS', type:'number', get:()=>obj.r||18, set:v=>obj.r=+v||18},
-        {label:'SPEED', type:'number', get:()=>obj.spd||0, set:v=>obj.spd=+v||0},
-        {label:'SCORE', type:'number', get:()=>obj.score||0, set:v=>obj.score=+v||0},
-      ];
-      this.makePanel('怪物编辑器', obj, schema, {left:sx,top:sy});
-      return;
-    }
-    if (type==='bullet'){
-      const schema=[
-        {label:'X', type:'number', get:()=>obj.x, set:v=>obj.x=+v||0},
-        {label:'Y', type:'number', get:()=>obj.y, set:v=>obj.y=+v||0},
-        {label:'VX', type:'number', get:()=>obj.vx||0, set:v=>obj.vx=+v||0},
-        {label:'VY', type:'number', get:()=>obj.vy||0, set:v=>obj.vy=+v||0},
-        {label:'DMG', type:'number', get:()=>obj.dmg||0, set:v=>obj.dmg=+v||0},
-        {label:'R', type:'number', get:()=>obj.r||2, set:v=>obj.r=+v||2},
-        {label:'LIFE', type:'number', get:()=>obj.life||0, set:v=>obj.life=+v||0},
-      ];
-      this.dragBullet = obj;
-      this.makePanel('子弹编辑器（支持拖拽改坐标）', obj, schema, {
-        left:sx, top:sy,
-        onClone:()=>{
-          const c = {...obj, x:obj.x+20, y:obj.y+20, alive:true};
-          (bulletsP.includes(obj)?bulletsP:bulletsE).push(c);
-          this.notify('BULLET CLONED', C.G);
-        },
-        onDelete:()=>{ killBullet(obj,'dev_delete',{childMods:[]}); this.close(); },
-        onExport:()=>{ openIO(); setIOText(JSON.stringify(obj,null,2)); this.notify('EXPORTED TO I/O', C.Y); },
-      });
-      return;
-    }
-    if (type==='fort'){
-      const schema=[
-        {label:'X', type:'number', get:()=>obj.x, set:v=>obj.x=+v||obj.x},
-        {label:'Y', type:'number', get:()=>obj.y, set:v=>obj.y=+v||obj.y},
-        {label:'W', type:'number', get:()=>obj.w||20, set:v=>obj.w=+v||20},
-        {label:'H', type:'number', get:()=>obj.h||20, set:v=>obj.h=+v||20},
-        {label:'HP', type:'number', get:()=>obj.hp||0, set:v=>obj.hp=+v||0},
-        {label:'CD', type:'number', get:()=>obj.cd||0, set:v=>obj.cd=+v||0},
-      ];
-      this.makePanel('堡垒物品编辑器', obj, schema, {left:sx, top:sy});
-      return;
-    }
-  },
-
-  openHudEditor(kind, sx, sy){
-    let schema = [];
-    if (kind==='hp') schema = [
-      {label:'HP', type:'number', get:()=>Player.hp, set:v=>Player.hp=Math.max(0,+v||0)},
-      {label:'MAX HP', type:'number', get:()=>Player.maxHp, set:v=>Player.maxHp=Math.max(1,+v||1)},
-      {label:'SHIELD', type:'number', get:()=>Player.shield, set:v=>Player.shield=Math.max(0,+v||0)},
-    ];
-    else if (kind==='xp') schema = [
-      {label:'XP', type:'number', get:()=>Player.xp, set:v=>Player.xp=Math.max(0,+v||0)},
-      {label:'XP NEED', type:'number', get:()=>Player.xpNeed, set:v=>Player.xpNeed=Math.max(1,+v||1)},
-      {label:'LVL', type:'number', get:()=>Player.lv, set:v=>Player.lv=Math.max(1,+v||1)},
-    ];
-    else if (kind==='material') schema = [
-      {label:'MATERIAL', type:'number', get:()=>Fortress.stock||0, set:v=>Fortress.stock=Math.max(0,+v||0)},
-      {label:'CORE HP', type:'number', get:()=>Fortress.flagHp||0, set:v=>Fortress.flagHp=Math.max(0,+v||0)},
-      {label:'CORE MAX', type:'number', get:()=>Fortress.flagMaxHp||0, set:v=>Fortress.flagMaxHp=Math.max(1,+v||1)},
-    ];
-    else if (kind==='bomb') schema = [
-      {label:'BOMB', type:'number', get:()=>Player.bomb, set:v=>Player.bomb=clamp((+v||0)|0,0,9)},
-      {label:'DRONE', type:'number', get:()=>Player.drones, set:v=>Player.drones=clamp((+v||0)|0,0,9)},
-      {label:'MOD', type:'number', get:()=>Player.mods, set:v=>Player.mods=clamp((+v||0)|0,0,999)},
-    ];
-    else if (kind==='timer') schema = [
-      {label:'OVERDRIVE T', type:'number', get:()=>Player.overdriveT, set:v=>Player.overdriveT=Math.max(0,+v||0)},
-      {label:'MAGNET T', type:'number', get:()=>Player.magnetT, set:v=>Player.magnetT=Math.max(0,+v||0)},
-      {label:'SHIELD T', type:'number', get:()=>Player.shield, set:v=>Player.shield=Math.max(0,+v||0)},
-    ];
-    if (!schema.length) return;
-    this.makePanel('HUD 属性编辑器', Player, schema, {left:sx, top:sy});
-  },
-
-  onCanvasPointerDown(e){
-    if (!this.active || Game.state!=='playing') return;
-    const inPanel = e.target && this.panel && this.panel.contains(e.target);
-    if (inPanel) return;
-    const pick = this.pickAt(e.clientX, e.clientY);
-    if (!pick) return;
-    this.tapCanvas = { pid:e.pointerId, t0:performance.now(), x:e.clientX, y:e.clientY, moved:false, pick };
-  },
-  onCanvasPointerMove(e){
-    if (this.tapCanvas && e.pointerId===this.tapCanvas.pid){
-      if (Math.hypot(e.clientX-this.tapCanvas.x, e.clientY-this.tapCanvas.y) > this.TAP_MOVE) this.tapCanvas.moved = true;
-    }
-    if (!this.active || !this.dragBullet || !this.panel) return false;
-    const w = this.screenToWorld(e.clientX, e.clientY);
-    this.dragBullet.x = w.x;
-    this.dragBullet.y = w.y;
-    return false;
-  },
-  onCanvasPointerUp(e){
-    const tap = this.tapCanvas;
-    this.tapCanvas = null;
-    if (!tap || tap.pid!==e.pointerId || !this.active || Game.state!=='playing') return;
-    const dt = performance.now() - tap.t0;
-    const moved = tap.moved || Math.hypot(e.clientX-tap.x, e.clientY-tap.y) > this.TAP_MOVE;
-    if (dt > this.TAP_MS || moved) return;
-    this.openFor(tap.pick.type, tap.pick.obj, e.clientX, e.clientY);
-  },
-
-  getHudKindFromTarget(target){
-    const el = target?.closest?.('#hpText,#hpFill,#xpText,#xpFill,#lvText,#bombText,#fortressMat,#fortressCore,#odText,#magText,#shText');
-    if (!el) return null;
-    if (el.id==='hpText' || el.id==='hpFill' || el.id==='shText') return 'hp';
-    if (el.id==='xpText' || el.id==='xpFill' || el.id==='lvText') return 'xp';
-    if (el.id==='fortressMat' || el.id==='fortressCore') return 'material';
-    if (el.id==='bombText') return 'bomb';
-    if (el.id==='odText' || el.id==='magText') return 'timer';
-    return null;
-  },
-  onHudPointerDown(e){
-    if (!this.active || Game.state!=='playing') return;
-    const kind = this.getHudKindFromTarget(e.target);
-    if (!kind) return;
-    this.tapHud = { t0:performance.now(), x:e.clientX, y:e.clientY, moved:false, kind, target:e.target };
-  },
-  onHudPointerMove(e){
-    if (!this.tapHud) return;
-    if (Math.hypot(e.clientX-this.tapHud.x, e.clientY-this.tapHud.y) > this.TAP_MOVE) this.tapHud.moved = true;
-  },
-  onHudPointerUp(e){
-    const tap = this.tapHud;
-    this.tapHud = null;
-    if (!tap || !this.active || Game.state!=='playing') return;
-    const dt = performance.now() - tap.t0;
-    const moved = tap.moved || Math.hypot(e.clientX-tap.x, e.clientY-tap.y) > this.TAP_MOVE;
-    if (dt > this.TAP_MS || moved) return;
-    const r = tap.target.getBoundingClientRect();
-    this.openHudEditor(tap.kind, r.left + r.width*0.5, r.top + 18);
-  }
+  onCanvasPointerDown(){},
+  onCanvasPointerMove(){},
+  onCanvasPointerUp(){},
+  onHudPointerDown(){},
+  onHudPointerMove(){},
+  onHudPointerUp(){},
+  handleCanvasDoubleClick(){},
+  bindMenuTitleUnlock(){},
 };
-
-
-
-
-  // ================= Loop =================
-  let lastT = performance.now();
-  
-function step(now){
-  requestAnimationFrame(step);
-  let dt = (now - lastT) / 1000;
-  lastT = now;
-  dt = clamp(dt, 0, 0.040);
-
-  // 应用游戏速率
-  const finalDt = dt * TimeMachine.speed;
-  // 网络心跳/房间状态在所有界面都保持更新，避免大厅/菜单超时掉线
-  Multiplayer.update(finalDt);
-
-  const netKeepRunning = !!(Game.lastStart?.net && Multiplayer?.isActive?.() && (Game.mode==='fortress_duel' || Game.mode==='workshop') && (Game.state==='paused' || Game.state==='over'));
-  if (Game.state === 'playing' || netKeepRunning) {
-    update(finalDt); // 使用变速后的 dt
-    
-    // [插入] TAS 录制
-    if (TimeMachine.enabled && Game.state === 'playing') {
-      TimeMachine.record();
-    }
-  }
-
-  // SFX 和 Music 保持原速更新，否则声音会变调或卡顿
-  SFX.update(dt); 
-  Music.update(); 
-  
-  if (Player.deathT > 0) Player.deathT = Math.max(0, Player.deathT - dt); // 死亡动画也不变速
-  
-  render(finalDt); // 渲染使用变速 dt 以匹配逻辑
-}
-// ================= FULLSCREEN MENU SYSTEM + WORKSHOP + FORGE + I/O =================
-function setView(v){
-  document.body.dataset.view = v;
-
-  if (v === 'menu'){
-    ui.menu.style.display = 'flex';
-    ui.menu.style.pointerEvents = 'auto';
-  } else {
-    ui.menu.style.display = 'none';
-  }
-}
 
 const LS_BUILDS = 'NAW_BUILDS_V1';
 const LS_FORGE  = 'NAW_FORGE_V1';
@@ -18654,6 +18654,10 @@ function renderWrapperCfgFieldsUI(container, item, wrapIdx, onChanged){
 }
 
 function renderEmitterUiEditor(card, item, idx){
+  const refreshAccHeight = ()=>{
+    const body = card.closest('.acc-body');
+    if (body && body.style.maxHeight && body.style.maxHeight !== '0px') body.style.maxHeight = body.scrollHeight + 'px';
+  };
   const model = emitterToUiModel(item);
 
   const persist = ()=>{
@@ -18711,6 +18715,7 @@ function renderEmitterUiEditor(card, item, idx){
       model.base.mods = Array.from(selected).slice(0,24);
       btn.classList.toggle('on', selected.has(k));
       persist();
+      refreshAccHeight();
     });
     modsChips.appendChild(btn);
   });
@@ -18723,19 +18728,19 @@ function renderEmitterUiEditor(card, item, idx){
   card.appendChild(baseWrap);
 
   const wrappersWrap = document.createElement('div');
-  wrappersWrap.style.cssText = 'border:1px dashed rgba(179,108,255,0.35);padding:6px;margin-bottom:6px';
+  wrappersWrap.className = 'forge-extra-wrap';
   wrappersWrap.innerHTML = '<div class="muted" style="margin-bottom:4px">WRAPPERS (INNER -> OUTER)</div>';
   const list = document.createElement('div');
-  list.style.display='flex'; list.style.flexDirection='column'; list.style.gap='6px';
+  list.style.display='flex'; list.style.flexDirection='column'; list.style.gap='6px'; list.style.minWidth='0';
 
   const rerender = ()=>{
     list.innerHTML='';
     model.wrappers.forEach((w, wi)=>{
       const row = document.createElement('div');
-      row.style.cssText='border:1px solid rgba(179,108,255,0.25);padding:6px;background:rgba(179,108,255,0.08)';
+      row.className='forge-extra-wrap-row';
 
       const top = document.createElement('div');
-      top.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap';
+      top.className='forge-extra-wrap-top';
       const sel = document.createElement('select');
       sel.className = 'forge-extra-select';
       sel.style.minWidth = '0';
@@ -18749,7 +18754,9 @@ function renderEmitterUiEditor(card, item, idx){
       const up = mkBtn('↑', ()=>{ if (wi<=0) return; [model.wrappers[wi-1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi-1]]; persist(); rerender(); });
       const dn = mkBtn('↓', ()=>{ if (wi>=model.wrappers.length-1) return; [model.wrappers[wi+1],model.wrappers[wi]]=[model.wrappers[wi],model.wrappers[wi+1]]; persist(); rerender(); });
       const del = mkBtn('REMOVE', ()=>{ model.wrappers.splice(wi,1); persist(); rerender(); });
-      top.appendChild(sel); top.appendChild(up); top.appendChild(dn); top.appendChild(del);
+      const act = document.createElement('div'); act.className='forge-extra-wrap-actions';
+      act.appendChild(up); act.appendChild(dn); act.appendChild(del);
+      top.appendChild(sel); top.appendChild(act);
 
       const cfgBox = document.createElement('div');
       cfgBox.style.marginTop='6px';
@@ -18762,9 +18769,10 @@ function renderEmitterUiEditor(card, item, idx){
   };
 
   rerender();
+  refreshAccHeight();
   const addW = document.createElement('button');
   addW.className='mini-btn'; addW.textContent='ADD WRAPPER';
-  addW.addEventListener('click', ()=>{ model.wrappers.push({wrapperType:'', compCfg:{}}); persist(); rerender(); });
+  addW.addEventListener('click', ()=>{ model.wrappers.push({wrapperType:'', compCfg:{}}); persist(); rerender(); refreshAccHeight(); });
 
   wrappersWrap.appendChild(list);
   wrappersWrap.appendChild(addW);
@@ -18791,11 +18799,12 @@ function renderForgeExtraEmittersUI(){
 
   ForgeState.extraEmitters.forEach((item, idx)=>{
     const card = document.createElement('div');
+    card.className = 'forge-extra-card';
     card.style.cssText = 'border:1px solid rgba(255,255,255,0.15);background:rgba(0,0,0,0.22);padding:8px';
 
     const title = document.createElement('div');
-    title.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px';
-    title.innerHTML = `<div class="mono" style="font-size:12px">EXTRA #${idx+1} · ${summarizeSerializedEmitter(item)}</div>`;
+    title.className = 'forge-extra-title';
+    title.innerHTML = `<div class="mono forge-extra-title-text" style="font-size:12px">EXTRA #${idx+1} · ${summarizeSerializedEmitter(item)}</div>`;
 
     const btns = document.createElement('div');
     btns.style.cssText = 'display:flex;gap:6px';
@@ -19582,7 +19591,6 @@ function buildForgeMoveChips() {
 }
 
 function initMenuUI(){
-  DevEditor.bindMenuTitleUnlock();
   // 顶部导航切页
   for(const b of document.querySelectorAll('#menu .nav-btn[data-page]')){
     b.addEventListener('click', ()=>setMenuPage(b.dataset.page));
@@ -19921,6 +19929,10 @@ document.getElementById('btnStartLab')?.addEventListener('click', ()=>{
   const forge = (typeof readForgeSpecFromUI === 'function') ? readForgeSpecFromUI() : null;
   const cfg = {mode:'lab', wave:1, forge};
   startRun(cfg);
+});
+document.getElementById('btnStartUnitBattle')?.addEventListener('click', ()=>{
+  const m = document.getElementById('unitBattleModal');
+  if (m) m.classList.add('show');
 });
 
 ui.btnRestart?.addEventListener('click', () => {
@@ -20266,12 +20278,64 @@ function spawnChaosEnemy(wave) {
   spawnShockwave(W/2, -50, C.E1, 500, 1.0);
 }
 
+
+// ================= Loop =================
+  let lastT = performance.now();
+
+function step(now){
+  requestAnimationFrame(step);
+  let dt = (now - lastT) / 1000;
+  lastT = now;
+  dt = clamp(dt, 0, 0.040);
+
+  // 应用游戏速率
+  const devTimeScale = Game.devFrozen ? 0 : 1;
+  const finalDt = dt * TimeMachine.speed * devTimeScale;
+  // 网络心跳/房间状态在所有界面都保持更新，避免大厅/菜单超时掉线
+  Multiplayer.update(finalDt);
+
+  const netKeepRunning = !!(Game.lastStart?.net && Multiplayer?.isActive?.() && (Game.mode==='fortress_duel' || Game.mode==='workshop') && (Game.state==='paused' || Game.state==='over'));
+  if (Game.state === 'playing' || netKeepRunning) {
+    update(finalDt); // 使用变速后的 dt
+
+    // [插入] TAS 录制
+    if (TimeMachine.enabled && Game.state === 'playing') {
+      TimeMachine.record();
+    }
+  }
+
+  // SFX 和 Music 保持原速更新，否则声音会变调或卡顿
+  SFX.update(dt);
+  Music.update();
+
+  if (Player.deathT > 0) Player.deathT = Math.max(0, Player.deathT - dt); // 死亡动画也不变速
+
+  render(finalDt); // 渲染使用变速 dt 以匹配逻辑
+}
+
   // ================= Boot =================
   initMenuUI();
 bindWorkshopCoreFinal();
 bindForgePreviewFinal();
 placeForgePreview();
 refreshForgePreview();
+
+document.getElementById('btnUbImport')?.addEventListener('click', ()=>{
+  const txt = document.getElementById('ubJsonInput')?.value || '';
+  if (!txt.trim()) return alert('请粘贴 JSON');
+  try{ UnitBattle.importOne(txt); textPop(W*0.5,H*0.2,'兵种已导入',C.P2); }
+  catch(err){ alert('导入失败: '+(err?.message||err)); }
+});
+document.getElementById('btnUbClear')?.addEventListener('click', ()=>{ UnitBattle.units.length=0; UnitBattle.refreshList(); });
+document.getElementById('btnUbExportWinner')?.addEventListener('click', ()=>UnitBattle.exportWinner());
+document.getElementById('btnUbClose')?.addEventListener('click', ()=>document.getElementById('unitBattleModal')?.classList.remove('show'));
+document.getElementById('unitBattleModal')?.addEventListener('click', (e)=>{ if (e.target?.id==='unitBattleModal') e.currentTarget.classList.remove('show'); });
+document.getElementById('btnUbStart')?.addEventListener('click', ()=>{
+  if (!UnitBattle.units.length){ alert('请先导入至少一个兵种 JSON'); return; }
+  document.getElementById('unitBattleModal')?.classList.remove('show');
+  startRun({mode:'unitbattle', wave:1});
+});
+UnitBattle.refreshList();
 toMenu();
 canvas.style.pointerEvents = 'auto';
 mountOverlaysToBody();
