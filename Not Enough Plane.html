@@ -795,6 +795,59 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 }
 .menu-actions button{ flex:1; min-width:190px; }
 
+/* ================= DEV EDITOR ================= */
+.dev-badge{
+  position:fixed;
+  top:max(12px, env(safe-area-inset-top));
+  left:12px;
+  z-index:55;
+  pointer-events:none;
+  font:700 11px/1.2 var(--font-mono);
+  letter-spacing:1px;
+  color:#000;
+  background:var(--c-yellow);
+  border:1px solid rgba(255,255,255,0.85);
+  border-radius:4px;
+  padding:6px 8px;
+  box-shadow:0 0 14px rgba(255,176,32,0.55);
+}
+.dev-editor{
+  position:fixed;
+  z-index:70;
+  width:min(340px, 78vw);
+  max-height:min(62vh, 560px);
+  overflow:auto;
+  color:#d7f7ff;
+  background:rgba(6,12,32,0.72);
+  border:1px solid rgba(82,230,255,0.42);
+  border-left:2px solid var(--c-cyan);
+  box-shadow:0 10px 22px rgba(0,0,0,.38);
+  border-radius:8px;
+  padding:10px;
+  pointer-events:auto;
+  backdrop-filter:blur(4px);
+  -webkit-backdrop-filter:blur(4px);
+}
+.dev-dragbar{
+  cursor:move;
+  user-select:none;
+  font:700 11px/1.2 var(--font-mono);
+  opacity:.9;
+  margin:-4px -4px 8px;
+  padding:6px 8px;
+  border:1px dashed rgba(82,230,255,.35);
+  border-radius:6px;
+}
+.dev-editor h3{ margin:0 0 6px; font:700 15px/1.2 var(--font-mono); color:var(--c-cyan); }
+.dev-editor .dev-muted{ font-size:11px; opacity:.75; margin-bottom:8px; }
+.dev-editor .dev-grid{ display:grid; grid-template-columns:1fr 120px; gap:6px 8px; }
+.dev-editor label{ font:600 11px/1.2 var(--font-mono); opacity:.8; align-self:center; }
+.dev-editor input,.dev-editor textarea,.dev-editor select{
+  width:100%; background:rgba(0,0,0,.38); color:#fff; border:1px solid rgba(255,255,255,.18); border-radius:4px; padding:6px 8px;
+}
+.dev-editor textarea{ min-height:120px; resize:vertical; font-family:var(--font-mono); }
+.dev-editor .dev-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+
 /* hide workshop SAVE */
 #btnSaveBuilds{ display:none !important; }
 
@@ -1319,6 +1372,7 @@ input[type="checkbox"] {
       <div class="hint">DOUBLE TAP TO DETONATE BOMB</div>
     </div>
     <button id="btnCompactUI" class="ui-fab">UI</button>
+    <div id="devBadge" class="dev-badge" style="display:none">DEV MODE</div>
 
     <!-- Main Menu -->
     <div id="menu" class="screen">
@@ -1946,6 +2000,7 @@ input[type="checkbox"] {
     btnRevive: $('btnRevive'),
     btnOption: $('btnOption'),
     btnCompactUI: $('btnCompactUI'),
+    devBadge: $('devBadge'),
 
     fortressPanel: $('fortressPanel'),
     fortressPhase: $('fortressPhase'),
@@ -3889,6 +3944,7 @@ function recoverLocalControl(){
 }
 
   canvas.addEventListener('pointerdown', (e) => {
+    DevEditor.onCanvasPointerDown(e);
     if (Game.state !== 'playing') return;
     ensureAudio();
     checkDoubleTap();
@@ -3926,6 +3982,7 @@ function recoverLocalControl(){
   }, {passive: false});
 
   canvas.addEventListener('pointermove', (e) => {
+    DevEditor.onCanvasPointerMove(e);
     if ((Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress.handlePointerMove(e.clientX, e.clientY, e.pointerId)){
       e.preventDefault?.();
       return;
@@ -3950,6 +4007,7 @@ function recoverLocalControl(){
   }, {passive: true});
 
   function endPointer(e){
+    if (e) DevEditor.onCanvasPointerUp(e);
     const pid = e ? e.pointerId : Input.pid;
     if (e && (Game.mode==='fortress' || Game.mode==='lab' || Game.mode==='fortress_duel') && Fortress.handlePointerUp(e.clientX, e.clientY, e.pointerId)){
       e.preventDefault?.();
@@ -17393,6 +17451,301 @@ Game.state = 'playing';
   }
 
 
+const DevEditor = {
+  active:false,
+  clickCount:0,
+  clickResetT:null,
+  frozen:false,
+  panel:null,
+  dragBullet:null,
+  titleEl:null,
+  tapCanvas:null,
+  tapHud:null,
+
+  TAP_MS: 230,
+  TAP_MOVE: 14,
+
+  screenToWorld(x,y){
+    const z = Camera.zoom || 1;
+    return { x:(x - W*0.5)/z + W*0.5, y:(y - H*0.5)/z + H*0.5 };
+  },
+  notify(msg,col=C.Y){ textPop(W*0.5, H*0.45, msg, col); },
+  toggle(on){
+    this.active = (on==null)? !this.active : !!on;
+    if (ui.devBadge) ui.devBadge.style.display = this.active ? 'block' : 'none';
+    if (!this.active) this.close();
+    this.notify(this.active ? 'DEV MODE ON' : 'DEV MODE OFF', this.active?C.G:C.E1);
+  },
+  bindMenuTitleUnlock(){
+    this.titleEl = document.querySelector('#menu .brand .title');
+    if (!this.titleEl) return;
+    this.titleEl.style.cursor = 'pointer';
+    this.titleEl.addEventListener('click', ()=>{
+      if (Game.state!=='menu') return;
+      this.clickCount++;
+      clearTimeout(this.clickResetT);
+      this.clickResetT = setTimeout(()=>this.clickCount=0, 1600);
+      if (this.clickCount >= 7){
+        this.clickCount = 0;
+        this.toggle();
+      }
+    });
+  },
+  freeze(v){
+    this.frozen = !!v;
+    if (this.frozen && Game.state==='playing'){
+      Game.state='paused';
+      const panel = document.getElementById('pausePanel');
+      if (panel) panel.style.display = 'none';
+      ui.btnPause.textContent = 'DEV';
+    }
+    if (!this.frozen && Game.state==='paused'){
+      Game.state='playing';
+      ui.btnPause.textContent = 'PAUSE';
+    }
+  },
+  close(){
+    if (this.panel){ this.panel.remove(); this.panel=null; }
+    this.dragBullet = null;
+    this.freeze(false);
+  },
+
+  makePanel(title, target, schema, opts={}){
+    this.close();
+    const panel = document.createElement('div');
+    panel.className='dev-editor';
+    panel.style.left = Math.round((opts.left ?? (W*0.5)) - 150)+'px';
+    panel.style.top = Math.round((opts.top ?? (H*0.5)) - 100)+'px';
+
+    const dragBar = document.createElement('div');
+    dragBar.className = 'dev-dragbar';
+    dragBar.textContent = '拖拽移动窗口';
+    panel.appendChild(dragBar);
+
+    const h = document.createElement('h3'); h.textContent = title; panel.appendChild(h);
+    const m = document.createElement('div'); m.className='dev-muted';
+    m.textContent = '短按松手触发；长按不会触发，避免干扰拖拽操作。';
+    panel.appendChild(m);
+
+    const grid = document.createElement('div'); grid.className='dev-grid';
+    for (const f of schema){
+      const lb=document.createElement('label'); lb.textContent=f.label;
+      const inp = document.createElement('input');
+      inp.type = f.type || 'text';
+      inp.value = f.get();
+      const apply=()=>{ f.set(inp.value); };
+      inp.addEventListener('change', apply);
+      if (inp.type==='range' || inp.type==='number') inp.addEventListener('input', apply);
+      grid.appendChild(lb); grid.appendChild(inp);
+    }
+    panel.appendChild(grid);
+
+    const dataTitle = document.createElement('div');
+    dataTitle.className='dev-muted';
+    dataTitle.style.marginTop='8px';
+    dataTitle.textContent='JSON 深度编辑（emitter / wrapper / basemods / bulletaffix）';
+    panel.appendChild(dataTitle);
+
+    const ta = document.createElement('textarea');
+    ta.value = JSON.stringify(target, null, 2);
+    panel.appendChild(ta);
+
+    const actions = document.createElement('div'); actions.className='dev-actions';
+    const mkBtn=(txt,fn)=>{ const b=document.createElement('button'); b.className='mini-btn'; b.textContent=txt; b.addEventListener('click',fn); return b; };
+    actions.appendChild(mkBtn('应用 JSON', ()=>{
+      try{
+        const obj = JSON.parse(ta.value||'{}');
+        Object.assign(target, obj);
+        this.notify('JSON APPLIED', C.G);
+      }catch(_){ this.notify('JSON ERROR', C.E1); }
+    }));
+    if (opts.onClone) actions.appendChild(mkBtn('克隆', opts.onClone));
+    if (opts.onDelete) actions.appendChild(mkBtn('删除', opts.onDelete));
+    if (opts.onExport) actions.appendChild(mkBtn('导出', opts.onExport));
+    actions.appendChild(mkBtn('完成编辑', ()=>this.close()));
+    panel.appendChild(actions);
+
+    panel.addEventListener('pointerdown', e=>e.stopPropagation());
+
+    dragBar.addEventListener('pointerdown', (ev)=>{
+      ev.preventDefault();
+      ev.stopPropagation();
+      const st = panel.getBoundingClientRect();
+      const ox = ev.clientX - st.left;
+      const oy = ev.clientY - st.top;
+      const move = (me)=>{
+        panel.style.left = Math.round(clamp(me.clientX - ox, 8, W - 40)) + 'px';
+        panel.style.top = Math.round(clamp(me.clientY - oy, 8, H - 40)) + 'px';
+      };
+      const up = ()=>{ window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+      window.addEventListener('pointermove', move, {passive:true});
+      window.addEventListener('pointerup', up, {passive:true});
+    });
+
+    document.body.appendChild(panel);
+    this.panel = panel;
+    this.freeze(true);
+  },
+
+  pickAt(cx,cy){
+    const w = this.screenToWorld(cx,cy);
+    let best = null, bestD=1e9;
+    const offer=(type,obj,x,y,rad=28)=>{
+      const d = Math.hypot(w.x-x, w.y-y);
+      if (d<rad && d<bestD){ bestD=d; best={type,obj}; }
+    };
+    for (const e of enemies) if (e.alive) offer('enemy', e, e.x,e.y, Math.max(26,e.r||24));
+    for (const b of bulletsP) if (b.alive) offer('bullet', b, b.x,b.y, 14);
+    for (const b of bulletsE) if (b.alive) offer('bullet', b, b.x,b.y, 14);
+    if ((Game.mode==='fortress'||Game.mode==='lab'||Game.mode==='fortress_duel') && Fortress?.structures){
+      for (const st of Fortress.structures) if ((st.hp||0)>0) offer('fort', st, st.x, st.y, Math.max(st.w||24, st.h||24));
+    }
+    return best;
+  },
+
+  openFor(type, obj, sx, sy){
+    if (!obj) return;
+    if (type==='enemy'){
+      const schema=[
+        {label:'HP', type:'number', get:()=>obj.hp, set:v=>obj.hp=+v||0},
+        {label:'MAX HP', type:'number', get:()=>obj.maxHp??obj.hp, set:v=>obj.maxHp=+v||obj.hp},
+        {label:'RADIUS', type:'number', get:()=>obj.r||18, set:v=>obj.r=+v||18},
+        {label:'SPEED', type:'number', get:()=>obj.spd||0, set:v=>obj.spd=+v||0},
+        {label:'SCORE', type:'number', get:()=>obj.score||0, set:v=>obj.score=+v||0},
+      ];
+      this.makePanel('怪物编辑器', obj, schema, {left:sx,top:sy});
+      return;
+    }
+    if (type==='bullet'){
+      const schema=[
+        {label:'X', type:'number', get:()=>obj.x, set:v=>obj.x=+v||0},
+        {label:'Y', type:'number', get:()=>obj.y, set:v=>obj.y=+v||0},
+        {label:'VX', type:'number', get:()=>obj.vx||0, set:v=>obj.vx=+v||0},
+        {label:'VY', type:'number', get:()=>obj.vy||0, set:v=>obj.vy=+v||0},
+        {label:'DMG', type:'number', get:()=>obj.dmg||0, set:v=>obj.dmg=+v||0},
+        {label:'R', type:'number', get:()=>obj.r||2, set:v=>obj.r=+v||2},
+        {label:'LIFE', type:'number', get:()=>obj.life||0, set:v=>obj.life=+v||0},
+      ];
+      this.dragBullet = obj;
+      this.makePanel('子弹编辑器（支持拖拽改坐标）', obj, schema, {
+        left:sx, top:sy,
+        onClone:()=>{
+          const c = {...obj, x:obj.x+20, y:obj.y+20, alive:true};
+          (bulletsP.includes(obj)?bulletsP:bulletsE).push(c);
+          this.notify('BULLET CLONED', C.G);
+        },
+        onDelete:()=>{ killBullet(obj,'dev_delete',{childMods:[]}); this.close(); },
+        onExport:()=>{ openIO(); setIOText(JSON.stringify(obj,null,2)); this.notify('EXPORTED TO I/O', C.Y); },
+      });
+      return;
+    }
+    if (type==='fort'){
+      const schema=[
+        {label:'X', type:'number', get:()=>obj.x, set:v=>obj.x=+v||obj.x},
+        {label:'Y', type:'number', get:()=>obj.y, set:v=>obj.y=+v||obj.y},
+        {label:'W', type:'number', get:()=>obj.w||20, set:v=>obj.w=+v||20},
+        {label:'H', type:'number', get:()=>obj.h||20, set:v=>obj.h=+v||20},
+        {label:'HP', type:'number', get:()=>obj.hp||0, set:v=>obj.hp=+v||0},
+        {label:'CD', type:'number', get:()=>obj.cd||0, set:v=>obj.cd=+v||0},
+      ];
+      this.makePanel('堡垒物品编辑器', obj, schema, {left:sx, top:sy});
+      return;
+    }
+  },
+
+  openHudEditor(kind, sx, sy){
+    let schema = [];
+    if (kind==='hp') schema = [
+      {label:'HP', type:'number', get:()=>Player.hp, set:v=>Player.hp=Math.max(0,+v||0)},
+      {label:'MAX HP', type:'number', get:()=>Player.maxHp, set:v=>Player.maxHp=Math.max(1,+v||1)},
+      {label:'SHIELD', type:'number', get:()=>Player.shield, set:v=>Player.shield=Math.max(0,+v||0)},
+    ];
+    else if (kind==='xp') schema = [
+      {label:'XP', type:'number', get:()=>Player.xp, set:v=>Player.xp=Math.max(0,+v||0)},
+      {label:'XP NEED', type:'number', get:()=>Player.xpNeed, set:v=>Player.xpNeed=Math.max(1,+v||1)},
+      {label:'LVL', type:'number', get:()=>Player.lv, set:v=>Player.lv=Math.max(1,+v||1)},
+    ];
+    else if (kind==='material') schema = [
+      {label:'MATERIAL', type:'number', get:()=>Fortress.stock||0, set:v=>Fortress.stock=Math.max(0,+v||0)},
+      {label:'CORE HP', type:'number', get:()=>Fortress.flagHp||0, set:v=>Fortress.flagHp=Math.max(0,+v||0)},
+      {label:'CORE MAX', type:'number', get:()=>Fortress.flagMaxHp||0, set:v=>Fortress.flagMaxHp=Math.max(1,+v||1)},
+    ];
+    else if (kind==='bomb') schema = [
+      {label:'BOMB', type:'number', get:()=>Player.bomb, set:v=>Player.bomb=clamp((+v||0)|0,0,9)},
+      {label:'DRONE', type:'number', get:()=>Player.drones, set:v=>Player.drones=clamp((+v||0)|0,0,9)},
+      {label:'MOD', type:'number', get:()=>Player.mods, set:v=>Player.mods=clamp((+v||0)|0,0,999)},
+    ];
+    else if (kind==='timer') schema = [
+      {label:'OVERDRIVE T', type:'number', get:()=>Player.overdriveT, set:v=>Player.overdriveT=Math.max(0,+v||0)},
+      {label:'MAGNET T', type:'number', get:()=>Player.magnetT, set:v=>Player.magnetT=Math.max(0,+v||0)},
+      {label:'SHIELD T', type:'number', get:()=>Player.shield, set:v=>Player.shield=Math.max(0,+v||0)},
+    ];
+    if (!schema.length) return;
+    this.makePanel('HUD 属性编辑器', Player, schema, {left:sx, top:sy});
+  },
+
+  onCanvasPointerDown(e){
+    if (!this.active || Game.state!=='playing') return;
+    const inPanel = e.target && this.panel && this.panel.contains(e.target);
+    if (inPanel) return;
+    const pick = this.pickAt(e.clientX, e.clientY);
+    if (!pick) return;
+    this.tapCanvas = { pid:e.pointerId, t0:performance.now(), x:e.clientX, y:e.clientY, moved:false, pick };
+  },
+  onCanvasPointerMove(e){
+    if (this.tapCanvas && e.pointerId===this.tapCanvas.pid){
+      if (Math.hypot(e.clientX-this.tapCanvas.x, e.clientY-this.tapCanvas.y) > this.TAP_MOVE) this.tapCanvas.moved = true;
+    }
+    if (!this.active || !this.dragBullet || !this.panel) return false;
+    const w = this.screenToWorld(e.clientX, e.clientY);
+    this.dragBullet.x = w.x;
+    this.dragBullet.y = w.y;
+    return false;
+  },
+  onCanvasPointerUp(e){
+    const tap = this.tapCanvas;
+    this.tapCanvas = null;
+    if (!tap || tap.pid!==e.pointerId || !this.active || Game.state!=='playing') return;
+    const dt = performance.now() - tap.t0;
+    const moved = tap.moved || Math.hypot(e.clientX-tap.x, e.clientY-tap.y) > this.TAP_MOVE;
+    if (dt > this.TAP_MS || moved) return;
+    this.openFor(tap.pick.type, tap.pick.obj, e.clientX, e.clientY);
+  },
+
+  getHudKindFromTarget(target){
+    const el = target?.closest?.('#hpText,#hpFill,#xpText,#xpFill,#lvText,#bombText,#fortressMat,#fortressCore,#odText,#magText,#shText');
+    if (!el) return null;
+    if (el.id==='hpText' || el.id==='hpFill' || el.id==='shText') return 'hp';
+    if (el.id==='xpText' || el.id==='xpFill' || el.id==='lvText') return 'xp';
+    if (el.id==='fortressMat' || el.id==='fortressCore') return 'material';
+    if (el.id==='bombText') return 'bomb';
+    if (el.id==='odText' || el.id==='magText') return 'timer';
+    return null;
+  },
+  onHudPointerDown(e){
+    if (!this.active || Game.state!=='playing') return;
+    const kind = this.getHudKindFromTarget(e.target);
+    if (!kind) return;
+    this.tapHud = { t0:performance.now(), x:e.clientX, y:e.clientY, moved:false, kind, target:e.target };
+  },
+  onHudPointerMove(e){
+    if (!this.tapHud) return;
+    if (Math.hypot(e.clientX-this.tapHud.x, e.clientY-this.tapHud.y) > this.TAP_MOVE) this.tapHud.moved = true;
+  },
+  onHudPointerUp(e){
+    const tap = this.tapHud;
+    this.tapHud = null;
+    if (!tap || !this.active || Game.state!=='playing') return;
+    const dt = performance.now() - tap.t0;
+    const moved = tap.moved || Math.hypot(e.clientX-tap.x, e.clientY-tap.y) > this.TAP_MOVE;
+    if (dt > this.TAP_MS || moved) return;
+    const r = tap.target.getBoundingClientRect();
+    this.openHudEditor(tap.kind, r.left + r.width*0.5, r.top + 18);
+  }
+};
+
+
+
 
   // ================= Loop =================
   let lastT = performance.now();
@@ -19228,6 +19581,7 @@ function buildForgeMoveChips() {
 }
 
 function initMenuUI(){
+  DevEditor.bindMenuTitleUnlock();
   // 顶部导航切页
   for(const b of document.querySelectorAll('#menu .nav-btn[data-page]')){
     b.addEventListener('click', ()=>setMenuPage(b.dataset.page));
@@ -19729,6 +20083,10 @@ document.getElementById('btnResumePause')?.addEventListener('click', ()=>{
     toMenu();
   });
 })();
+
+document.addEventListener('pointerdown', (e)=>{ DevEditor.onHudPointerDown(e); }, {passive:true});
+document.addEventListener('pointermove', (e)=>{ DevEditor.onHudPointerMove(e); }, {passive:true});
+document.addEventListener('pointerup', (e)=>{ DevEditor.onHudPointerUp(e); }, {passive:true});
 
 document.getElementById('btnStartChallenge')?.addEventListener('click', () => {
   // 读取输入框，默认为 1
