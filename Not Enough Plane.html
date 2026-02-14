@@ -800,7 +800,7 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
   letter-spacing:1px;
   margin-bottom:6px;
 }
-.ub-list{ display:flex; flex-wrap:nowrap; gap:8px; overflow-x:auto; overflow-y:hidden; margin-top:8px; padding-bottom:4px; -webkit-overflow-scrolling:touch; }
+.ub-list{ display:flex; flex-direction:column; gap:10px; max-height:52vh; overflow:auto; margin-top:8px; padding-right:4px; }
 
 .ub-list::-webkit-scrollbar{ height:6px; }
 .ub-list::-webkit-scrollbar-thumb{ background:rgba(157,238,255,.35); border-radius:8px; }
@@ -842,6 +842,16 @@ body[data-menupage="forge"] #forgePreviewSideWrap{ display:block !important; }
 .ub-unit-meta{ font:600 9px/1.15 var(--font-mono); color:#c8f4ff; text-align:center; word-break:break-word; }
 .ub-unit-del{ position:absolute; top:-6px; right:-6px; width:18px; height:18px; border-radius:999px; border:1px solid rgba(255,120,120,.7); background:rgba(28,0,0,.85); color:#ffb3b3; font:700 11px/1 var(--font-mono); display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
 .ub-unit-del:hover{ background:rgba(90,0,0,.92); color:#fff; }
+.ub-team-card{ border:1px solid rgba(157,238,255,.28); border-radius:10px; padding:8px; background:rgba(8,16,34,.46); }
+.ub-team-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.ub-team-title{ font:700 11px/1.2 var(--font-mono); color:#d6f8ff; }
+.ub-team-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+.ub-team-units{ display:flex; flex-wrap:nowrap; gap:8px; overflow-x:auto; overflow-y:hidden; padding-bottom:4px; }
+.ub-team-units::-webkit-scrollbar{ height:6px; }
+.ub-team-units::-webkit-scrollbar-thumb{ background:rgba(157,238,255,.35); border-radius:8px; }
+#ubImportModal{ position:fixed; inset:0; z-index:28000; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
+#ubImportModal.show{ display:flex; }
+#ubImportModal .card{ width:min(560px,92vw); background:linear-gradient(160deg, rgba(8,16,34,.94), rgba(24,8,40,.92)); border:1px solid rgba(130,229,255,.42); border-radius:10px; padding:12px; }
 
 /* action row */
 .menu-actions{
@@ -1816,18 +1826,29 @@ input[type="checkbox"] {
 <div id="unitBattleModal" aria-hidden="true">
   <div class="ub-modal-card cyber-panel">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
-      <div class="ub-title" style="margin:0">UNIT BATTLE · 兵种批量导入对战</div>
+      <div class="ub-title" style="margin:0">UNIT BATTLE · 分队导入对战</div>
       <button id="btnUbClose" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">CLOSE</button>
     </div>
-    <div class="muted" style="font-size:10px">导入多个怪物 Forge JSON（支持 {type:&quot;forge&quot;,forge:{...}} 与 {spec:{...}}），可无限追加。进入后先自由布置堡垒，再拖动半透明预览体调整刷怪点。</div>
-    <div class="field" style="margin-top:8px"><label>UNIT JSON</label><textarea id="ubJsonInput" placeholder='粘贴 forge JSON'></textarea></div>
+    <div class="muted" style="font-size:10px">先创建队伍，再给每个队伍添加兵种。队伍纵向堆叠，队伍内兵种横向滚动。进入战斗后先布置堡垒，再拖动半透明体调整刷怪点。</div>
     <div class="menu-actions" style="margin-top:8px;justify-content:flex-start;gap:8px">
-      <button id="btnUbImport" class="mini-btn" style="border-color:#9deeff;color:#9deeff">导入兵种</button>
-      <button id="btnUbClear" class="mini-btn" style="border-color:#ff9b72;color:#ff9b72">清空兵种</button>
+      <button id="btnUbAddTeam" class="mini-btn" style="border-color:#9deeff;color:#9deeff">新增队伍</button>
+      <button id="btnUbClear" class="mini-btn" style="border-color:#ff9b72;color:#ff9b72">清空队伍</button>
       <button id="btnUbStart" class="mini-btn" style="border-color:#7ef9c0;color:#7ef9c0">开始兵种对战</button>
       <button id="btnUbExportWinner" class="mini-btn" style="border-color:#ffd28a;color:#ffd28a">导出胜者</button>
     </div>
     <div id="ubList" class="ub-list"></div>
+  </div>
+</div>
+<div id="ubImportModal" aria-hidden="true">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+      <div class="ub-title" id="ubImportTitle" style="margin:0">导入兵种</div>
+      <button id="btnUbImportCancel" class="mini-btn" style="border-color:rgba(255,255,255,0.3);color:#bbb">取消</button>
+    </div>
+    <div class="field"><label>UNIT JSON</label><textarea id="ubJsonInput" placeholder='粘贴 forge JSON'></textarea></div>
+    <div class="menu-actions" style="margin-top:8px;justify-content:flex-start;gap:8px">
+      <button id="btnUbImportConfirm" class="mini-btn" style="border-color:#9deeff;color:#9deeff">添加到队伍</button>
+    </div>
   </div>
 </div>
 
@@ -3263,7 +3284,7 @@ const addShake = (m, t=0.16) => {
         if (UnitBattle.active){
           UnitBattle.assaultSnapshot = {
             ghosts: deepClone(UnitBattle.ghosts||[]),
-            units: deepClone(UnitBattle.units||[])
+            teams: deepClone(UnitBattle.teams||[])
           };
         }
         this.labLockedAssault = true;
@@ -6349,6 +6370,67 @@ function refreshDNAAfterFire(beforeP, beforeE){
     obj.x = rect.x + (lx*c - ly*sn);
     obj.y = rect.y + (lx*sn + ly*c);
     return true;
+  }
+
+  function segmentIntersectsOrientedRect(x0,y0,x1,y1,rect,pad=0){
+    const rot = rect.rot||0;
+    const c = Math.cos(rot), sn = Math.sin(rot);
+    const toLocal = (x,y)=>({x:(x-rect.x)*c + (y-rect.y)*sn, y:-(x-rect.x)*sn + (y-rect.y)*c});
+    const p0 = toLocal(x0,y0), p1 = toLocal(x1,y1);
+    const dx = p1.x - p0.x, dy = p1.y - p0.y;
+    const hw = rect.w*0.5 + pad, hh = rect.h*0.5 + pad;
+    let t0 = 0, t1 = 1;
+    const clip = (p,q)=>{
+      if (Math.abs(p) < 1e-7) return q >= 0;
+      const r = q / p;
+      if (p < 0){ if (r > t1) return false; if (r > t0) t0 = r; }
+      else { if (r < t0) return false; if (r < t1) t1 = r; }
+      return true;
+    };
+    return clip(-dx, p0.x + hw) && clip(dx, hw - p0.x) && clip(-dy, p0.y + hh) && clip(dy, hh - p0.y);
+  }
+
+  function resolveEnemyFortressCollision(obj, structures, prevX, prevY){
+    if (!obj || !Array.isArray(structures) || !structures.length) return;
+    const rr = (obj.r||10) + 1;
+    let crossed = false;
+    for (const fs of structures){
+      if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+      if (segmentIntersectsOrientedRect(prevX, prevY, obj.x, obj.y, fs, rr*0.28)) { crossed = true; break; }
+    }
+
+    let pushed = false;
+    for (let iter=0; iter<6; iter++){
+      let hit = false;
+      for (const fs of structures){
+        if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+        if (pushCircleOutRect(obj, fs)){
+          hit = true;
+          pushed = true;
+        }
+      }
+      if (!hit) break;
+    }
+
+    let overlapped = false;
+    for (const fs of structures){
+      if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+      if (circleRectOverlap(obj.x, obj.y, rr, fs)){ overlapped = true; break; }
+    }
+
+    if (!overlapped && !crossed) return;
+    obj.x = prevX;
+    obj.y = prevY;
+    for (let iter=0; iter<3; iter++){
+      let hit = false;
+      for (const fs of structures){
+        if (!fs || fs.hp<=0 || fs.type==='mine') continue;
+        if (pushCircleOutRect(obj, fs)) hit = true;
+      }
+      if (!hit) break;
+    }
+    if (Number.isFinite(obj.vx)) obj.vx *= 0.45;
+    if (Number.isFinite(obj.vy)) obj.vy *= 0.45;
   }
 
   function resolveEnemyFortressCollision(obj, structures, prevX, prevY){
@@ -17121,14 +17203,25 @@ applyBodyOverrides(e.body, spec.bodyOpt || ForgeState.bodyOpt);
   
 const UnitBattle = {
   active:false,
-  units:[],
+  teams:[],
   ghosts:[],
   dragging:null,
   winner:null,
   _source:null,
   _bulletSource:null,
   assaultSnapshot:null,
+  importTargetTeamId:null,
   reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; this._bulletSource=null; },
+  ensureDefaultTeam(){ if (!this.teams.length) this.addTeam(); },
+  makeTeamName(id){ return `TEAM ${id}`; },
+  addTeam(){
+    const id = (this.teams.reduce((m,t)=>Math.max(m,t.id||0),0) || 0) + 1;
+    this.teams.push({id, name:this.makeTeamName(id), units:[]});
+    this.refreshList();
+    return id;
+  },
+  totalUnits(){ return this.teams.reduce((n,t)=>n + ((t.units||[]).length), 0); },
+  clearAll(){ this.teams.length=0; this.refreshList(); },
   parseUnitJSON(txt){
     const obj = JSON.parse(txt||'{}');
     const raw = obj?.forge ? obj.forge : obj;
@@ -17158,9 +17251,23 @@ const UnitBattle = {
       spec
     };
   },
-  importOne(txt){
+  importOne(txt, teamId=null){
     const forge = this.parseUnitJSON(txt);
-    this.units.push(JSON.parse(JSON.stringify(forge)));
+    if (teamId==null){ this.ensureDefaultTeam(); teamId = this.teams[0].id; }
+    const t = this.teams.find(v=>v.id===teamId);
+    if (!t) throw new Error('队伍不存在');
+    t.units.push(JSON.parse(JSON.stringify(forge)));
+    this.refreshList();
+  },
+  removeTeam(teamId){
+    const i = this.teams.findIndex(t=>t.id===teamId);
+    if (i>=0) this.teams.splice(i,1);
+    this.refreshList();
+  },
+  removeUnit(teamId, idx){
+    const t = this.teams.find(v=>v.id===teamId);
+    if (!t) return;
+    t.units.splice(idx,1);
     this.refreshList();
   },
   refreshList(){
@@ -17171,46 +17278,65 @@ const UnitBattle = {
     if (modalCard && !el.closest('#unitBattleModal')) modalCard.appendChild(el);
     el.style.display = modal.classList.contains('show') ? 'flex' : 'none';
     el.innerHTML='';
-    this.units.forEach((u,i)=>{
+    this.teams.forEach((team)=>{
       const card=document.createElement('div');
-      card.className='ub-unit-card';
-      const cv=document.createElement('canvas');
-      cv.className='ub-unit-icon';
-      cv.width=64; cv.height=64;
-      const g=cv.getContext('2d');
-      if (g){
-        g.clearRect(0,0,64,64);
-        const seed=((u?.spec?.bodySeed)||1337) + i*131;
-        const body=genEnemyBody(seed);
-        const fake={x:32,y:34,r:14,body,bodySeed:seed,tint:(u?.spec?.baseCol||C.E2),baseCol:(u?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
-        drawEnemyGenericBody(g, fake, body, fake.baseCol, 14, 0.0, 0.0);
-      }
-      const meta=document.createElement('div');
-      meta.className='ub-unit-meta';
-      meta.textContent=`#${i+1} ${u?.spec?.moveKey||'MIX'} HP:${u?.hp||0}`;
-      const del=document.createElement('button');
-      del.className='ub-unit-del';
-      del.type='button';
-      del.textContent='×';
-      del.title='删除该兵种';
-      del.addEventListener('click', (ev)=>{
-        ev.stopPropagation();
-        UnitBattle.units.splice(i,1);
-        UnitBattle.refreshList();
+      card.className='ub-team-card';
+      const head=document.createElement('div');
+      head.className='ub-team-head';
+      const title=document.createElement('div');
+      title.className='ub-team-title';
+      title.textContent=`${team.name} · ${team.units.length} units`;
+      const actions=document.createElement('div');
+      actions.className='ub-team-actions';
+      const add=document.createElement('button');
+      add.className='mini-btn'; add.type='button'; add.textContent='新增兵种';
+      add.addEventListener('click', ()=>openUbImportModal(team.id));
+      const delTeam=document.createElement('button');
+      delTeam.className='mini-btn'; delTeam.type='button'; delTeam.textContent='删除队伍';
+      delTeam.style.borderColor='rgba(255,120,120,.7)'; delTeam.style.color='#ffb3b3';
+      delTeam.addEventListener('click', ()=>this.removeTeam(team.id));
+      actions.appendChild(add); actions.appendChild(delTeam);
+      head.appendChild(title); head.appendChild(actions);
+
+      const row=document.createElement('div');
+      row.className='ub-team-units';
+      team.units.forEach((u,i)=>{
+        const unit=document.createElement('div');
+        unit.className='ub-unit-card';
+        const cv=document.createElement('canvas');
+        cv.className='ub-unit-icon'; cv.width=64; cv.height=64;
+        const g=cv.getContext('2d');
+        if (g){
+          g.clearRect(0,0,64,64);
+          const seed=((u?.spec?.bodySeed)||1337) + i*131 + team.id*97;
+          const body=genEnemyBody(seed);
+          const fake={x:32,y:34,r:14,body,bodySeed:seed,tint:(u?.spec?.baseCol||C.E2),baseCol:(u?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
+          drawEnemyGenericBody(g, fake, body, fake.baseCol, 14, 0.0, 0.0);
+        }
+        const meta=document.createElement('div');
+        meta.className='ub-unit-meta';
+        meta.textContent=`#${i+1} ${u?.spec?.moveKey||'MIX'} HP:${u?.hp||0}`;
+        const del=document.createElement('button');
+        del.className='ub-unit-del'; del.type='button'; del.textContent='×'; del.title='删除该兵种';
+        del.addEventListener('click', (ev)=>{ ev.stopPropagation(); this.removeUnit(team.id, i); });
+        unit.appendChild(del); unit.appendChild(cv); unit.appendChild(meta);
+        row.appendChild(unit);
       });
-      card.appendChild(del);
-      card.appendChild(cv);
-      card.appendChild(meta);
+      card.appendChild(head); card.appendChild(row);
       el.appendChild(card);
     });
   },
   setupGhosts(){
-    this.ghosts = this.units.map((u,i)=>({
+    const entries=[];
+    for (const t of this.teams){
+      for (const u of (t.units||[])) entries.push({team:t.id, forge:u});
+    }
+    this.ghosts = entries.map((it,i)=>({
       idx:i,
       x: clamp(80 + (i%8)*90, 40, W-40),
-      y: clamp(H*0.18 + ((i/8|0)%4)*58, 60, H*0.45),
-      team: (i%2===0) ? 1 : 2,
-      forge: JSON.parse(JSON.stringify(u)),
+      y: clamp(H*0.18 + ((i/8|0)%5)*58, 60, H-60),
+      team: it.team,
+      forge: JSON.parse(JSON.stringify(it.forge)),
       r: 18
     }));
     this.winner = null;
@@ -17318,7 +17444,7 @@ const UnitBattle = {
     if (!this.active || Fortress.phase!=='fortify') return;
     ctx.save();
     for (const g of this.ghosts){
-      const col = g.team===1 ? 'rgba(130,229,255,.62)' : 'rgba(255,155,114,.62)';
+      const col = (g.team%2===1) ? 'rgba(130,229,255,.62)' : 'rgba(255,155,114,.62)';
       ctx.fillStyle = col;
       ctx.beginPath(); ctx.arc(g.x,g.y,g.r,0,Math.PI*2); ctx.fill();
       ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=1.2; ctx.stroke();
@@ -17334,6 +17460,10 @@ function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild
   const reqMode = mode;
   if (mode==='unitbattle'){
     UnitBattle.active = true;
+    if (keepLabLayout && UnitBattle.assaultSnapshot?.teams){
+      UnitBattle.teams = deepClone(UnitBattle.assaultSnapshot.teams);
+    }
+    UnitBattle.ensureDefaultTeam();
     UnitBattle.setupGhosts();
     if (keepLabLayout && UnitBattle.assaultSnapshot?.ghosts?.length){
       UnitBattle.ghosts = deepClone(UnitBattle.assaultSnapshot.ghosts);
@@ -20098,6 +20228,7 @@ document.getElementById('btnStartUnitBattle')?.addEventListener('click', ()=>{
   const m = document.getElementById('unitBattleModal');
   if (!m) return;
   m.classList.add('show');
+  UnitBattle.ensureDefaultTeam();
   UnitBattle.refreshList();
   requestAnimationFrame(()=>m.classList.add('visible'));
 });
@@ -20488,24 +20619,41 @@ bindForgePreviewFinal();
 placeForgePreview();
 refreshForgePreview();
 
-document.getElementById('btnUbImport')?.addEventListener('click', ()=>{
+function openUbImportModal(teamId){
+  UnitBattle.importTargetTeamId = teamId;
+  const m = document.getElementById('ubImportModal');
+  const t = UnitBattle.teams.find(v=>v.id===teamId);
+  const title = document.getElementById('ubImportTitle');
+  if (title) title.textContent = `添加兵种到 ${t?.name || ('TEAM '+teamId)}`;
+  if (m) m.classList.add('show');
+}
+function closeUbImportModal(){
+  document.getElementById('ubImportModal')?.classList.remove('show');
+}
+document.getElementById('btnUbImportConfirm')?.addEventListener('click', ()=>{
   const txt = document.getElementById('ubJsonInput')?.value || '';
   if (!txt.trim()) return alert('请粘贴 JSON');
-  try{ UnitBattle.importOne(txt); textPop(W*0.5,H*0.2,'兵种已导入',C.P2); }
-  catch(err){ alert('导入失败: '+(err?.message||err)); }
+  try{
+    if (UnitBattle.importTargetTeamId==null) UnitBattle.ensureDefaultTeam();
+    UnitBattle.importOne(txt, UnitBattle.importTargetTeamId ?? UnitBattle.teams[0]?.id);
+    textPop(W*0.5,H*0.2,'兵种已导入',C.P2);
+    closeUbImportModal();
+  }catch(err){ alert('导入失败: '+(err?.message||err)); }
 });
-document.getElementById('btnUbClear')?.addEventListener('click', ()=>{ UnitBattle.units.length=0; UnitBattle.refreshList(); });
+document.getElementById('btnUbImportCancel')?.addEventListener('click', closeUbImportModal);
+document.getElementById('btnUbAddTeam')?.addEventListener('click', ()=>{ const id=UnitBattle.addTeam(); openUbImportModal(id); });
+document.getElementById('btnUbClear')?.addEventListener('click', ()=>{ UnitBattle.clearAll(); });
 document.getElementById('btnUbExportWinner')?.addEventListener('click', ()=>UnitBattle.exportWinner());
 function closeUnitBattleModal(){
   const m = document.getElementById('unitBattleModal');
   if (!m) return;
   m.classList.remove('visible');
-  setTimeout(()=>{ m.classList.remove('show'); UnitBattle.refreshList(); }, 240);
+  setTimeout(()=>{ m.classList.remove('show'); closeUbImportModal(); UnitBattle.refreshList(); }, 240);
 }
 document.getElementById('btnUbClose')?.addEventListener('click', closeUnitBattleModal);
 document.getElementById('unitBattleModal')?.addEventListener('click', (e)=>{ if (e.target?.id==='unitBattleModal') closeUnitBattleModal(); });
 document.getElementById('btnUbStart')?.addEventListener('click', ()=>{
-  if (!UnitBattle.units.length){ alert('请先导入至少一个兵种 JSON'); return; }
+  if (!UnitBattle.totalUnits()){ alert('请先为队伍导入至少一个兵种 JSON'); return; }
   closeUnitBattleModal();
   startRun({mode:'unitbattle', wave:1});
 });
@@ -20514,6 +20662,21 @@ toMenu();
 canvas.style.pointerEvents = 'auto';
 mountOverlaysToBody();
 requestAnimationFrame(step);
+
+(function bindGlobalUIButtonSfx(){
+  let lastAt = 0;
+  document.addEventListener('click', (e)=>{
+    const b = e.target?.closest?.('button');
+    if (!b || b.disabled || b.dataset?.noUiSfx==='1') return;
+    const now = performance.now();
+    if (now - lastAt < 26) return;
+    lastAt = now;
+    if (audioOn){
+      if (typeof SFX!=='undefined' && SFX.pickup) SFX.pickup();
+      else if (typeof beep==='function') beep({f:880,t:0.025,g:0.012,type:'triangle',slide:1.08});
+    }
+  }, {capture:true, passive:true});
+})();
 
 
 // 代码位置：建议放在 extractEnemyForForge 之后，或其它工具函数附近
