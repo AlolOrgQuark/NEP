@@ -4023,6 +4023,7 @@ function recoverLocalControl(){
 
   canvas.addEventListener('pointerup',     (e) => endPointer(e), {passive: true});
   canvas.addEventListener('pointercancel', (e) => endPointer(e), {passive: true});
+  canvas.addEventListener('dblclick', (e)=>{ DevEditor.handleCanvasDoubleClick(e); }, {passive:false});
 
   document.addEventListener('touchmove', (e) => {
     if (e.target === canvas) e.preventDefault();
