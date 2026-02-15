@@ -6674,6 +6674,32 @@ function refreshDNAAfterFire(beforeP, beforeE){
   function applyEnemyPathSteer(obj, target, structures, dt, allies=[]){
     if (!obj || !target || !Number.isFinite(obj.x) || !Number.isFinite(obj.y)) return;
     const tx = target.x ?? obj.x, ty = target.y ?? obj.y;
+    const isUBUnit = !!(UnitBattle.active && obj.ubTeam!=null);
+
+    let dodgeX = 0, dodgeY = 0;
+    if (isUBUnit){
+      const rr = (obj.r||12) + 14;
+      for (const b of bulletsE){
+        if (!b?.alive || b.team!=='E' || b.noHitT>0) continue;
+        if (b.ubTeam!=null && b.ubTeam===obj.ubTeam) continue; // 不躲友方
+        const bv2 = (b.vx||0)*(b.vx||0) + (b.vy||0)*(b.vy||0);
+        if (bv2 < 3600) continue;
+        const bv = Math.sqrt(bv2);
+        const rx = obj.x - b.x, ry = obj.y - b.y;
+        const dist = Math.hypot(rx, ry);
+        if (dist > 240) continue;
+        const closing = (rx*(b.vx||0) + ry*(b.vy||0)) / bv;
+        if (closing <= 0) continue;
+        const perp = Math.abs(rx*(b.vy||0) - ry*(b.vx||0)) / bv;
+        if (perp > rr) continue;
+
+        const sideRaw = rx*(b.vy||0) - ry*(b.vx||0);
+        const side = (Math.abs(sideRaw) > 1e-4) ? Math.sign(sideRaw) : ((((obj.ubTeam||0)&1)===0 ? 1 : -1));
+        const weight = clamp((1 - dist/240) * (1 - perp/rr) * clamp(closing/280, 0.2, 1.0), 0, 1);
+        dodgeX += (-(b.vy||0)/bv) * side * weight;
+        dodgeY += ((b.vx||0)/bv) * side * weight;
+      }
+    }
     const dx0 = tx - obj.x, dy0 = ty - obj.y;
     const d0 = Math.hypot(dx0,dy0) || 1;
     const targetR = target.r || Math.max(target.w||0, target.h||0)*0.35 || 16;
@@ -6683,11 +6709,26 @@ function refreshDNAAfterFire(beforeP, beforeE){
     const inOrbitBand = d0 > orbitDist * 0.72 && d0 < orbitDist * 1.25;
 
     const steerTo = (x,y,spMul=1)=>{
+      if (isUBUnit && (dodgeX!==0 || dodgeY!==0)){
+        const dn = Math.hypot(dodgeX, dodgeY) || 1;
+        const dodgeAmp = Math.min(105, 55 + dn*38);
+        x += (dodgeX/dn) * dodgeAmp;
+        y += (dodgeY/dn) * dodgeAmp;
+      }
       const dx=x-obj.x, dy=y-obj.y;
       const d = Math.hypot(dx,dy) || 1;
-      const sp = (60 + (obj.r||12)*1.45) * spMul;
-      obj.x += (dx/d) * sp * dt;
-      obj.y += (dy/d) * sp * dt;
+      const sp = (isUBUnit ? 74 : 60) + (obj.r||12)*(isUBUnit ? 1.55 : 1.45);
+      const wantVx = (dx/d) * sp * spMul;
+      const wantVy = (dy/d) * sp * spMul;
+      const smoothK = 1 - Math.exp(-(isUBUnit ? 11.5 : 16.0) * dt);
+      obj._steerVx = lerp(obj._steerVx||0, wantVx, smoothK);
+      obj._steerVy = lerp(obj._steerVy||0, wantVy, smoothK);
+      if (isUBUnit && d < 16){
+        obj._steerVx *= 0.68;
+        obj._steerVy *= 0.68;
+      }
+      obj.x += (obj._steerVx||0) * dt;
+      obj.y += (obj._steerVy||0) * dt;
     };
 
     const blocksRaw = Array.isArray(structures)
@@ -7065,7 +7106,7 @@ COMPOSITE:{ spr:'glowY', col:C.Y, name:'COMP', apply(){
         // 补丁：强制离场逻辑
         // 记录存活时间，如果超过 14 秒，强制向下加速漂移
         this.age = (this.age || 0) + dt;
-        if (!UnitBattle.active && this.age > 14) {
+        if (!UnitBattle.active && this.type !== 'BOSS' && this.age > 14) {
           // 随时间越来越快的向下推力，无视原本的移动逻辑强制推走
           this.y += (this.age - 14) * 60 * dt;
         }
@@ -7607,6 +7648,10 @@ STYLE_WARNING_STRIPES:{
               const s = EnemyFactory.spawnFromProto(WaveDirector.pickLiteProto(), d);
               s.x = clamp(e.x + rand(-80,80), 22, W-22);
               s.y = e.y + rand(10, 30);
+              if (e.ubTeam != null){
+                s.ubTeam = e.ubTeam;
+                s._ubLabelForce = 1.6;
+              }
               enemies.push(s);
             }
             sparks(e.x,e.y,'glowE3', 14, 520);
@@ -13542,7 +13587,8 @@ function updateBeams(dt){
 }
 
   function separateEnemies(dt){
-  const pad = 18;
+  const isUB = !!UnitBattle.active;
+  const pad = isUB ? 26 : 18;
   for(let i=0;i<enemies.length;i++){
     const a = enemies[i];
     if (!a.alive || a.type==='BOSS') continue;
@@ -13552,9 +13598,10 @@ function updateBeams(dt){
       const b = enemies[j];
       if (!b.alive || b.type==='BOSS') continue;
       if (b.y<0 || b.y>H*0.70) continue;
-
       const dx = a.x-b.x, dy = a.y-b.y;
-      const rr = a.r + b.r + pad;
+      const sameTeam = (a.ubTeam!=null && b.ubTeam!=null && a.ubTeam===b.ubTeam);
+      const ubExtra = isUB ? (sameTeam ? 2 : 8) : 0;
+      const rr = a.r + b.r + pad + ubExtra;
       const d2 = dx*dx+dy*dy;
       if (d2>=rr*rr || d2<1e-6) continue;
 
@@ -13563,10 +13610,12 @@ function updateBeams(dt){
       const push = (rr - d) * 0.5;
 
       // mostly x separation; little y to avoid jitter
-      a.x += ux * push * 0.60;
-      b.x -= ux * push * 0.60;
-      a.y += uy * push * 0.20;
-      b.y -= uy * push * 0.20;
+      const xPush = isUB ? 0.42 : 0.60;
+      const yPush = isUB ? 0.10 : 0.20;
+      a.x += ux * push * xPush;
+      b.x -= ux * push * xPush;
+      a.y += uy * push * yPush;
+      b.y -= uy * push * yPush;
 
       a.x = clamp(a.x, 18, W-18);
       b.x = clamp(b.x, 18, W-18);
@@ -14844,8 +14893,10 @@ BG_Effect.init();
 
       if (Game.mode==='fortress' || Game.mode==='lab'){
         let siegeTarget = null;
-        if (UnitBattle.active && e.ubTeam!=null) siegeTarget = UnitBattle.findOpponent(e, e.x, e.y, 1800);
-        else siegeTarget = Fortress.pickStrategicTarget(e.x, e.y, 420);
+        if (e.type !== 'BOSS'){
+          if (UnitBattle.active && e.ubTeam!=null) siegeTarget = UnitBattle.findOpponent(e, e.x, e.y, 1800);
+          else siegeTarget = Fortress.pickStrategicTarget(e.x, e.y, 420);
+        }
         resolveEnemyFortressCollision(e, Fortress.structures, prevEx, prevEy);
         if (siegeTarget) applyEnemyPathSteer(e, siegeTarget, Fortress.structures, dt, (UnitBattle.active&&e.ubTeam!=null)?enemies.filter(o=>o&&o.alive&&o!==e&&o.ubTeam===e.ubTeam):[]);
         resolveEnemyFortressCollision(e, Fortress.structures, prevEx, prevEy);
@@ -17326,6 +17377,7 @@ function render(dt) {
     for (const e of enemies){
       if (!e?.alive || e.ubTeam==null) continue;
       const col = (e.ubTeam%2===1) ? '#9deeff' : '#ffb58a';
+      e._ubLabelForce = Math.max(0, (e._ubLabelForce||0) - dt);
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       const y = e.y - (e.r||14) - 8;
       ctx.fillRect(e.x-14, y-10, 28, 11);
@@ -18151,6 +18203,12 @@ setupPlayerEmittersFromBuild(b);
     }
   }
 
+  const calcFortressWarpStock = (startW)=>{
+    let total = 28;
+    for (let w=1; w<startW; w++) total += (10 + Math.floor(w*2.6));
+    return total;
+  };
+
   if (mode === 'fortress'){
     const startW = Math.max(1, wave|0);
     Game.wave = startW;
@@ -18180,7 +18238,7 @@ setupPlayerEmittersFromBuild(b);
       audioOn = prevAudio;
 
       // 材料和地图补给双通道
-      Fortress.stock += Math.floor((startW - 1) * 3.6);
+      Fortress.stock = calcFortressWarpStock(startW);
       const dropN = clamp(2 + Math.floor(startW / 5), 2, 8);
       for (let i=0;i<dropN;i++){
         spawnSupply(rand(W*0.16, W*0.84), rand(H*0.36, H*0.70), chance(0.5)?'WXP':'WMOD');
