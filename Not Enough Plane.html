@@ -8416,6 +8416,61 @@ STEALTH:{
     });
   }
 },
+
+// BERSERK - 血量越低越凶猛（更快移动+更快射击）
+BERSERK:{
+  minWave:7, weight:0.33, group:'offense',
+  apply(e,d){
+    wrapMethod(e,'update',(old,dt)=>{
+      const hpK = 1 - clamp((e.hp||1)/Math.max(1,e.maxHp||1), 0, 1);
+      e.emCdMul = Math.max(0.72, (e.emCdMul||1) * (1 - hpK*0.16));
+      old(dt);
+    });
+    wrapMethod(e,'move',(old,dt)=>{
+      const hpK = 1 - clamp((e.hp||1)/Math.max(1,e.maxHp||1), 0, 1);
+      old(dt * (1 + hpK*0.34));
+    });
+  }
+},
+
+// WARP_STEP - 周期性短距离闪步，打断玩家瞄准节奏
+WARP_STEP:{
+  minWave:11, weight:0.24, group:'utility',
+  apply(e,d){
+    e._warpCd = rand(1.8, 2.9);
+    wrapMethod(e,'update',(old,dt)=>{
+      old(dt);
+      e._warpCd -= dt;
+      if (e._warpCd>0) return;
+      e._warpCd = rand(2.2, 3.6) / Math.sqrt(Math.max(1,d));
+      const tx = clamp(e.x + rand(-170,170), 24, W-24);
+      const ty = clamp(e.y + rand(-48,72), 24, H-30);
+      sparks(e.x,e.y,'glowP2', 8, 280);
+      e.x = tx; e.y = ty;
+      sparks(e.x,e.y,'glowP2', 8, 280);
+      spawnShockwave(e.x,e.y, enemyColor(e), 120, 0.28);
+    });
+  }
+},
+
+// SPIKE_TRAIL - 移动时向后抛射小型尖刺弹
+SPIKE_TRAIL:{
+  minWave:8, weight:0.30, group:'offense',
+  apply(e,d){
+    e._spikeCd = rand(0.30, 0.55);
+    wrapMethod(e,'update',(old,dt)=>{
+      old(dt);
+      e._spikeCd -= dt;
+      if (e._spikeCd>0) return;
+      e._spikeCd = rand(0.34, 0.62);
+      const ang = Math.atan2((e.vy||120), (e.vx||0)) + Math.PI + rand(-0.30,0.30);
+      const sp = 180 + d*18;
+      spawnBullet('E', e.x, e.y, Math.cos(ang)*sp, Math.sin(ang)*sp, {
+        r:2.7, dmg:6 + d*0.45, col:enemyColor(e), style:1, life:1.9
+      });
+    });
+  }
+},
   };
 
   const EnemyTraitFilters = [
@@ -14989,11 +15044,25 @@ BG_Effect.init();
       if (Game.mode === 'lab') {
         if (e.y > offscreenBottomY) {
           e.y = -120;
+          e.x = clamp(e.x + rand(-100, 100), 50, W - 50);
           e.age = 0;
+          e._labTopStickT = 0;
+          if (Number.isFinite(e.vy)) e.vy = Math.max(e.vy||0, 120);
           if (e.mmx && (e.mmx.mode === 'HOLD' || e.mmx.mode === 'ORBIT')) {
             e.mmx.state = 'enter';
             if (typeof mmxInitOrbitFromHere === 'function') mmxInitOrbitFromHere(e);
           }
+        }
+
+        if (e.y < 34) {
+          e._labTopStickT = (e._labTopStickT || 0) + dt;
+          if (e._labTopStickT > 0.90) {
+            e.y = Math.max(e.y, 52);
+            if (Number.isFinite(e.vy)) e.vy = Math.max(e.vy||0, 140);
+            if (e.mmx && (e.mmx.mode === 'HOLD' || e.mmx.mode === 'ORBIT')) e.mmx.state = 'enter';
+          }
+        } else {
+          e._labTopStickT = 0;
         }
       } else if (e.y > offscreenBottomY) {
         e.alive=false;
@@ -17656,7 +17725,10 @@ applyBodyOverrides(e.body, spec.bodyOpt || {});
     // 3. 循环判定
     if (e.y > limitY) {
       e.y = -80; // 瞬移回屏幕上方
+      e.x = clamp(e.x + rand(-100, 100), 50, W - 50);
       e.age = 0;
+      e._labTopStickT = 0;
+      if (Number.isFinite(e.vy)) e.vy = Math.max(e.vy||0, 140);
       
       // 如果它因为越界被标记为死亡，强制复活
       if (!e.alive && e.hp > 0) {
@@ -18928,6 +19000,12 @@ function setMenuPage(key){
   if (key === 'forge'){
     placeForgePreview();
     refreshForgePreview();
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{
+        renderForgeExtraEmittersUI();
+        refreshOpenAccordions('#pageForge');
+      });
+    });
   } else {
     placeForgePreview(); // 让它隐藏 & 不占 side
   }
@@ -20520,6 +20598,12 @@ function importForgeJSON(str) {
   ForgeState.extraEmitters = extraSerialized.map(it=>deepClone(it));
   saveForge();
   syncForgeUIFromState();
+  requestAnimationFrame(()=>{
+    if (document.body?.dataset?.menupage === 'forge'){
+      renderForgeExtraEmittersUI();
+      refreshOpenAccordions('#pageForge');
+    }
+  });
 }
 function downloadText(filename, text){
   const blob = new Blob([text], {type:'application/json'});
