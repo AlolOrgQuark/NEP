@@ -1592,7 +1592,7 @@ input[type="checkbox"] {
   </div>
 </div>
             <div class="field">
-              <label>WARP TO WAVE (SURVIVAL)</label>
+              <label>WARP TO WAVE</label>
               <input id="inpStartWave" type="number" min="1" max="200" value="1">
             </div>
             <div class="field">
@@ -17919,7 +17919,7 @@ const UnitBattle = {
   assaultSnapshot:null,
   importTargetTeamId:null,
   winnerPool:[],
-  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; this.winnerTeam=null; this._bulletSource=null; this.winnerPool=[]; },
+  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; this.winnerTeam=null; this._bulletSource=null; this.winnerPool=[]; document.body.classList.remove('unit-battle-hud'); },
   ensureDefaultTeam(){ if (!this.teams.length) this.addTeam(); },
   makeTeamName(id){ return `TEAM ${id}`; },
   addTeam(){
@@ -18278,6 +18278,7 @@ function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild
     mode = 'lab';
   } else {
     UnitBattle.reset();
+    document.body.classList.remove('unit-battle-hud');
   }
   const savedLabLayout = (keepLabLayout && mode==='lab')
     ? deepClone((Fortress?._labAssaultStart?.layout?.length
@@ -18583,6 +18584,7 @@ function toMenu(){
 
   Music.stop();
   Fortress.updatePanel();
+  document.body.classList.remove('unit-battle-hud');
   forceCloseTextPromptModal();
 }
 function mountOverlaysToBody(){
@@ -20601,10 +20603,13 @@ function importForgeJSON(str) {
     let current = normalizeForParse(srcSlotData);
     const layersFound = [];
     while (current && (current.isWrapper || current.wrapperType || current._composite)) {
-      layersFound.push({
-        type: current.wrapperType || current._composite,
-        cfg: current.compCfg || current._compCfg || {}
-      });
+      const wType = current.wrapperType || current._composite;
+      const cfg = Object.assign({}, current.compCfg || current._compCfg || {});
+      if (wType === 'INTERLEAVE' && !cfg.secondType){
+        const bNode = normalizeForParse(current.innerB || current._emB);
+        cfg.secondType = bNode?.type || bNode?._baseType || cfg.secondType || '';
+      }
+      layersFound.push({ type: wType, cfg });
       current = normalizeForParse(current.inner || current._base || current.innerA || current._emA || current.innerB || current._emB);
     }
 
