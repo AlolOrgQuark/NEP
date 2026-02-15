@@ -1592,7 +1592,7 @@ input[type="checkbox"] {
   </div>
 </div>
             <div class="field">
-              <label>WARP TO WAVE (SURVIVAL)</label>
+              <label>WARP TO WAVE</label>
               <input id="inpStartWave" type="number" min="1" max="200" value="1">
             </div>
             <div class="field">
@@ -2690,43 +2690,53 @@ playerHit(){
       lead: [7,8,7,5, 4,5,4,1, 0,1,4,5, 7,8,10,12]
     },
     { name:'SKYLINE_Gm_MAJ', bpm:124, root: 43, scale:[0,2,4,5,7,9,11], prog:[0,4,5,3, 2,5,4,0], arpPat:[0,2,1,2, 0,3,2,3, 1,2,0,2, 3,2,1,2], lead:[7,9,11,9, 7,6,4,6, 7,9,11,12, 11,9,7,6], bars:999, vibe:'bright',
-    drums:{kick:[0,7,8,12], snare:[4,12], hatOdd:true} },
+    drums:{kick:[0,7,8,12], snare:[4,12], hatOdd:true},
+    synth:{bassType:'triangle', subType:'sine', arpType:'square', leadType:'triangle', pad:true, padType:'sine'} },
 
   // Phrygian cyber-dark (更“异域”)
   { name:'PHRYGIAN_GRID_Em', bpm:148, root: 40, scale:[0,1,3,5,7,8,10], prog:[0,6,0,5, 3,6,5,0], arpPat:[0,1,0,2, 0,1,3,1, 0,2,1,2, 3,1,0,1], lead:[7,8,10,8, 7,5,3,5, 7,8,10,12, 10,8,7,5], bars:999, vibe:'dark',
-    drums:{kick:[0,8,10,12], snare:[4,12], hatOdd:true} },
+    drums:{kick:[0,8,10,12], snare:[4,12], hatOdd:true},
+    synth:{bassType:'sawtooth', subType:'square', arpType:'triangle', leadType:'square', arpLp:1700, leadLp:2800} },
 
   // Dorian mid (更“跑动/驾驶”)
   { name:'DRIVE_DORIAN_Dm', bpm:132, root: 38, scale:[0,2,3,5,7,9,10], prog:[0,3,5,3, 0,6,5,3], arpPat:[0,2,1,2, 0,2,3,2, 1,2,0,2, 3,2,1,2], lead:[7,9,7,5, 4,5,7,9, 10,9,7,5, 4,2,4,5], bars:999, vibe:'mid',
-    drums:{kick:[0,6,8,14], snare:[4,12], hatOdd:false} },
+    drums:{kick:[0,6,8,14], snare:[4,12], hatOdd:false},
+    synth:{bassType:'square', subType:'triangle', arpType:'sawtooth', leadType:'triangle', arpGainMul:0.9, leadGainMul:1.1} },
 
   // Harmonic minor (更“注册机旋律感”，但不同于之前)
   { name:'HARMONIC_A_m', bpm:140, root: 45, scale:[0,2,3,5,7,8,11], prog:[0,5,3,4, 0,6,5,4], arpPat:[0,1,2,1, 0,1,3,2, 2,1,0,1, 2,3,2,1], lead:[7,5,4,5, 7,9,11,9, 7,11,12,11, 9,7,5,4], bars:999, vibe:'bright',
-    drums:{kick:[0,8,12], snare:[4,12], hatOdd:true} },
+    drums:{kick:[0,8,12], snare:[4,12], hatOdd:true},
+    synth:{bassType:'triangle', subType:'sine', arpType:'sawtooth', leadType:'sawtooth', pad:true, padGain:0.022} },
 
   // Half-time feel (鼓组完全不同)
   { name:'HALF_TIME_Cm', bpm:150, root: 36, scale:[0,2,3,5,7,8,10], prog:[0,3,5,6, 0,2,5,3], arpPat:[0,1,0,2, 0,1,3,1, 0,2,1,2, 3,1,0,1], lead:[12,10,9,10, 12,14,12,10, 9,10,12,10, 9,7,9,10], bars:999, vibe:'dark',
-    drums:{kick:[0,8,11], snare:[8], hatOdd:true} },
+    drums:{kick:[0,8,11], snare:[8], hatOdd:true},
+    synth:{bassType:'square', subType:'square', arpType:'triangle', leadType:'square', bassLp:360, subLp:260, pad:true, padType:'triangle', padLp:780} },
 
   // New: upbeat cyber house
   { name:'NOVA_HOUSE_Fm', bpm:134, root:41, scale:[0,2,3,5,7,8,10], prog:[0,5,3,4, 0,4,5,3], arpPat:[0,2,1,2, 0,2,3,2, 1,2,0,2, 3,2,1,2], lead:[7,9,10,9, 7,5,4,5, 7,9,12,10, 9,7,5,4], bars:999, vibe:'bright',
-    drums:{kick:[0,4,8,12], snare:[4,12], hatOdd:true} },
+    drums:{kick:[0,4,8,12], snare:[4,12], hatOdd:true},
+    synth:{bassType:'sawtooth', subType:'sine', arpType:'square', leadType:'sawtooth', leadLp:4700, pad:true, padType:'triangle'} },
 
   // New: darker rolling bassline
   { name:'IRON_LOOP_Gm', bpm:146, root:43, scale:[0,2,3,5,7,8,10], prog:[0,2,5,6, 0,6,5,2], arpPat:[0,1,0,1, 2,3,2,3, 0,2,1,2, 3,1,0,1], lead:[10,7,5,7, 10,12,10,7, 5,7,8,7, 5,3,5,7], bars:999, vibe:'dark',
-    drums:{kick:[0,6,8,12], snare:[4,12], hatOdd:false} },
+    drums:{kick:[0,6,8,12], snare:[4,12], hatOdd:false},
+    synth:{bassType:'square', subType:'triangle', arpType:'triangle', leadType:'square', arpLp:1500, leadHp:260} },
 
   // New: broken-beat lydian color (distinct major #4 flavor)
   { name:'AETHER_LYDIAN_C', bpm:126, root:36, scale:[0,2,4,6,7,9,11], prog:[0,4,1,5, 0,3,4,1], arpPat:[0,2,3,2, 1,3,2,3, 0,1,2,3, 3,2,1,0], lead:[11,9,7,9, 11,13,14,13, 11,9,7,6, 7,9,11,9], bars:999, vibe:'bright',
-    drums:{kick:[0,5,8,13], snare:[4,12], hatOdd:true} },
+    drums:{kick:[0,5,8,13], snare:[4,12], hatOdd:true},
+    synth:{bassType:'triangle', subType:'sine', arpType:'triangle', leadType:'sine', pad:true, padType:'sine', padLp:1500} },
 
   // New: tribal minor pulse (off-grid accents)
   { name:'TRIBAL_PULSE_Dm', bpm:152, root:38, scale:[0,2,3,5,7,8,10], prog:[0,2,6,5, 0,5,3,6], arpPat:[0,1,2,1, 3,2,1,2, 0,2,3,2, 1,0,2,3], lead:[7,5,3,5, 7,8,10,8, 7,5,7,10, 12,10,8,7], bars:999, vibe:'dark',
-    drums:{kick:[0,3,8,11,14], snare:[6,12], hatOdd:false} },
+    drums:{kick:[0,3,8,11,14], snare:[6,12], hatOdd:false},
+    synth:{bassType:'sawtooth', subType:'square', arpType:'square', leadType:'triangle', bassHp:60, arpGainMul:1.15} },
 
   // New: slow synthwave dusk groove
   { name:'DUSK_SYNTH_Bb', bpm:118, root:46, scale:[0,2,4,5,7,9,10], prog:[0,5,4,1, 0,3,5,4], arpPat:[0,2,1,2, 0,3,2,3, 1,2,0,2, 3,2,1,2], lead:[9,7,5,4, 5,7,9,10, 12,10,9,7, 5,4,2,4], bars:999, vibe:'mid',
-    drums:{kick:[0,8,10,12], snare:[4,12], hatOdd:true} }
+    drums:{kick:[0,8,10,12], snare:[4,12], hatOdd:true},
+    synth:{bassType:'triangle', subType:'sine', arpType:'triangle', leadType:'sawtooth', pad:true, padType:'triangle', leadGainMul:0.85} }
   ];
   const Music = {
   playing:false,
@@ -2868,16 +2878,25 @@ nextSwitchTime: 0,    // AudioContext time
     const chordRoot = tr.prog[((localBar%tr.prog.length)+tr.prog.length)%tr.prog.length];
     const tri = this.triad(chordRoot);
 
+    const drums = tr.drums || {};
+    const synth = tr.synth || {};
+
     // ----- drums (audible but not too loud) -----
-    if (s===0 || s===8 || s===12) drumKick(t, 0.80);
-    if (s===4 || s===12) drumSnare(t+0.002, 0.62);
-    if (s%2===1) drumHat(t, 0.48);
+    const kickPat = Array.isArray(drums.kick) ? drums.kick : [0,8,12];
+    if (kickPat.includes(s)) drumKick(t, drums.kickGain ?? 0.80);
+    const snarePat = Array.isArray(drums.snare) ? drums.snare : [4,12];
+    if (snarePat.includes(s)) drumSnare(t+0.002, drums.snareGain ?? 0.62);
+    const hatOdd = (drums.hatOdd!=null) ? drums.hatOdd : true;
+    if ((hatOdd && (s%2===1)) || (!hatOdd && (s%2===0))) drumHat(t, drums.hatGain ?? 0.48);
 
     // ----- bass -----
     if (s===0 || s===8){
       const m = this.degToMidi(chordRoot, 0);
-      voice({t, freq:midiToFreq(m), dur:stepDur*6.6, gain:0.12, type:'sawtooth', lp:420, dest:'bgm', atk:0.004, rel:0.08});
-      voice({t, freq:midiToFreq(m-12), dur:stepDur*6.2, gain:0.07, type:'sine', lp:220, dest:'bgm', atk:0.004, rel:0.10});
+      voice({t, freq:midiToFreq(m), dur:stepDur*6.6, gain:synth.bassGain ?? 0.12, type:synth.bassType || 'sawtooth', lp:synth.bassLp ?? 420, hp:synth.bassHp ?? 0, dest:'bgm', atk:0.004, rel:0.08});
+      voice({t, freq:midiToFreq(m-12), dur:stepDur*6.2, gain:synth.subGain ?? 0.07, type:synth.subType || 'sine', lp:synth.subLp ?? 220, hp:synth.subHp ?? 0, dest:'bgm', atk:0.004, rel:0.10});
+      if (synth.pad && (s===0 || s===8)){
+        voice({t:t+stepDur*0.15, freq:midiToFreq(this.degToMidi(chordRoot+4, 2)), dur:stepDur*7.8, gain:synth.padGain ?? 0.028, type:synth.padType || 'triangle', lp:synth.padLp ?? 1200, hp:synth.padHp ?? 90, dest:'bgm', atk:0.03, rel:0.28});
+      }
     }
 
     // ----- arp -----
@@ -2888,10 +2907,10 @@ nextSwitchTime: 0,    // AudioContext time
       t,
       freq:midiToFreq(mA),
       dur:stepDur*0.82,
-      gain: (tr.vibe==='dark'?0.045:0.055),
-      type:'square',
-      lp: (tr.vibe==='bright'?2600:2200),
-      hp: 120,
+      gain: (tr.vibe==='dark'?0.045:0.055) * (synth.arpGainMul ?? 1),
+      type:synth.arpType || 'square',
+      lp: synth.arpLp ?? (tr.vibe==='bright'?2600:2200),
+      hp: synth.arpHp ?? 120,
       dest:'bgm',
       atk:0.002,
       rel:0.05
@@ -2905,10 +2924,10 @@ nextSwitchTime: 0,    // AudioContext time
       voice({
         t, freq:midiToFreq(mL),
         dur:stepDur*2.9,
-        gain: (tr.vibe==='dark'?0.035:0.045),
-        type:'sawtooth',
-        lp: (tr.vibe==='bright'?4200:3200),
-        hp: 180,
+        gain: (tr.vibe==='dark'?0.035:0.045) * (synth.leadGainMul ?? 1),
+        type:synth.leadType || 'sawtooth',
+        lp: synth.leadLp ?? (tr.vibe==='bright'?4200:3200),
+        hp: synth.leadHp ?? 180,
         dest:'bgm',
         atk:0.006,
         rel:0.16
@@ -4270,7 +4289,7 @@ const Input = {
   // ---- Pointer 事件（移动端 + 桌面鼠标吸附） ----
   Input.pid = null;
 
-function updateDragInput(cx, cy) {
+function updateDragInput(cx, cy, useHover=true) {
   // 1. 获取当前缩放比例 (防错: 默认为1)
   const z = (Camera && Camera.zoom) ? Camera.zoom : 1.0;
   
@@ -4278,10 +4297,11 @@ function updateDragInput(cx, cy) {
   const ctrX = W / 2;
   const ctrY = H / 2;
 
-  // 3. 计算手指期望的屏幕位置 (应用手指遮挡偏移 hoverOffset)
-  // 我们希望飞机的"视觉位置"在手指上方 hoverOffset 像素处
+  // 3. 计算手指期望的屏幕位置
+  // useHover=true: 长按拖拽时飞机显示在手指上方
+  // useHover=false: 单击时飞机直接到手指点
   const targetScreenX = cx;
-  const targetScreenY = cy - hoverOffset;
+  const targetScreenY = cy - (useHover ? hoverOffset : 0);
 
   // 4. 逆向投影：屏幕坐标 -> 世界坐标
   // 公式：World = (Screen - Center) / Zoom + Center
@@ -4344,9 +4364,9 @@ function recoverLocalControl(){
       joyUpdateVisual();
       Input.active = true;
     } else {
-      // 拖拽模式：使用新坐标逻辑
+      // 拖拽模式：单击直接移动到手指位置；拖动时再切换“手指上方悬停”
       Input.active = true;
-      updateDragInput(e.clientX, e.clientY);
+      updateDragInput(e.clientX, e.clientY, false);
       // 瞬间同步位置，避免点击瞬间飞机“跳”过来
       Input.px = Input.tx;
       Input.py = Input.ty;
@@ -6526,6 +6546,41 @@ function refreshDNAAfterFire(beforeP, beforeE){
     return dist2(ax,ay,bx,by)<=rr*rr;
   };
 
+  function applyUnitBattleKnockback(target, bullet, scale=1){
+    if (!UnitBattle.active || !target?.alive || target.ubTeam==null || !bullet) return;
+    const base = Math.max(12, (bullet.dmg||8) * 0.92) * scale;
+    let dx = target.x - bullet.x;
+    let dy = target.y - bullet.y;
+    let len = Math.hypot(dx, dy);
+    if (len < 1e-4){
+      dx = bullet.vx || 0;
+      dy = bullet.vy || 1;
+      len = Math.hypot(dx, dy) || 1;
+    }
+    const ux = dx / len;
+    const uy = dy / len;
+    const kb = base / Math.max(0.72, (target.r||14) / 16);
+    target.x += ux * kb;
+    target.y += uy * kb;
+    if (Number.isFinite(target.vx)) target.vx += ux * kb * 6.0;
+    if (Number.isFinite(target.vy)) target.vy += uy * kb * 6.0;
+    target._ubKnockbackT = Math.max(target._ubKnockbackT||0, 0.10);
+    confineEnemyToArena(target);
+  }
+
+  function confineEnemyToArena(e){
+    if (!e?.alive) return;
+    const margin = Math.max(8, (e.r||12) * 0.92);
+    const minX = margin;
+    const maxX = W - margin;
+    const minY = margin;
+    const maxY = H - margin;
+    if (e.x < minX){ e.x = minX; e.vx = Math.max(0, e.vx||0); }
+    else if (e.x > maxX){ e.x = maxX; e.vx = Math.min(0, e.vx||0); }
+    if (e.y < minY){ e.y = minY; e.vy = Math.max(0, e.vy||0); }
+    else if (e.y > maxY){ e.y = maxY; e.vy = Math.min(0, e.vy||0); }
+  }
+
 
   function tryHitUnitBattleOpponentByBullet(b){
     if (!UnitBattle.active || !b?.alive || b.team!=='E' || b.ubTeam==null || b.noHitT>0) return false;
@@ -6543,6 +6598,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
       for (const k of b.mods) BulletAffixCatalog[k]?.onHit?.(b, target, null);
     }
     target.onHit?.(b.dmg||0);
+    applyUnitBattleKnockback(target, b, 1.65);
     sparks(b.x,b.y,'glowE', 8, 260);
     if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; }
     else killBullet(b, 'hit', {childMods: propagateMods(b.mods)});
@@ -8357,6 +8413,82 @@ STEALTH:{
         draw();
         ctx.restore();
       } else draw();
+    });
+  }
+},
+
+// BERSERK - 血量越低越凶猛（更快移动+更快射击，带可视化怒气环）
+BERSERK:{
+  minWave:7, weight:0.33, group:'offense',
+  apply(e,d){
+    e._berserkBaseCdMul = (e.emCdMul||1);
+    e._berserkK = 0;
+    e._berserkSpMul = 1;
+
+    wrapMethod(e,'update',(old,dt)=>{
+      old(dt);
+      const hpK = 1 - clamp((e.hp||1)/Math.max(1,e.maxHp||1), 0, 1);
+      e._berserkK = hpK;
+      e._berserkSpMul = 1 + hpK * 0.72;
+      e.emCdMul = Math.max(0.52, (e._berserkBaseCdMul||1) * (1 - hpK*0.46));
+      if (hpK > 0.45 && chance(0.06)) sparks(e.x,e.y,'glowE2', 2, 110);
+    });
+
+    wrapMethod(e,'move',(old,dt)=>{
+      old(dt * (e._berserkSpMul || 1));
+    });
+
+    wrapDraw(e,(draw)=>{
+      draw();
+      const k = e._berserkK || 0;
+      if (k <= 0.08) return;
+      ctx.save();
+      if (PERF.additive) ctx.globalCompositeOperation='lighter';
+      ctx.globalAlpha = 0.10 + k*0.25;
+      tronStroke(C.E2, 1.2 + k*1.6, 0.85);
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r + 8 + Math.sin(Game.time*14 + e.x*0.01)*1.2, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+},
+
+// WARP_STEP - 周期性短距离闪步，打断玩家瞄准节奏
+WARP_STEP:{
+  minWave:11, weight:0.24, group:'utility',
+  apply(e,d){
+    e._warpCd = rand(1.8, 2.9);
+    wrapMethod(e,'update',(old,dt)=>{
+      old(dt);
+      e._warpCd -= dt;
+      if (e._warpCd>0) return;
+      e._warpCd = rand(2.2, 3.6) / Math.sqrt(Math.max(1,d));
+      const tx = clamp(e.x + rand(-170,170), 24, W-24);
+      const ty = clamp(e.y + rand(-48,72), 24, H-30);
+      sparks(e.x,e.y,'glowP2', 8, 280);
+      e.x = tx; e.y = ty;
+      sparks(e.x,e.y,'glowP2', 8, 280);
+      spawnShockwave(e.x,e.y, enemyColor(e), 120, 0.28);
+    });
+  }
+},
+
+// SPIKE_TRAIL - 移动时向后抛射小型尖刺弹
+SPIKE_TRAIL:{
+  minWave:8, weight:0.30, group:'offense',
+  apply(e,d){
+    e._spikeCd = rand(0.30, 0.55);
+    wrapMethod(e,'update',(old,dt)=>{
+      old(dt);
+      e._spikeCd -= dt;
+      if (e._spikeCd>0) return;
+      e._spikeCd = rand(0.34, 0.62);
+      const ang = Math.atan2((e.vy||120), (e.vx||0)) + Math.PI + rand(-0.30,0.30);
+      const sp = 180 + d*18;
+      spawnBullet('E', e.x, e.y, Math.cos(ang)*sp, Math.sin(ang)*sp, {
+        r:2.7, dmg:6 + d*0.45, col:enemyColor(e), style:1, life:1.9
+      });
     });
   }
 },
@@ -14876,6 +15008,7 @@ BG_Effect.init();
           if (chance(0.06)) sparks(e.x, e.y, 'glowP', 1, 70);
         }
       }
+      if (UnitBattle.active) confineEnemyToArena(e);
       // timers for support buffs
       if (e._towerSlowT>0) e._towerSlowT = Math.max(0, e._towerSlowT - dt);
       else e._towerSlowStack = Math.max(0, (e._towerSlowStack||0) - dt*2.5);
@@ -14932,11 +15065,31 @@ BG_Effect.init();
       if (Game.mode === 'lab') {
         if (e.y > offscreenBottomY) {
           e.y = -120;
+          e.x = clamp(e.x + rand(-100, 100), 50, W - 50);
           e.age = 0;
+          e._labTopStickT = 0;
+          if (Number.isFinite(e.vy)) e.vy = Math.max(e.vy||0, 120);
+          if (Number.isFinite(e._cy)) e._cy = e.y;
+          if (Number.isFinite(e._cx)) e._cx = clamp(e.x, 24, W-24);
+          if (Number.isFinite(e._rad)) e._rad = 0;
+          if (Number.isFinite(e._p)) e._p = rand(0, Math.PI*2);
+          if (Number.isFinite(e._t)) e._t = 0;
+          if (e.state === 'hold' || e.state === 'orbit') e.state = 'enter';
           if (e.mmx && (e.mmx.mode === 'HOLD' || e.mmx.mode === 'ORBIT')) {
             e.mmx.state = 'enter';
             if (typeof mmxInitOrbitFromHere === 'function') mmxInitOrbitFromHere(e);
           }
+        }
+
+        if (e.y < 34) {
+          e._labTopStickT = (e._labTopStickT || 0) + dt;
+          if (e._labTopStickT > 0.90) {
+            e.y = Math.max(e.y, 52);
+            if (Number.isFinite(e.vy)) e.vy = Math.max(e.vy||0, 140);
+            if (e.mmx && (e.mmx.mode === 'HOLD' || e.mmx.mode === 'ORBIT')) e.mmx.state = 'enter';
+          }
+        } else {
+          e._labTopStickT = 0;
         }
       } else if (e.y > offscreenBottomY) {
         e.alive=false;
@@ -17599,7 +17752,16 @@ applyBodyOverrides(e.body, spec.bodyOpt || {});
     // 3. 循环判定
     if (e.y > limitY) {
       e.y = -80; // 瞬移回屏幕上方
+      e.x = clamp(e.x + rand(-100, 100), 50, W - 50);
       e.age = 0;
+      e._labTopStickT = 0;
+      if (Number.isFinite(e.vy)) e.vy = Math.max(e.vy||0, 140);
+      if (Number.isFinite(e._cy)) e._cy = e.y;
+      if (Number.isFinite(e._cx)) e._cx = clamp(e.x, 24, W-24);
+      if (Number.isFinite(e._rad)) e._rad = 0;
+      if (Number.isFinite(e._p)) e._p = rand(0, Math.PI*2);
+      if (Number.isFinite(e._t)) e._t = 0;
+      if (e.state === 'hold' || e.state === 'orbit') e.state = 'enter';
       
       // 如果它因为越界被标记为死亡，强制复活
       if (!e.alive && e.hp > 0) {
@@ -17757,7 +17919,7 @@ const UnitBattle = {
   assaultSnapshot:null,
   importTargetTeamId:null,
   winnerPool:[],
-  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; this.winnerTeam=null; this._bulletSource=null; this.winnerPool=[]; },
+  reset(){ this.active=false; this.ghosts=[]; this.dragging=null; this.winner=null; this.winnerTeam=null; this._bulletSource=null; this.winnerPool=[]; document.body.classList.remove('unit-battle-hud'); },
   ensureDefaultTeam(){ if (!this.teams.length) this.addTeam(); },
   makeTeamName(id){ return `TEAM ${id}`; },
   addTeam(){
@@ -18032,6 +18194,9 @@ const UnitBattle = {
       if (d2<bestD){ bestD=d2; bestEnemy=e; }
     }
 
+    // 兵种对战优先互殴，默认不把建筑作为主目标（避免被单墙诱导停火拆墙）
+    if (bestEnemy) return bestEnemy;
+
     let bestStruct=null, bestStructScore=-1e18;
     const structs = Fortress.structures || [];
     for (const st of structs){
@@ -18043,14 +18208,7 @@ const UnitBattle = {
       const score = laneW*1.4 + hpW + (1/(1+Math.sqrt(d2)*0.012));
       if (score > bestStructScore){ bestStructScore = score; bestStruct = st; }
     }
-
-    if (!bestEnemy || bestEnemy.ubTeam===source.ubTeam) return bestStruct || null;
-    if (!bestStruct) return bestEnemy;
-
-    const enemyDist = Math.sqrt(bestD);
-    const structDist = Math.hypot(bestStruct.x-x, bestStruct.y-y);
-    const preferBreak = structDist < enemyDist*1.15;
-    return preferBreak ? bestStruct : bestEnemy;
+    return bestStruct || null;
   },
   checkWinner(){
     if (!this.active || Game.state!=='playing') return;
@@ -18116,6 +18274,7 @@ function startRun({mode='survival', wave=1, forge=null, net=false, opponentBuild
     mode = 'lab';
   } else {
     UnitBattle.reset();
+    document.body.classList.remove('unit-battle-hud');
   }
   const savedLabLayout = (keepLabLayout && mode==='lab')
     ? deepClone((Fortress?._labAssaultStart?.layout?.length
@@ -18421,6 +18580,7 @@ function toMenu(){
 
   Music.stop();
   Fortress.updatePanel();
+  document.body.classList.remove('unit-battle-hud');
   forceCloseTextPromptModal();
 }
 function mountOverlaysToBody(){
@@ -18871,6 +19031,12 @@ function setMenuPage(key){
   if (key === 'forge'){
     placeForgePreview();
     refreshForgePreview();
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{
+        renderForgeExtraEmittersUI();
+        refreshOpenAccordions('#pageForge');
+      });
+    });
   } else {
     placeForgePreview(); // 让它隐藏 & 不占 side
   }
@@ -20433,10 +20599,16 @@ function importForgeJSON(str) {
     let current = normalizeForParse(srcSlotData);
     const layersFound = [];
     while (current && (current.isWrapper || current.wrapperType || current._composite)) {
-      layersFound.push({
-        type: current.wrapperType || current._composite,
-        cfg: current.compCfg || current._compCfg || {}
-      });
+      const wType = current.wrapperType || current._composite;
+      const cfg = Object.assign({}, current.compCfg || current._compCfg || {});
+      if (wType === 'INTERLEAVE' && !cfg.secondType){
+        const bNode = normalizeForParse(current.innerB || current._emB);
+        cfg.secondType = bNode?.type || bNode?._baseType || cfg.secondType || '';
+      }
+      if (wType === 'CHILD_BURST' && !cfg.childType){
+        cfg.childType = current.childType || current._childType || cfg.childType || 'RING';
+      }
+      layersFound.push({ type: wType, cfg });
       current = normalizeForParse(current.inner || current._base || current.innerA || current._emA || current.innerB || current._emB);
     }
 
@@ -20463,6 +20635,12 @@ function importForgeJSON(str) {
   ForgeState.extraEmitters = extraSerialized.map(it=>deepClone(it));
   saveForge();
   syncForgeUIFromState();
+  requestAnimationFrame(()=>{
+    if (document.body?.dataset?.menupage === 'forge'){
+      renderForgeExtraEmittersUI();
+      refreshOpenAccordions('#pageForge');
+    }
+  });
 }
 function downloadText(filename, text){
   const blob = new Blob([text], {type:'application/json'});
@@ -21370,6 +21548,14 @@ document.getElementById('btnUbImportAll')?.addEventListener('click', async ()=>{
 });
 
 function closeUbWinnerModal(){ document.getElementById('ubWinnerModal')?.classList.remove('show'); }
+
+function normalizeUbForgeUnit(raw){
+  if (!raw) return null;
+  const u = raw?.forge ? raw.forge : raw;
+  if (u?.spec) return u;
+  return null;
+}
+
 async function exportUbWinnerByIndex(idx){
   const chosen = UnitBattle.winnerPool?.[idx];
   if (!chosen) return;
@@ -21390,7 +21576,8 @@ function openUbWinnerModal(){
   if (!m || !list) return;
   if (title) title.textContent = `TEAM ${UnitBattle.winnerTeam} 胜者兵种导出`;
   list.innerHTML='';
-  (UnitBattle.winnerPool||[]).forEach((u,i)=>{
+  (UnitBattle.winnerPool||[]).forEach((raw,i)=>{
+    const u = normalizeUbForgeUnit(raw);
     const item=document.createElement('div');
     item.className='ub-winner-item';
     const cv=document.createElement('canvas');
@@ -21398,9 +21585,10 @@ function openUbWinnerModal(){
     const g=cv.getContext('2d');
     if (g){
       g.clearRect(0,0,92,92);
-      const seed=((u?.spec?.bodySeed)||1337);
+      const seed=((u?.spec?.bodySeed) ?? (1337 + i*104729))|0;
       const body=genEnemyBody(seed);
       applyBodyOverrides(body, u?.spec?.bodyOpt || {});
+      if (u?.spec?.bodyKind && u.spec.bodyKind !== 'AUTO') body.kind = u.spec.bodyKind;
       const fake={x:46,y:52,r:20,body,bodySeed:seed,tint:(u?.spec?.baseCol||C.E2),baseCol:(u?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
       drawEnemyGenericBody(g, fake, body, fake.baseCol, 20, 0.0, 0.0);
     }
