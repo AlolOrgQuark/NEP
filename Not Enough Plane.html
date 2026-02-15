@@ -622,6 +622,63 @@ body.ui-style-minimal .bar-fill,
 body.ui-style-minimal .mini-btn,
 body.ui-style-minimal .nav-btn{ filter:grayscale(1) !important; }
 
+body.ui-style-vaporwave{
+  --font-main:"Trebuchet MS", "Segoe UI", sans-serif;
+}
+body.ui-style-vaporwave #menu .menu-bg{
+  filter:hue-rotate(-26deg) saturate(1.45) brightness(1.08);
+}
+body.ui-style-vaporwave #menu .menu-shell{
+  border:1px solid rgba(255,150,255,.65);
+  background:linear-gradient(180deg, rgba(31,8,42,.88), rgba(9,23,43,.86));
+  box-shadow:0 0 0 1px rgba(255,255,255,.08), 0 0 24px rgba(255,120,240,.24), inset 0 0 28px rgba(110,220,255,.12);
+}
+body.ui-style-vaporwave .menu-card,
+body.ui-style-vaporwave .hud-panel,
+body.ui-style-vaporwave .stat-pill,
+body.ui-style-vaporwave .mini-btn,
+body.ui-style-vaporwave .nav-btn{
+  border-color:rgba(196,162,255,.72) !important;
+  box-shadow:0 0 14px rgba(255,120,240,.18), inset 0 0 8px rgba(110,220,255,.14);
+}
+body.ui-style-vaporwave #menu .brand .title{
+  font-style:normal;
+  letter-spacing:6px;
+  text-shadow:0 0 10px rgba(255,150,255,.8), 0 0 22px rgba(110,220,255,.45);
+}
+
+body.ui-style-terminal{
+  --font-main:"Consolas", "Courier New", monospace;
+}
+body.ui-style-terminal #menu .menu-bg,
+body.ui-style-terminal #vignette{ opacity:.35 !important; }
+body.ui-style-terminal #menu .menu-shell,
+body.ui-style-terminal .menu-card,
+body.ui-style-terminal .hud-panel,
+body.ui-style-terminal .stat-pill,
+body.ui-style-terminal #fortressPanel{
+  border-radius:0 !important;
+  border:1px solid rgba(126,249,192,.6) !important;
+  background:rgba(4,16,8,.92) !important;
+  color:#9df7c0 !important;
+  text-shadow:none !important;
+  box-shadow:inset 0 0 0 1px rgba(126,249,192,.12), 0 0 12px rgba(90,255,180,.1);
+}
+body.ui-style-terminal .mini-btn,
+body.ui-style-terminal .nav-btn,
+body.ui-style-terminal .chip{
+  border-radius:0 !important;
+  border-color:rgba(126,249,192,.85) !important;
+  background:rgba(4,22,10,.95) !important;
+  color:#c7ffd8 !important;
+}
+body.ui-style-terminal #menu .brand .title{
+  font-style:normal;
+  letter-spacing:2px;
+  color:#9df7c0;
+  text-shadow:0 0 8px rgba(90,255,180,.35);
+}
+
 #menu .menu-nav{
   display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;
 }
@@ -4028,6 +4085,7 @@ const addShake = (m, t=0.16) => {
             if (!e.alive) continue;
             if (dist2(st.x,st.y,e.x,e.y) < 140*140){
               e._towerSlowT = Math.max(e._towerSlowT||0, 0.20);
+              e._towerSlowStack = Math.min(2.1, (e._towerSlowStack||0) + dt*1.9);
             }
           }
         } else if (st.type==='mine'){
@@ -6618,6 +6676,11 @@ function refreshDNAAfterFire(beforeP, beforeE){
     const tx = target.x ?? obj.x, ty = target.y ?? obj.y;
     const dx0 = tx - obj.x, dy0 = ty - obj.y;
     const d0 = Math.hypot(dx0,dy0) || 1;
+    const targetR = target.r || Math.max(target.w||0, target.h||0)*0.35 || 16;
+    const selfR = obj.r || 12;
+    const orbitDist = clamp(selfR + targetR + 58, 78, 170);
+    const tooClose = d0 < orbitDist * 0.86;
+    const inOrbitBand = d0 > orbitDist * 0.72 && d0 < orbitDist * 1.25;
 
     const steerTo = (x,y,spMul=1)=>{
       const dx=x-obj.x, dy=y-obj.y;
@@ -6630,7 +6693,22 @@ function refreshDNAAfterFire(beforeP, beforeE){
     const blocksRaw = Array.isArray(structures)
       ? structures.filter(st=>st && st.hp>0 && st.type!=='mine')
       : [];
-    if (!blocksRaw.length){ steerTo(tx,ty,1.08); return; }
+    if (!blocksRaw.length){
+      if (tooClose){
+        const nx = -dx0 / d0, ny = -dy0 / d0;
+        const strafeSign = (((obj.ubTeam||0) + ((obj._ubLaneSeed ?? ((obj.x*0.013 + obj.y*0.007)|0)) & 1)) % 2 === 0) ? 1 : -1;
+        const sx = -ny * strafeSign, sy = nx * strafeSign;
+        steerTo(obj.x + nx*92 + sx*52, obj.y + ny*92 + sy*52, 1.12);
+      } else if (inOrbitBand){
+        const strafeSign = (((obj.ubTeam||0) + ((obj._ubLaneSeed ?? ((obj.x*0.013 + obj.y*0.007)|0)) & 1)) % 2 === 0) ? 1 : -1;
+        const nx = dx0 / d0, ny = dy0 / d0;
+        const sx = -ny * strafeSign, sy = nx * strafeSign;
+        steerTo(obj.x + sx*68 + nx*22, obj.y + sy*68 + ny*22, 1.02);
+      } else {
+        steerTo(tx,ty,1.08);
+      }
+      return;
+    }
 
     const pad = (obj.r||12) + 3;
     const isBlocked = (x1,y1,x2,y2, arr=blocksRaw)=>{
@@ -6652,7 +6730,19 @@ function refreshDNAAfterFire(beforeP, beforeE){
     };
 
     if (!isBlocked(obj.x,obj.y,tx,ty)){
-      steerTo(tx,ty,1.12);
+      if (tooClose){
+        const nx = -dx0 / d0, ny = -dy0 / d0;
+        const strafeSign = (((obj.ubTeam||0) + ((obj._ubLaneSeed ?? ((obj.x*0.013 + obj.y*0.007)|0)) & 1)) % 2 === 0) ? 1 : -1;
+        const sx = -ny * strafeSign, sy = nx * strafeSign;
+        steerTo(obj.x + nx*92 + sx*52, obj.y + ny*92 + sy*52, 1.15);
+      } else if (inOrbitBand){
+        const strafeSign = (((obj.ubTeam||0) + ((obj._ubLaneSeed ?? ((obj.x*0.013 + obj.y*0.007)|0)) & 1)) % 2 === 0) ? 1 : -1;
+        const nx = dx0 / d0, ny = dy0 / d0;
+        const sx = -ny * strafeSign, sy = nx * strafeSign;
+        steerTo(obj.x + sx*72 + nx*24, obj.y + sy*72 + ny*24, 1.06);
+      } else {
+        steerTo(tx,ty,1.12);
+      }
       return;
     }
 
@@ -6761,7 +6851,10 @@ function refreshDNAAfterFire(beforeP, beforeE){
     }
 
     if (!found){
-      steerTo(obj.x + (-dy0/d0)*28 + dx0*0.45, obj.y + (dx0/d0)*28 + dy0*0.45, 1.0);
+      const flank = (((obj.ubTeam||0) + ((obj._ubLaneSeed ?? ((obj.x*0.011 + obj.y*0.017)|0)) & 1)) % 2 === 0) ? 1 : -1;
+      const surge = (obj._ubBurstT||0) > 0 ? 1.38 : 1.0;
+      if ((obj._ubBurstT||0) > 0) obj._ubBurstT = Math.max(0, (obj._ubBurstT||0) - dt);
+      steerTo(obj.x + (-dy0/d0)*42*flank + dx0*0.55, obj.y + (dx0/d0)*42*flank + dy0*0.55, surge);
       return;
     }
 
@@ -6771,7 +6864,16 @@ function refreshDNAAfterFire(beforeP, beforeE){
     const nextNode = nodes[path[Math.min(1, path.length-1)]] || nodes[goalId];
     obj._pathNext = {x:nextNode.x, y:nextNode.y};
     obj._pathRecalcCd = 0.12 + rand(0,0.08);
-    steerTo(nextNode.x, nextNode.y, 1.0);
+    if (obj.ubTeam!=null){
+      obj._ubBurstCd = Math.max(0, (obj._ubBurstCd||0) - dt);
+      if (obj._ubBurstCd<=0 && chance(0.11)){
+        obj._ubBurstCd = rand(1.6, 2.8);
+        obj._ubBurstT = rand(0.32, 0.62);
+      }
+    }
+    const surge = (obj._ubBurstT||0) > 0 ? 1.35 : 1.0;
+    if ((obj._ubBurstT||0) > 0) obj._ubBurstT = Math.max(0, (obj._ubBurstT||0) - dt);
+    steerTo(nextNode.x, nextNode.y, surge);
   }
 
 
@@ -9148,7 +9250,7 @@ drawEnemyGenericBody(ctx, e, b, col, R0, rot, Game.time);
       if (!em || typeof em.nextCd!=='function' || typeof em.fire!=='function') continue;
       em.cd = (+em.cd || 0) - dt;
       if (em.cd>0) continue;
-      em.cd = em.nextCd(owner, dt) * (owner.emCdMul || 1);
+      em.cd = em.nextCd(owner, dt) * (owner.emCdMul || 1) * (owner._fireCdMul || 1);
 
       // if boss alive and too many bullets, could throttle (optional)
       em.fire(owner);
@@ -14712,18 +14814,22 @@ BG_Effect.init();
         // 冻结期间不调用 update（不移动不射击）
         if (chance(0.12)) sparks(e.x, e.y, 'glowP', 2, 120);
       } else if (!(isNetAuthoritative && e.isNetGhost)) {
+        e._fireCdMul = 1;
         UnitBattle._source = e;
         e.update(dt);
         UnitBattle._source = null;
         if (e._towerSlowT > 0){
           const slowK = 0.38;
+          const slowFireK = clamp((e._towerSlowStack||0) * 0.42, 0, 0.85);
           e.x = lerp(prevEx, e.x, slowK);
           e.y = lerp(prevEy, e.y, slowK);
+          e._fireCdMul = Math.max(e._fireCdMul||1, 1 + slowFireK*0.9);
           if (chance(0.06)) sparks(e.x, e.y, 'glowP', 1, 70);
         }
       }
       // timers for support buffs
       if (e._towerSlowT>0) e._towerSlowT = Math.max(0, e._towerSlowT - dt);
+      else e._towerSlowStack = Math.max(0, (e._towerSlowStack||0) - dt*2.5);
       if (e._fortT>0){
         e._fortT = Math.max(0, e._fortT - dt);
         e.armor = Math.max(e.armor||0, 2);
@@ -21274,7 +21380,7 @@ requestAnimationFrame(step);
 
 (function bindMenuTitleStyleCycler(){
   const key = 'NEP_UI_STYLE';
-  const cls = ['ui-style-neon','ui-style-arcade','ui-style-minimal'];
+  const cls = ['ui-style-neon','ui-style-arcade','ui-style-minimal','ui-style-vaporwave','ui-style-terminal'];
   const title = document.querySelector('#menu .brand .title');
   if (!title) return;
 
