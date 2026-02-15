@@ -18194,6 +18194,9 @@ const UnitBattle = {
       if (d2<bestD){ bestD=d2; bestEnemy=e; }
     }
 
+    // 兵种对战优先互殴，默认不把建筑作为主目标（避免被单墙诱导停火拆墙）
+    if (bestEnemy) return bestEnemy;
+
     let bestStruct=null, bestStructScore=-1e18;
     const structs = Fortress.structures || [];
     for (const st of structs){
@@ -18205,14 +18208,7 @@ const UnitBattle = {
       const score = laneW*1.4 + hpW + (1/(1+Math.sqrt(d2)*0.012));
       if (score > bestStructScore){ bestStructScore = score; bestStruct = st; }
     }
-
-    if (!bestEnemy || bestEnemy.ubTeam===source.ubTeam) return bestStruct || null;
-    if (!bestStruct) return bestEnemy;
-
-    const enemyDist = Math.sqrt(bestD);
-    const structDist = Math.hypot(bestStruct.x-x, bestStruct.y-y);
-    const preferBreak = structDist < enemyDist*1.15;
-    return preferBreak ? bestStruct : bestEnemy;
+    return bestStruct || null;
   },
   checkWinner(){
     if (!this.active || Game.state!=='playing') return;
@@ -20608,6 +20604,9 @@ function importForgeJSON(str) {
       if (wType === 'INTERLEAVE' && !cfg.secondType){
         const bNode = normalizeForParse(current.innerB || current._emB);
         cfg.secondType = bNode?.type || bNode?._baseType || cfg.secondType || '';
+      }
+      if (wType === 'CHILD_BURST' && !cfg.childType){
+        cfg.childType = current.childType || current._childType || cfg.childType || 'RING';
       }
       layersFound.push({ type: wType, cfg });
       current = normalizeForParse(current.inner || current._base || current.innerA || current._emA || current.innerB || current._emB);
