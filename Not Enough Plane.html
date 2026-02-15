@@ -8417,18 +8417,39 @@ STEALTH:{
   }
 },
 
-// BERSERK - 血量越低越凶猛（更快移动+更快射击）
+// BERSERK - 血量越低越凶猛（更快移动+更快射击，带可视化怒气环）
 BERSERK:{
   minWave:7, weight:0.33, group:'offense',
   apply(e,d){
+    e._berserkBaseCdMul = (e.emCdMul||1);
+    e._berserkK = 0;
+    e._berserkSpMul = 1;
+
     wrapMethod(e,'update',(old,dt)=>{
-      const hpK = 1 - clamp((e.hp||1)/Math.max(1,e.maxHp||1), 0, 1);
-      e.emCdMul = Math.max(0.72, (e.emCdMul||1) * (1 - hpK*0.16));
       old(dt);
-    });
-    wrapMethod(e,'move',(old,dt)=>{
       const hpK = 1 - clamp((e.hp||1)/Math.max(1,e.maxHp||1), 0, 1);
-      old(dt * (1 + hpK*0.34));
+      e._berserkK = hpK;
+      e._berserkSpMul = 1 + hpK * 0.72;
+      e.emCdMul = Math.max(0.52, (e._berserkBaseCdMul||1) * (1 - hpK*0.46));
+      if (hpK > 0.45 && chance(0.06)) sparks(e.x,e.y,'glowE2', 2, 110);
+    });
+
+    wrapMethod(e,'move',(old,dt)=>{
+      old(dt * (e._berserkSpMul || 1));
+    });
+
+    wrapDraw(e,(draw)=>{
+      draw();
+      const k = e._berserkK || 0;
+      if (k <= 0.08) return;
+      ctx.save();
+      if (PERF.additive) ctx.globalCompositeOperation='lighter';
+      ctx.globalAlpha = 0.10 + k*0.25;
+      tronStroke(C.E2, 1.2 + k*1.6, 0.85);
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r + 8 + Math.sin(Game.time*14 + e.x*0.01)*1.2, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
     });
   }
 },
@@ -15048,6 +15069,12 @@ BG_Effect.init();
           e.age = 0;
           e._labTopStickT = 0;
           if (Number.isFinite(e.vy)) e.vy = Math.max(e.vy||0, 120);
+          if (Number.isFinite(e._cy)) e._cy = e.y;
+          if (Number.isFinite(e._cx)) e._cx = clamp(e.x, 24, W-24);
+          if (Number.isFinite(e._rad)) e._rad = 0;
+          if (Number.isFinite(e._p)) e._p = rand(0, Math.PI*2);
+          if (Number.isFinite(e._t)) e._t = 0;
+          if (e.state === 'hold' || e.state === 'orbit') e.state = 'enter';
           if (e.mmx && (e.mmx.mode === 'HOLD' || e.mmx.mode === 'ORBIT')) {
             e.mmx.state = 'enter';
             if (typeof mmxInitOrbitFromHere === 'function') mmxInitOrbitFromHere(e);
@@ -17729,6 +17756,12 @@ applyBodyOverrides(e.body, spec.bodyOpt || {});
       e.age = 0;
       e._labTopStickT = 0;
       if (Number.isFinite(e.vy)) e.vy = Math.max(e.vy||0, 140);
+      if (Number.isFinite(e._cy)) e._cy = e.y;
+      if (Number.isFinite(e._cx)) e._cx = clamp(e.x, 24, W-24);
+      if (Number.isFinite(e._rad)) e._rad = 0;
+      if (Number.isFinite(e._p)) e._p = rand(0, Math.PI*2);
+      if (Number.isFinite(e._t)) e._t = 0;
+      if (e.state === 'hold' || e.state === 'orbit') e.state = 'enter';
       
       // 如果它因为越界被标记为死亡，强制复活
       if (!e.alive && e.hp > 0) {
