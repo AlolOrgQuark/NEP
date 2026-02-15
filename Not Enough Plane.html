@@ -17717,6 +17717,7 @@ const UnitBattle = {
           const seed=((u?.spec?.bodySeed)||1337);
           const body=genEnemyBody(seed);
           applyBodyOverrides(body, u?.spec?.bodyOpt || {});
+          if (u?.spec?.bodyKind && u.spec.bodyKind !== 'AUTO') body.kind = u.spec.bodyKind;
           const fake={x:32,y:34,r:14,body,bodySeed:seed,tint:(u?.spec?.baseCol||C.E2),baseCol:(u?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
           drawEnemyGenericBody(g, fake, body, fake.baseCol, 14, 0.0, 0.0);
         }
@@ -19193,13 +19194,38 @@ function summarizeSerializedEmitter(node){
 
 function normalizeSerializedEmitter(node){
   if (!node) return null;
+
+  if (node.type === '_COMPOSITE' && node._compositeInstance){
+    try{
+      const ser = serializeEmitterRecursive(node._compositeInstance);
+      return normalizeSerializedEmitter(ser);
+    }catch(_){
+      return normalizeSerializedEmitter(node._compositeInstance);
+    }
+  }
+
+  if (node._composite){
+    const out = {
+      isWrapper:true,
+      wrapperType: node._composite || '',
+      compCfg: (node._compCfg && typeof node._compCfg==='object') ? deepClone(node._compCfg) : {}
+    };
+    if (out.wrapperType === 'INTERLEAVE'){
+      out.innerA = normalizeSerializedEmitter(node._emA || node.innerA || node._base || node.inner);
+      out.innerB = normalizeSerializedEmitter(node._emB || node.innerB || node._base || node.inner);
+    } else {
+      out.inner = normalizeSerializedEmitter(node._base || node.inner || node.innerA || node.innerB || node._emA || node._emB);
+    }
+    return out;
+  }
+
   if (node.type && !node.isWrapper){
     return {
       isWrapper:false,
       type: node.type || 'AIM',
-      mods: Array.isArray(node.mods) ? node.mods.slice(0, 24) : [],
-      speed: Number.isFinite(+node.speed) ? +node.speed : 220,
-      cd: Number.isFinite(+node.cd) ? +node.cd : 1.2
+      mods: Array.isArray(node.mods) ? node.mods.slice(0, 24) : (Array.isArray(node.cfg?.mods) ? node.cfg.mods.slice(0,24) : []),
+      speed: Number.isFinite(+node.speed) ? +node.speed : (Number.isFinite(+node.cfg?.speed) ? +node.cfg.speed : 220),
+      cd: Number.isFinite(+node.cd) ? +node.cd : (Number.isFinite(+node.cfg?.baseCd) ? +node.cfg.baseCd : 1.2)
     };
   }
   if (node.isWrapper || node.wrapperType){
