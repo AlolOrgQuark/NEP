@@ -4289,7 +4289,7 @@ const Input = {
   // ---- Pointer 事件（移动端 + 桌面鼠标吸附） ----
   Input.pid = null;
 
-function updateDragInput(cx, cy) {
+function updateDragInput(cx, cy, useHover=true) {
   // 1. 获取当前缩放比例 (防错: 默认为1)
   const z = (Camera && Camera.zoom) ? Camera.zoom : 1.0;
   
@@ -4297,10 +4297,11 @@ function updateDragInput(cx, cy) {
   const ctrX = W / 2;
   const ctrY = H / 2;
 
-  // 3. 计算手指期望的屏幕位置 (应用手指遮挡偏移 hoverOffset)
-  // 我们希望飞机的"视觉位置"在手指上方 hoverOffset 像素处
+  // 3. 计算手指期望的屏幕位置
+  // useHover=true: 长按拖拽时飞机显示在手指上方
+  // useHover=false: 单击时飞机直接到手指点
   const targetScreenX = cx;
-  const targetScreenY = cy - hoverOffset;
+  const targetScreenY = cy - (useHover ? hoverOffset : 0);
 
   // 4. 逆向投影：屏幕坐标 -> 世界坐标
   // 公式：World = (Screen - Center) / Zoom + Center
@@ -4363,9 +4364,9 @@ function recoverLocalControl(){
       joyUpdateVisual();
       Input.active = true;
     } else {
-      // 拖拽模式：使用新坐标逻辑
+      // 拖拽模式：单击直接移动到手指位置；拖动时再切换“手指上方悬停”
       Input.active = true;
-      updateDragInput(e.clientX, e.clientY);
+      updateDragInput(e.clientX, e.clientY, false);
       // 瞬间同步位置，避免点击瞬间飞机“跳”过来
       Input.px = Input.tx;
       Input.py = Input.ty;
@@ -6547,7 +6548,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
 
   function applyUnitBattleKnockback(target, bullet, scale=1){
     if (!UnitBattle.active || !target?.alive || target.ubTeam==null || !bullet) return;
-    const base = Math.max(7, (bullet.dmg||8) * 0.42) * scale;
+    const base = Math.max(12, (bullet.dmg||8) * 0.92) * scale;
     let dx = target.x - bullet.x;
     let dy = target.y - bullet.y;
     let len = Math.hypot(dx, dy);
@@ -6558,10 +6559,12 @@ function refreshDNAAfterFire(beforeP, beforeE){
     }
     const ux = dx / len;
     const uy = dy / len;
-    const kb = base / Math.max(0.78, (target.r||14) / 15);
+    const kb = base / Math.max(0.72, (target.r||14) / 16);
     target.x += ux * kb;
     target.y += uy * kb;
-    target._ubKnockbackT = Math.max(target._ubKnockbackT||0, 0.04);
+    if (Number.isFinite(target.vx)) target.vx += ux * kb * 6.0;
+    if (Number.isFinite(target.vy)) target.vy += uy * kb * 6.0;
+    target._ubKnockbackT = Math.max(target._ubKnockbackT||0, 0.10);
     confineEnemyToArena(target);
   }
 
@@ -6595,7 +6598,7 @@ function refreshDNAAfterFire(beforeP, beforeE){
       for (const k of b.mods) BulletAffixCatalog[k]?.onHit?.(b, target, null);
     }
     target.onHit?.(b.dmg||0);
-    applyUnitBattleKnockback(target, b, 1.05);
+    applyUnitBattleKnockback(target, b, 1.65);
     sparks(b.x,b.y,'glowE', 8, 260);
     if (b.pierce>0){ b.pierce--; b.noHitT = 0.03; }
     else killBullet(b, 'hit', {childMods: propagateMods(b.mods)});
@@ -21424,6 +21427,14 @@ document.getElementById('btnUbImportAll')?.addEventListener('click', async ()=>{
 });
 
 function closeUbWinnerModal(){ document.getElementById('ubWinnerModal')?.classList.remove('show'); }
+
+function normalizeUbForgeUnit(raw){
+  if (!raw) return null;
+  const u = raw?.forge ? raw.forge : raw;
+  if (u?.spec) return u;
+  return null;
+}
+
 async function exportUbWinnerByIndex(idx){
   const chosen = UnitBattle.winnerPool?.[idx];
   if (!chosen) return;
@@ -21444,7 +21455,8 @@ function openUbWinnerModal(){
   if (!m || !list) return;
   if (title) title.textContent = `TEAM ${UnitBattle.winnerTeam} 胜者兵种导出`;
   list.innerHTML='';
-  (UnitBattle.winnerPool||[]).forEach((u,i)=>{
+  (UnitBattle.winnerPool||[]).forEach((raw,i)=>{
+    const u = normalizeUbForgeUnit(raw);
     const item=document.createElement('div');
     item.className='ub-winner-item';
     const cv=document.createElement('canvas');
@@ -21452,9 +21464,10 @@ function openUbWinnerModal(){
     const g=cv.getContext('2d');
     if (g){
       g.clearRect(0,0,92,92);
-      const seed=((u?.spec?.bodySeed)||1337);
+      const seed=((u?.spec?.bodySeed) ?? (1337 + i*104729))|0;
       const body=genEnemyBody(seed);
       applyBodyOverrides(body, u?.spec?.bodyOpt || {});
+      if (u?.spec?.bodyKind && u.spec.bodyKind !== 'AUTO') body.kind = u.spec.bodyKind;
       const fake={x:46,y:52,r:20,body,bodySeed:seed,tint:(u?.spec?.baseCol||C.E2),baseCol:(u?.spec?.baseCol||C.E2),hit:0,shieldHP:0};
       drawEnemyGenericBody(g, fake, body, fake.baseCol, 20, 0.0, 0.0);
     }
