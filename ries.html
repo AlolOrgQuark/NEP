@@ -9,7 +9,7 @@
     body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","PingFang SC","Hiragino Sans GB","Microsoft Yahei",sans-serif;margin:18px}
     h1{font-size:17px;margin:0 0 12px}
     .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:end}
-    .box{border:1px solid rgba(127,127,127,.35);padding:12px;border-radius:10px}
+    .box{border:1px solid rgba(127,127,127,.35);padding:12px;border-radius:10px;min-width:0}
     label{display:block;font-size:12px;opacity:.85;margin-bottom:4px}
     input[type="number"],input[type="text"]{padding:6px 8px;min-width:150px}
     input[type="checkbox"]{transform:translateY(1px)}
@@ -21,11 +21,11 @@
     .tableWrap{width:100%;overflow:auto;-webkit-overflow-scrolling:touch}
     th,td{border-bottom:1px solid rgba(127,127,127,.25);padding:8px 6px;vertical-align:top}
     th{text-align:left;font-size:12px;opacity:.85}td{font-size:13px}.right{text-align:right}
-    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .warn{color:#b45309}
-    .split{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-width:0}
+    .warn{color:#b45309;overflow-wrap:anywhere}
+    .split{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;min-width:0}
     @media(max-width:1100px){.split{grid-template-columns:1fr}}
-    .constWrap{max-height:360px;overflow:auto;border:1px solid rgba(127,127,127,.25);border-radius:10px}
+    .constWrap{max-height:360px;max-width:100%;overflow:auto;border:1px solid rgba(127,127,127,.25);border-radius:10px}
     .constTable{width:100%;border-collapse:collapse}
     .constTable th,.constTable td{border-bottom:1px solid rgba(127,127,127,.15);padding:6px;font-size:12px}
     .constTable th{position:sticky;top:0;background:color-mix(in srgb,Canvas 92%,transparent);z-index:2}
@@ -327,7 +327,7 @@ onmessage=async(ev)=>{
     const delta=obj.v-T;
     const absDelta=Math.abs(delta);
 
-    if(Number.isFinite(sharedBestDelta)&&best.length>=outN&&absDelta>sharedBestDelta*1.5)return;
+    if(Number.isFinite(sharedBestDelta)&&best.length>=outN&&absDelta>sharedBestDelta*3.0)return;
 
     // ===== DEDUP by value: keep only the simplest expression for each ~same value =====
     const valRound = obj.v.toPrecision(11);
@@ -479,7 +479,7 @@ onmessage=async(ev)=>{
         if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue}
         const v=applyUn(op,a.v);visited++;
         if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-        const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*2.2)continue;const nf=mkFlags(v,opTag(op),false);
+        const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const nf=mkFlags(v,opTag(op),false);
         const ast=mkU(op,a.ast);
         if(useBitmask){const key=vKey(v)+"|"+a.mask;const old=bucket.get(key);if(old&&score>=old.score)continue;put(key,score,{v,ast,mask:a.mask,flags:nf})}
         else{const ck=a.ck||"";const key=vKey(v)+"|"+ck;const old=bucket.get(key);if(old&&score>=old.score)continue;put(key,score,{v,ast,cnt:a.cnt,ck,flags:nf})}
@@ -504,13 +504,13 @@ onmessage=async(ev)=>{
               if((a.mask&b.mask)!==0)continue;const mask=a.mask|b.mask;
               const v=applyBin(op,a.v,b.v);
               if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-              const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*2.2)continue;const key=vKey(v)+"|"+mask;
+              const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const key=vKey(v)+"|"+mask;
               const old=bucket.get(key);if(!old||score<old.score){const ast=mkB(op,a.ast,b.ast);put(key,score,{v,ast,mask,flags:mkFlags(v,opTag(op),false)})}
             }else{
               const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);if(!cnt)continue;
               const v=applyBin(op,a.v,b.v);
               if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-              const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*2.2)continue;const ck=Array.from(cnt).join(",");const key=vKey(v)+"|"+ck;
+              const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const ck=Array.from(cnt).join(",");const key=vKey(v)+"|"+ck;
               const old=bucket.get(key);if(!old||score<old.score){const ast=mkB(op,a.ast,b.ast);put(key,score,{v,ast,cnt,ck,flags:mkFlags(v,opTag(op),false)})}
             }
             if((visited&8191)===0)emit(c);if(stopFlag||performance.now()-t0>lim)break;
@@ -554,7 +554,7 @@ $("btnStart").onclick=()=>{
   const pruneEquiv=$("pruneEquiv").checked;
   const perfMode=$("perfMode").value;
   const crossHint=$("crossHint").checked;
-  const beamPerWorker=Math.max(50,Math.floor(beam/threads));
+  const beamPerWorker=beam;
   const{opsUn,opsBin}=getOps();
   if(!opsUn.length&&!opsBin.length){alert("请至少选择一个运算");return}
   let consts;try{consts=getConsts()}catch(e){alert(e.message);return}
