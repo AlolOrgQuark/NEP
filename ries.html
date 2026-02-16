@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini RIES (单文件演示)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --primary: #3b82f6;
+      --ok: #10b981;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --border: #374151;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background: linear-gradient(180deg, #020617 0%, var(--bg) 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 0 16px 40px;
+    }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    .hint { color: var(--muted); margin-bottom: 16px; }
+    .grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 16px;
+    }
+    .card {
+      background: rgba(17, 24, 39, 0.88);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
+    .card h2 { margin: 0 0 10px; font-size: 16px; }
+    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .row label { min-width: 92px; color: var(--muted); font-size: 13px; }
+    input, select, button {
+      background: #0b1220;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 7px 9px;
+      font-size: 13px;
+    }
+    input[type="number"] { width: 100%; }
+    .btn {
+      border: 0;
+      background: var(--primary);
+      color: white;
+      cursor: pointer;
+      font-weight: 600;
+      padding: 9px 12px;
+    }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .chip {
+      font-size: 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: #0b1220;
+    }
+    .subtle { color: var(--muted); font-size: 12px; }
+    .tbl {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    .tbl th, .tbl td {
+      border-bottom: 1px solid #273245;
+      text-align: left;
+      padding: 7px 6px;
+      vertical-align: top;
+    }
+    .tbl th { color: #cbd5e1; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+    .expr { font-family: var(--mono); color: #d1fae5; }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .danger { color: var(--danger); }
+    .progress {
+      height: 8px;
+      background: #0b1220;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-top: 8px;
+    }
+    .bar { height: 100%; width: 0; background: linear-gradient(90deg, #2563eb, #10b981); }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Mini RIES（单文件 HTML）</h1>
+    <div class="hint">参考 RIES 思路做“表达式搜索”，不做方程求根。支持：选择函数/常数，以及每个常数的使用次数（无限次 / 最多 N 次 / 必须恰好 N 次）。</div>
+
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h2>搜索参数</h2>
+          <div class="row"><label>目标值 T</label><input id="target" type="number" step="any" value="24" /></div>
+          <div class="row"><label>候选保留数</label><input id="keep" type="number" min="1" max="100" value="20" /></div>
+          <div class="row"><label>最大深度</label><input id="depth" type="number" min="0" max="4" value="2" /></div>
+          <div class="row"><label>最大复杂度</label><input id="budget" type="number" min="1" max="20" value="8" /></div>
+          <div class="row"><label>去重精度</label><input id="eps" type="number" step="any" value="1e-10" /></div>
+          <button id="run" class="btn">开始搜索</button>
+          <div class="progress"><div class="bar" id="bar"></div></div>
+          <div class="subtle" id="status">就绪。</div>
+        </div>
+
+        <div class="card" style="margin-top:12px;">
+          <h2>可用运算</h2>
+          <div class="chips" id="opsBox"></div>
+          <div class="subtle">运算符默认都启用，可手动取消。</div>
+        </div>
+
+        <div class="card" style="margin-top:12px;">
+          <h2>可用函数</h2>
+          <div class="chips" id="funcBox"></div>
+          <div class="subtle">函数是单目变换，例如 sqrt(x)、exp(x)。</div>
+        </div>
+
+        <div class="card" style="margin-top:12px;">
+          <h2>常数规则</h2>
+          <table class="tbl" id="constTable">
+            <thead><tr><th>常数</th><th>模式</th><th>次数 N</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>搜索结果</h2>
+        <table class="tbl" id="resultTable">
+          <thead>
+            <tr>
+              <th>表达式</th>
+              <th>值</th>
+              <th>|x - T|</th>
+              <th>精度</th>
+              <th>复杂度</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const OPS = [
+      { key: '+', fn: (a, b) => a + b, safe: true },
+      { key: '-', fn: (a, b) => a - b, safe: true },
+      { key: '*', fn: (a, b) => a * b, safe: true },
+      { key: '/', fn: (a, b) => (Math.abs(b) < 1e-12 ? NaN : a / b), safe: true },
+      { key: '^', fn: (a, b) => {
+        if (Math.abs(a) > 1e6 || Math.abs(b) > 20) return NaN;
+        const v = Math.pow(a, b);
+        return Number.isFinite(v) ? v : NaN;
+      }, safe: true },
+    ];
+
+    const FUNCS = [
+      { key: 'neg', render: '(-x)', fn: (x) => -x },
+      { key: 'sqrt', render: 'sqrt(x)', fn: (x) => (x < 0 ? NaN : Math.sqrt(x)) },
+      { key: 'exp', render: 'exp(x)', fn: (x) => (x > 20 ? NaN : Math.exp(x)) },
+      { key: 'ln', render: 'ln(x)', fn: (x) => (x <= 0 ? NaN : Math.log(x)) },
+      { key: 'sin', render: 'sin(x)', fn: (x) => Math.sin(x) },
+      { key: 'cos', render: 'cos(x)', fn: (x) => Math.cos(x) },
+      { key: 'abs', render: 'abs(x)', fn: (x) => Math.abs(x) },
+    ];
+
+    const CONSTS = [
+      { key: '1', value: 1 },
+      { key: '2', value: 2 },
+      { key: '3', value: 3 },
+      { key: '4', value: 4 },
+      { key: '5', value: 5 },
+      { key: '6', value: 6 },
+      { key: '7', value: 7 },
+      { key: '8', value: 8 },
+      { key: '9', value: 9 },
+      { key: 'pi', value: Math.PI },
+      { key: 'e', value: Math.E },
+    ];
+
+    function createChip(id, text, checked = true) {
+      const span = document.createElement('label');
+      span.className = 'chip';
+      span.innerHTML = `<input type="checkbox" id="${id}" ${checked ? 'checked' : ''}/> ${text}`;
+      return span;
+    }
+
+    const opsBox = document.getElementById('opsBox');
+    const funcBox = document.getElementById('funcBox');
+    const constTbody = document.querySelector('#constTable tbody');
+
+    OPS.forEach(o => opsBox.appendChild(createChip(`op_${o.key}`, o.key, true)));
+    FUNCS.forEach(f => funcBox.appendChild(createChip(`fn_${f.key}`, f.render, ['sqrt','exp','neg'].includes(f.key))));
+
+    CONSTS.forEach(c => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><code>${c.key}</code></td>
+        <td>
+          <select id="mode_${c.key}">
+            <option value="unlimited" ${['1','2','3','pi','e'].includes(c.key) ? 'selected' : ''}>无限次</option>
+            <option value="max">最多 N 次</option>
+            <option value="exact">必须恰好 N 次</option>
+          </select>
+        </td>
+        <td><input id="n_${c.key}" type="number" min="0" value="1" /></td>
+      `;
+      constTbody.appendChild(tr);
+    });
+
+    function readConfig() {
+      const target = Number(document.getElementById('target').value);
+      const keep = Math.max(1, Number(document.getElementById('keep').value) || 20);
+      const depth = Math.max(0, Math.min(4, Number(document.getElementById('depth').value) || 2));
+      const budget = Math.max(1, Number(document.getElementById('budget').value) || 8);
+      const eps = Math.max(0, Number(document.getElementById('eps').value) || 1e-10);
+
+      const ops = OPS.filter(o => document.getElementById(`op_${o.key}`).checked);
+      const funcs = FUNCS.filter(f => document.getElementById(`fn_${f.key}`).checked);
+      const rules = {};
+      for (const c of CONSTS) {
+        rules[c.key] = {
+          mode: document.getElementById(`mode_${c.key}`).value,
+          n: Math.max(0, Number(document.getElementById(`n_${c.key}`).value) || 0),
+        };
+      }
+      return { target, keep, depth, budget, eps, ops, funcs, rules };
+    }
+
+    function cloneCounts(counts) {
+      const out = {};
+      for (const k in counts) out[k] = counts[k];
+      return out;
+    }
+
+    function mergeCounts(a, b) {
+      const out = {};
+      for (const c of CONSTS) {
+        out[c.key] = (a[c.key] || 0) + (b[c.key] || 0);
+      }
+      return out;
+    }
+
+    function obeysMax(counts, rules) {
+      for (const c of CONSTS) {
+        const r = rules[c.key];
+        if (r.mode === 'max' && (counts[c.key] || 0) > r.n) return false;
+        if (r.mode === 'exact' && (counts[c.key] || 0) > r.n) return false;
+      }
+      return true;
+    }
+
+    function obeysExactFinal(counts, rules) {
+      for (const c of CONSTS) {
+        const r = rules[c.key];
+        if (r.mode === 'exact' && (counts[c.key] || 0) !== r.n) return false;
+      }
+      return true;
+    }
+
+    function approxLabel(target, value, dist) {
+      if (dist < 1e-15) return 'exact';
+      const rel = Math.abs(target) > 1e-12 ? dist / Math.abs(target) : dist;
+      if (rel <= 0) return 'exact';
+      const n = Math.round(1 / rel);
+      if (!Number.isFinite(n) || n <= 0) return '-';
+      return `1 / ${n}`;
+    }
+
+    function stableKey(v, eps) {
+      return String(Math.round(v / eps));
+    }
+
+    function takeBest(pool, target, keep) {
+      pool.sort((a, b) => {
+        const da = Math.abs(a.value - target);
+        const db = Math.abs(b.value - target);
+        if (da !== db) return da - db;
+        return a.cost - b.cost;
+      });
+      return pool.slice(0, keep);
+    }
+
+    async function runSearch() {
+      const cfg = readConfig();
+      const status = document.getElementById('status');
+      const bar = document.getElementById('bar');
+      const tbody = document.querySelector('#resultTable tbody');
+      tbody.innerHTML = '';
+
+      if (!Number.isFinite(cfg.target)) {
+        status.textContent = '目标值非法。';
+        status.className = 'danger';
+        return;
+      }
+
+      status.textContent = '初始化...';
+      status.className = 'subtle';
+      bar.style.width = '2%';
+
+      const levels = [];
+      const seen = new Map();
+
+      function pushCandidate(level, cand) {
+        if (!Number.isFinite(cand.value)) return;
+        if (Math.abs(cand.value) > 1e8) return;
+        if (!obeysMax(cand.counts, cfg.rules)) return;
+
+        const key = stableKey(cand.value, cfg.eps) + '|' + level;
+        const prev = seen.get(key);
+        if (prev && prev.cost <= cand.cost) return;
+        seen.set(key, cand);
+
+        levels[level].push(cand);
+      }
+
+      for (let i = 0; i <= cfg.depth; i++) levels.push([]);
+
+      for (const c of CONSTS) {
+        const counts = {};
+        for (const cc of CONSTS) counts[cc.key] = 0;
+        counts[c.key] = 1;
+        pushCandidate(0, { expr: c.key, value: c.value, cost: 1, counts });
+      }
+
+      for (let d = 1; d <= cfg.depth; d++) {
+        status.textContent = `生成深度 ${d}/${cfg.depth} ...`;
+        bar.style.width = `${Math.round((d / (cfg.depth + 1)) * 75)}%`;
+
+        for (let left = 0; left < d; left++) {
+          const right = d - 1 - left;
+          for (const a of levels[left]) {
+            for (const b of levels[right]) {
+              for (const op of cfg.ops) {
+                const value = op.fn(a.value, b.value);
+                const counts = mergeCounts(a.counts, b.counts);
+                const cost = a.cost + b.cost + 1;
+                if (cost > cfg.budget) continue;
+                pushCandidate(d, {
+                  expr: `(${a.expr} ${op.key} ${b.expr})`,
+                  value,
+                  cost,
+                  counts,
+                });
+              }
+            }
+          }
+        }
+
+        for (const prev of levels[d - 1]) {
+          for (const f of cfg.funcs) {
+            const value = f.fn(prev.value);
+            const cost = prev.cost + 1;
+            if (cost > cfg.budget) continue;
+            pushCandidate(d, {
+              expr: `${f.key}(${prev.expr})`,
+              value,
+              cost,
+              counts: cloneCounts(prev.counts),
+            });
+          }
+        }
+
+        levels[d] = takeBest(levels[d], cfg.target, Math.max(cfg.keep * 8, 200));
+        await new Promise(r => setTimeout(r, 0));
+      }
+
+      const all = levels.flat().filter(c => obeysExactFinal(c.counts, cfg.rules));
+      const best = takeBest(all, cfg.target, cfg.keep);
+
+      bar.style.width = '100%';
+      if (!best.length) {
+        status.textContent = '未找到满足常数次数约束的表达式。';
+        status.className = 'warn';
+        return;
+      }
+
+      status.textContent = `完成：候选 ${all.length} 条，展示最优 ${best.length} 条。`;
+      status.className = 'ok';
+
+      for (const item of best) {
+        const dist = Math.abs(item.value - cfg.target);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="expr">x = ${item.expr}</td>
+          <td>${item.value}</td>
+          <td>${dist}</td>
+          <td>${approxLabel(cfg.target, item.value, dist)}</td>
+          <td>${item.cost}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    document.getElementById('run').addEventListener('click', runSearch);
+    runSearch();
+  </script>
+</body>
+</html>
