@@ -1452,8 +1452,9 @@ onmessage=async(ev)=>{
   threads=Math.max(1,Math.min(64,(threads|0)||1));
 
   // internal beams
-  const beamF = Math.max(50, Math.floor(beam * (mp.beamMul||1)));
-  const beamR = Math.max(50, Math.floor(beamF * (mp.revBeamMul||1)));
+  const bidirMul = bidir ? 0.65 : 1.0;
+  const beamF = Math.max(50, Math.floor(beam * (mp.beamMul||1) * bidirMul));
+  const beamR = Math.max(50, Math.floor(beam * (mp.revBeamMul||1)));
   const subLayerCap = Math.max(32, Math.floor(beamF * (mp.subLayerCapMul||1)));
 
   // constraints analysis
@@ -1538,6 +1539,19 @@ onmessage=async(ev)=>{
   let lastEmit=t0;
   let visited=0, meetConfirmed=0, meetLookups=0, meetCandidates=0;
   let pruned=0, reEvalFixed=0, dupesKilled=0;
+  let meetDbg = {
+    revIdxKeys: 0,
+    revIdxItems: 0,
+    keyHits: 0,
+    pairsTried: 0,
+    rejMaskOverlap: 0,
+    rejCntLimit: 0,
+    rejEpsCand: 0,
+    rejEvalNaN: 0,
+    rejConfirm: 0,
+    revInvBad: 0,
+    maxConfirmErr: 0,
+  };
 
   const best=[];
   const bestSeen=new Map();
@@ -1550,6 +1564,7 @@ onmessage=async(ev)=>{
         elapsed:Math.round(now-t0), maxC, c,
         visited, pruned,
         meetLookups, meetCandidates, meetConfirmed,
+        meetDbg,
         reEvalFixed, dupesKilled,
         mode: useBitmask?"bitmask":"counts",
         mt: (mt && threads>1) ? ("ON("+threads+")") : "OFF",
@@ -1634,6 +1649,11 @@ onmessage=async(ev)=>{
       arr.splice(pos,0,it);
       if(arr.length>cap) arr.length=cap;
     }
+
+    meetDbg.revIdxKeys = revIdx.size;
+    let total=0;
+    for(const v of revIdx.values()) total += v.length;
+    meetDbg.revIdxItems = total;
   }
 
   function keepScore(goal, bb, revHit){
@@ -1720,6 +1740,13 @@ onmessage=async(ev)=>{
           const v=inv.v;
           if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
 
+          const out = applyUn(op, v);
+          const s = Math.max(1, Math.abs(a.v), Math.abs(out));
+          if(!Number.isFinite(out) || Math.abs(out - a.v) > 1e-10 * s){
+            meetDbg.revInvBad++;
+            continue;
+          }
+
           const nf=mkFlags(v,opTag(op),false);
           const pW=a.wA;
           const nW=pW?(fa=>mkU(op,pW(fa))):(fa=>mkU(op,fa));
@@ -1755,7 +1782,11 @@ onmessage=async(ev)=>{
 
             const x1=invBinR(op,r.v,f.v);
             if(Number.isFinite(x1)&&Math.abs(x1)<=CAP){
-              if(useBitmask){
+              const out1 = applyBin(op, f.v, x1);
+              const s1 = Math.max(1, Math.abs(r.v), Math.abs(out1));
+              if(!Number.isFinite(out1) || Math.abs(out1 - r.v) > 1e-10 * s1){
+                meetDbg.revInvBad++;
+              }else if(useBitmask){
                 const m=combMask(f.mask,r.mask);
                 if(m>=0){
                   const pW=r.wA, fA=f.ast;
@@ -1778,7 +1809,11 @@ onmessage=async(ev)=>{
             if(!isComm(op)){
               const x2=invBinL(op,r.v,f.v);
               if(Number.isFinite(x2)&&Math.abs(x2)<=CAP){
-                if(useBitmask){
+                const out2 = applyBin(op, x2, f.v);
+                const s2 = Math.max(1, Math.abs(r.v), Math.abs(out2));
+                if(!Number.isFinite(out2) || Math.abs(out2 - r.v) > 1e-10 * s2){
+                  meetDbg.revInvBad++;
+                }else if(useBitmask){
                   const m=combMask(f.mask,r.mask);
                   if(m>=0){
                     const pW=r.wA, fA=f.ast;
@@ -1817,26 +1852,31 @@ onmessage=async(ev)=>{
     if(tc>maxC) return;
 
     if(useBitmask){
-      if((f.mask & r.mask)!==0) return;
+      if((f.mask & r.mask)!==0){ meetDbg.rejMaskOverlap++; return; }
     }else{
       const c=addCnt(f.cnt??EMPTY, r.cnt??EMPTY);
-      if(!c) return;
+      if(!c){ meetDbg.rejCntLimit++; return; }
     }
 
     const scale=Math.max(1, Math.abs(T), Math.abs(f.v), Math.abs(r.v));
     // bin key 会引入量化误差，给候选阶段额外 slack
     const binSlack = (MEET_STYLE==="bin") ? (Math.max(1,MEET_R)/Math.max(1,MEET_Q)) * scale : 0;
     const epsCand = (4e-10 * mp.candEpsMul) * scale + binSlack;
-    if(Math.abs(f.v - r.v) > epsCand) return;
+    if(Math.abs(f.v - r.v) > epsCand){ meetDbg.rejEpsCand++; return; }
     meetCandidates++;
 
     const combinedAST = r.wA ? r.wA(f.ast) : f.ast;
     const trueVal = evalA(combinedAST);
-    if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP) return;
+    if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){ meetDbg.rejEvalNaN++; return; }
 
     // 确认阶段使用更稳健的相对误差 + 复杂度容忍，减少浮点重算误杀
     const epsConfirm = (7e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(trueVal)) * (1 + tc*0.025);
-    if(Math.abs(trueVal - T) > epsConfirm) return;
+    const err = Math.abs(trueVal - T);
+    if(err > epsConfirm){
+      meetDbg.rejConfirm++;
+      if(err > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = err;
+      return;
+    }
 
     meetConfirmed++;
     if(useBitmask){
@@ -1864,8 +1904,14 @@ onmessage=async(ev)=>{
       }
       const rl=revIdx.get(k2);
       if(!rl) continue;
+
+      meetDbg.keyHits++;
+
       const lim=Math.min(rl.length, Math.max(8, mp.meetKeyProbeCap|0 || 96));
-      for(let i=0;i<lim;i++) tryMeetPair(f, rl[i]);
+      for(let i=0;i<lim;i++){
+        meetDbg.pairsTried++;
+        tryMeetPair(f, rl[i]);
+      }
     }
   }
 
@@ -2204,6 +2250,7 @@ onmessage=async(ev)=>{
     elapsed:Math.round(performance.now()-t0), maxC, c:maxC,
     visited, pruned,
     meetLookups, meetCandidates, meetConfirmed,
+    meetDbg,
     reEvalFixed, dupesKilled,
     mode:useBitmask?"bitmask":"counts",
     mt:(mt && threads>1)?("ON("+threads+")"):"OFF",
@@ -2300,6 +2347,15 @@ $("btnStart").onclick=()=>{
       ps.innerHTML =
         "<b>AST重求值修正：</b>"+(payload.reEvalFixed||0).toLocaleString()+
         " &nbsp;|&nbsp; <b>输出同值合并：</b>"+(payload.dupesKilled||0).toLocaleString();
+      if(payload.meetDbg){
+        const d=payload.meetDbg;
+        ps.innerHTML +=
+          "<br><b>MEET Debug</b> " +
+          `revIdxKeys=${d.revIdxKeys} revIdxItems=${d.revIdxItems} ` +
+          `keyHits=${d.keyHits} pairsTried=${d.pairsTried}<br>` +
+          `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, confirm=${d.rejConfirm}) ` +
+          `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}`;
+      }
 
       renderResults(rows,showCounts);
       if(type==="done"){
