@@ -792,7 +792,7 @@ onmessage=(ev)=>{
       const lim=Math.min(src.len, capUn);
 
       for(let i=workerId;i<lim;i+=workerCount){
-        const av=src.v[i], af=src.flags[i];
+        const av=src.v[i], af=src.flags?src.flags[i]:0;
         if(PRUNE && pruneUn(op, af, av)){ pruned++; continue; }
         const v=applyUn(op,av); visited++;
         if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
@@ -826,11 +826,11 @@ onmessage=(ev)=>{
         const cA=Math.min(A.len,capBin), cB=Math.min(B.len,capBin);
 
         for(let ia=workerId; ia<cA; ia+=workerCount){
-          const av=A.v[ia], af=A.flags[ia];
+          const av=A.v[ia], af=A.flags?A.flags[ia]:0;
           const stB=(comm && ic===jc)?ia:0;
 
           for(let ib=stB; ib<cB; ib++){
-            const bv=B.v[ib], bf=B.flags[ib];
+            const bv=B.v[ib], bf=B.flags?B.flags[ib]:0;
             if(PRUNE && pruneBin(op, af, bf, av, bv)){ pruned++; continue; }
 
             if(USE_BITMASK){
@@ -925,7 +925,7 @@ function modeParams(mode){
     spillMul:2.1, capMul:1.5, keepMeetDup:false,
     meetSweepMul:0.18,
     beamMul:1.0, subLayerCapMul:1.0,
-    revIdxKeyCap:160, meetKeyProbeCap:180, meetSweepRevCap:220
+    revIdxKeyCap:96, meetKeyProbeCap:64, meetSweepRevCap:120
   };
   if(mode==="meet") return {
     keyPrec:12, bestPrec:11, keepMode:"min",
@@ -1763,7 +1763,7 @@ onmessage=async(ev)=>{
     }
 
     // binary inverse with fwd assistance (same as之前思路，但 beamR 更大)
-    const sBin=opsBin.filter(op=>["+","-","*","/","^"].includes(op));
+    const sBin=opsBin.filter(op=>["+","-","*","/"].includes(op));
     for(const op of sBin){
       const w=wBin(op);
       for(let rc=0; rc<=c-w-1; rc++){
@@ -1962,7 +1962,7 @@ onmessage=async(ev)=>{
       w.postMessage(initMsg);
     })));
     // send layer1
-    sendLayerToSubs(1, packLayer(1));
+    sendLayerToSubs(1);
   }
   function termSubWorkers(){ for(const w of subWorkers) w.terminate(); subWorkers=[]; }
 
@@ -1970,25 +1970,31 @@ onmessage=async(ev)=>{
     const src=fwd[cost];
     const lim=Math.min(src.length, subLayerCap);
     const v=new Float64Array(lim);
-    const flags=new Uint32Array(lim);
     if(useBitmask){
       const mask=new Int32Array(lim);
-      for(let i=0;i<lim;i++){ v[i]=src[i].v; flags[i]=src[i].flags; mask[i]=src[i].mask|0; }
-      return {len:lim, v, flags, mask};
+      for(let i=0;i<lim;i++){ v[i]=src[i].v; mask[i]=src[i].mask|0; }
+      return {len:lim, v, mask};
     }else{
       const cnt=new Uint16Array(lim*tCount);
       for(let i=0;i<lim;i++){
-        v[i]=src[i].v; flags[i]=src[i].flags;
+        v[i]=src[i].v;
         const base=i*tCount;
         const cvec=src[i].cnt;
         for(let j=0;j<tCount;j++) cnt[base+j]=cvec[j];
       }
-      return {len:lim, v, flags, cnt};
+      return {len:lim, v, cnt};
     }
   }
-  function sendLayerToSubs(cost, layer){
+  function sendLayerToSubs(cost){
     if(subWorkers.length===0) return;
-    for(const w of subWorkers) w.postMessage({type:"setLayer", cost, layer});
+    for(const w of subWorkers){
+      const layer=packLayer(cost);
+      if(useBitmask){
+        w.postMessage({type:"setLayer", cost, layer}, [layer.v.buffer, layer.mask.buffer]);
+      }else{
+        w.postMessage({type:"setLayer", cost, layer}, [layer.v.buffer, layer.cnt.buffer]);
+      }
+    }
   }
 
   async function computeLayerMT(c, capUn, capBin){
@@ -2232,7 +2238,7 @@ onmessage=async(ev)=>{
     }
 
     // publish layer to subs
-    sendLayerToSubs(c, packLayer(c));
+    sendLayerToSubs(c);
 
     // update best + meet
     for(const e of fwd[c]){
