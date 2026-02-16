@@ -1873,9 +1873,9 @@ onmessage=async(ev)=>{
     const probeVal = evalA(probeAST);
     if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){ meetDbg.rejEvalNaN++; return; }
 
-    // 探测确认不能只用超严静态阈值；forward/reverse 的值只需“足够近”即可触发有效候选
+    // 探测阶段使用温和的 gap 自适应阈值，避免放大误差导致误收
     const epsProbeBase = (8e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(probeVal)) * (1 + tc*0.03);
-    const epsProbeGap = matchGap * (12 + tc*0.6);
+    const epsProbeGap = matchGap * (1.5 + tc*0.08);
     const epsProbe = Math.max(epsProbeBase, epsProbeGap, mp.confirmAbsFloor||0);
     const probeErr = Math.abs(probeVal - T);
     if(probeErr > epsProbe){
@@ -1888,9 +1888,9 @@ onmessage=async(ev)=>{
     const trueVal = evalA(combinedAST);
     if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){ meetDbg.rejEvalNaN++; return; }
 
-    // 终确认同样按 matchGap 自适应，避免把近似 meet 候选全都误杀为 0
+    // 终确认保持更严格的 gap 自适应阈值，控制 meet 结果精度
     const epsConfirmBase = (7e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(trueVal)) * (1 + tc*0.025);
-    const epsConfirmGap = matchGap * (16 + tc*0.7);
+    const epsConfirmGap = matchGap * (2.0 + tc*0.10);
     const epsConfirm = Math.max(epsConfirmBase, epsConfirmGap, mp.confirmAbsFloor||0);
     const err = Math.abs(trueVal - T);
     if(err > epsConfirm){
