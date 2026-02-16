@@ -374,7 +374,7 @@ onmessage=async(ev)=>{
   const fwd=Array.from({length:maxC+1},()=>[]);
   {
     const{put,fin}=mkBucket();
-    for(let i=0;i<nC;i++){
+    for(let i=0;i<nC;i++){if(shardCount>1&&(i%shardCount)!==shardIndex)continue;
       const v=consts[i].v;visited++;
       if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
       const score=Math.abs(v-T);const flags=mkFlags(v,TAG_NONE,true);
@@ -475,6 +475,7 @@ onmessage=async(ev)=>{
       const src=fwd[sc];if(!src.length)continue;
       const cap=Math.min(src.length,capUn);
       for(let i=0;i<cap;i++){
+        if(shardCount>1&&((i+sc*13+op.length)%shardCount)!==shardIndex)continue;
         const a=src[i];
         if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue}
         const v=applyUn(op,a.v);visited++;
@@ -497,6 +498,7 @@ onmessage=async(ev)=>{
         for(let ia=0;ia<cA;ia++){
           const a=A[ia];const stB=(comm&&ic===jc)?ia:0;
           for(let ib=stB;ib<cB;ib++){
+            if(shardCount>1&&((ia*131+ib*17+ic*29+jc*7)%shardCount)!==shardIndex)continue;
             const b=B[ib];visited++;
             if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++;continue}
             if(useBitmask){
