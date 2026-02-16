@@ -282,6 +282,7 @@ onmessage=async(ev)=>{
   const nC=consts.length;
   const constrainedIdx=[];
   for(let i=0;i<nC;i++){const mn=consts[i].min??0,mx=consts[i].max??INF;if(mn>mx){postMessage({type:"error",payload:consts[i].s+" min>max"});return}if(mn>0||mx<INF)constrainedIdx.push(i)}
+  const hasHardConstraints=constrainedIdx.length>0;
   let useBitmask=true;
   if(constrainedIdx.length>4)useBitmask=false;
   for(const i of constrainedIdx)if((consts[i].min??0)>1||(consts[i].max??INF)>1){useBitmask=false;break}
@@ -327,7 +328,7 @@ onmessage=async(ev)=>{
     const delta=obj.v-T;
     const absDelta=Math.abs(delta);
 
-    if(Number.isFinite(sharedBestDelta)&&best.length>=outN&&absDelta>sharedBestDelta*3.0)return;
+    if(!hasHardConstraints&&Number.isFinite(sharedBestDelta)&&best.length>=outN&&absDelta>sharedBestDelta*3.0)return;
 
     // ===== DEDUP by value: keep only the simplest expression for each ~same value =====
     const valRound = obj.v.toPrecision(11);
@@ -479,7 +480,7 @@ onmessage=async(ev)=>{
         if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue}
         const v=applyUn(op,a.v);visited++;
         if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-        const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const nf=mkFlags(v,opTag(op),false);
+        const score=Math.abs(v-T);if(!hasHardConstraints&&Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const nf=mkFlags(v,opTag(op),false);
         const ast=mkU(op,a.ast);
         if(useBitmask){const key=vKey(v)+"|"+a.mask;const old=bucket.get(key);if(old&&score>=old.score)continue;put(key,score,{v,ast,mask:a.mask,flags:nf})}
         else{const ck=a.ck||"";const key=vKey(v)+"|"+ck;const old=bucket.get(key);if(old&&score>=old.score)continue;put(key,score,{v,ast,cnt:a.cnt,ck,flags:nf})}
@@ -504,13 +505,13 @@ onmessage=async(ev)=>{
               if((a.mask&b.mask)!==0)continue;const mask=a.mask|b.mask;
               const v=applyBin(op,a.v,b.v);
               if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-              const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const key=vKey(v)+"|"+mask;
+              const score=Math.abs(v-T);if(!hasHardConstraints&&Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const key=vKey(v)+"|"+mask;
               const old=bucket.get(key);if(!old||score<old.score){const ast=mkB(op,a.ast,b.ast);put(key,score,{v,ast,mask,flags:mkFlags(v,opTag(op),false)})}
             }else{
               const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);if(!cnt)continue;
               const v=applyBin(op,a.v,b.v);
               if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-              const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const ck=Array.from(cnt).join(",");const key=vKey(v)+"|"+ck;
+              const score=Math.abs(v-T);if(!hasHardConstraints&&Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const ck=Array.from(cnt).join(",");const key=vKey(v)+"|"+ck;
               const old=bucket.get(key);if(!old||score<old.score){const ast=mkB(op,a.ast,b.ast);put(key,score,{v,ast,cnt,ck,flags:mkFlags(v,opTag(op),false)})}
             }
             if((visited&8191)===0)emit(c);if(stopFlag||performance.now()-t0>lim)break;
@@ -558,14 +559,16 @@ $("btnStart").onclick=()=>{
   const{opsUn,opsBin}=getOps();
   if(!opsUn.length&&!opsBin.length){alert("请至少选择一个运算");return}
   let consts;try{consts=getConsts()}catch(e){alert(e.message);return}
+  const hasHardConstraints=consts.some(c=>(c.min??0)>0||(c.max??65535)<65535);
+  const effectiveThreads=hasHardConstraints?1:threads;
   if(worker)worker.terminate();for(const w of workers)w.terminate();workers=[];worker=null;
   saveConfig();
   $("btnStart").disabled=true;$("btnStop").disabled=false;$("pruneStats").style.display="none";
-  statusPills({T:fmt(T),status:"running",bidir:bidir?"ON":"OFF",prune:pruneEquiv?"ON":"OFF",perf:perfMode,coop:crossHint?"ON":"OFF",divRatio,maxC,beam,beam_per_worker:beamPerWorker,outN,threads});
-  const shardBest=Array.from({length:threads},()=>[]);const shardDone=Array.from({length:threads},()=>false);const shardMeta=Array.from({length:threads},()=>({}));
+  statusPills({T:fmt(T),status:"running",bidir:bidir?"ON":"OFF",prune:pruneEquiv?"ON":"OFF",perf:perfMode,coop:crossHint?"ON":"OFF",divRatio,maxC,beam,beam_per_worker:beamPerWorker,outN,threads:effectiveThreads,constraints:hasHardConstraints?"safe-single-thread":"none"});
+  const shardBest=Array.from({length:effectiveThreads},()=>[]);const shardDone=Array.from({length:effectiveThreads},()=>false);const shardMeta=Array.from({length:effectiveThreads},()=>({}));
   const mergeRows=()=>{const all=shardBest.flat();all.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));const uniq=[];const seen=new Set();for(const r of all){const k=Number(r.v).toPrecision(11);if(seen.has(k))continue;seen.add(k);uniq.push(r);if(uniq.length>=outN)break}lastRows=uniq;return uniq};
   const updateView=(type,payload)=>{const rows=mergeRows();const ba=rows.length?Math.abs(rows[0].delta):NaN;const sum=(k)=>shardMeta.reduce((a,m)=>a+(Number(m?.[k])||0),0);statusPills({T:fmt(T),status:type,mode:payload.mode,c:(payload.c??0)+"/"+payload.maxC,elapsed_ms:payload.elapsed,visited:sum("visited"),meets:sum("meetCount"),pruned:sum("pruned"),reEval_fixed:sum("reEvalFixed"),dupes_killed:sum("dupesKilled"),best_delta:Number.isFinite(ba)?fmt(ba):"n/a",threads,perf:perfMode,coop:crossHint?"ON":"OFF"});if(Number.isFinite(ba)&&crossHint){for(const w of workers)w.postMessage({type:"hint",bestDelta:ba})}if(sum("pruned")>0||sum("dupesKilled")>0){const ps=$("pruneStats");ps.style.display="block";ps.innerHTML="<b>恒等式剪枝：</b>"+sum("pruned").toLocaleString()+" 个冗余跳过 &nbsp;|&nbsp; <b>AST重求值修正：</b>"+sum("reEvalFixed").toLocaleString()+" &nbsp;|&nbsp; <b>输出去重：</b>"+sum("dupesKilled").toLocaleString()+" 个同值表达式合并"}renderResults(rows,showCounts)};
-  for(let i=0;i<threads;i++){const w=buildWorker();workers.push(w);w.onmessage=(ev)=>{const{type,payload}=ev.data;if(type==="error"){alert(payload);$("btnStart").disabled=false;$("btnStop").disabled=true;return}if(type==="progress"||type==="done"){shardBest[i]=payload.best||[];shardMeta[i]=payload||{};if(type==="done")shardDone[i]=true;updateView(type,payload);if(shardDone.every(Boolean)){$("btnStart").disabled=false;$("btnStop").disabled=true}}};w.postMessage({type:"start",T,maxC,beam,outN,timeLimit,infiniteTime,emitInterval,opsUn,opsBin,consts,showCounts,bidir,divRatio,pruneEquiv,shardIndex:i,shardCount:threads,perfMode,beamPerWorker})}
+  for(let i=0;i<effectiveThreads;i++){const w=buildWorker();workers.push(w);w.onmessage=(ev)=>{const{type,payload}=ev.data;if(type==="error"){alert(payload);$("btnStart").disabled=false;$("btnStop").disabled=true;return}if(type==="progress"||type==="done"){shardBest[i]=payload.best||[];shardMeta[i]=payload||{};if(type==="done")shardDone[i]=true;updateView(type,payload);if(shardDone.every(Boolean)){$("btnStart").disabled=false;$("btnStop").disabled=true}}};w.postMessage({type:"start",T,maxC,beam,outN,timeLimit,infiniteTime,emitInterval,opsUn,opsBin,consts,showCounts,bidir,divRatio,pruneEquiv,shardIndex:i,shardCount:effectiveThreads,perfMode,beamPerWorker})}
 };
 $("btnStop").onclick=()=>{if(worker)worker.postMessage({type:"stop"});for(const w of workers)w.postMessage({type:"stop"});$("btnStop").disabled=true};
 mountConsts();mountOps();loadConfig();document.querySelectorAll("input,select").forEach(el=>el.addEventListener("change",saveConfig));statusPills({ready:"ok"});
