@@ -543,6 +543,7 @@ const CAP=1e12;
 
 let KEYP=12;
 let USE_BITMASK=true;
+let NO_CONSTRAINT_FAST=false;
 let TCOUNT=0;
 let MAXT=null; // Uint16Array
 let OPS_UN=[], OPS_BIN=[];
@@ -760,6 +761,7 @@ onmessage=(ev)=>{
   if(msg.type==="init"){
     KEYP=msg.keyPrec|0;
     USE_BITMASK=!!msg.useBitmask;
+    NO_CONSTRAINT_FAST=!!msg.noConstraintFast;
     TCOUNT=msg.tCount|0;
     MAXT = msg.maxT ? new Uint16Array(msg.maxT) : null;
     OPS_UN = msg.opsUn||[];
@@ -807,9 +809,14 @@ onmessage=(ev)=>{
           const key=vKey(v)+"|"+mask;
           put(key,{v,goal,bb,keep,mask,kind:"u",op,ac:sc,ai:i});
         }else{
-          const ck=ckFromFlat(src.cnt, i*TCOUNT, TCOUNT);
-          const key=vKey(v)+"|"+ck;
-          put(key,{v,goal,bb,keep,ck,kind:"u",op,ac:sc,ai:i});
+          if(NO_CONSTRAINT_FAST){
+            const key=vKey(v);
+            put(key,{v,goal,bb,keep,ck:"",kind:"u",op,ac:sc,ai:i});
+          }else{
+            const ck=ckFromFlat(src.cnt, i*TCOUNT, TCOUNT);
+            const key=vKey(v)+"|"+ck;
+            put(key,{v,goal,bb,keep,ck,kind:"u",op,ac:sc,ai:i});
+          }
         }
       }
     }
@@ -848,8 +855,11 @@ onmessage=(ev)=>{
               const key=vKey(v)+"|"+mask;
               put(key,{v,goal,bb,keep,mask,kind:"b",op,ac:ic,ai:ia,bc:jc,bi:ib});
             }else{
-              const ck=ckAdd(A.cnt, ia*TCOUNT, B.cnt, ib*TCOUNT, TCOUNT, MAXT);
-              if(ck===null) continue;
+              let ck="";
+              if(!NO_CONSTRAINT_FAST){
+                ck=ckAdd(A.cnt, ia*TCOUNT, B.cnt, ib*TCOUNT, TCOUNT, MAXT);
+                if(ck===null) continue;
+              }
               const v=applyBin(op,av,bv); visited++;
               if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
 
@@ -857,7 +867,7 @@ onmessage=(ev)=>{
               const bb=bbScore(v, bbD, bbMagA);
               const keep=keepScore(goal, bb);
 
-              const key=vKey(v)+"|"+ck;
+              const key=NO_CONSTRAINT_FAST ? vKey(v) : (vKey(v)+"|"+ck);
               put(key,{v,goal,bb,keep,ck,kind:"b",op,ac:ic,ai:ia,bc:jc,bi:ib});
             }
           }
@@ -1538,8 +1548,10 @@ onmessage=async(ev)=>{
     if(mn>0||mx<INF) constrainedIdx.push(i);
   }
 
-  // bitmask optimization: only for constrained count<=30 and each max<=1
-  let useBitmask=true;
+  const noConstraintFast = constrainedIdx.length===0;
+
+  // bitmask optimization: only when constraints exist, count<=30 and each max<=1
+  let useBitmask=!noConstraintFast;
   if(constrainedIdx.length>30) useBitmask=false;
   for(const i of constrainedIdx){
     if((consts[i].min??0)>1||(consts[i].max??INF)>1){useBitmask=false;break}
@@ -1604,6 +1616,7 @@ onmessage=async(ev)=>{
     for(let i=0;i<tCount;i++) out[i]=ck.charCodeAt(i)||0;
     return out;
   }
+  const runtimeMode = noConstraintFast ? "unconstrained" : (useBitmask?"bitmask":"counts");
   function combMask(a,b){ return (a&b)?-1:(a|b); }
 
   // stats
@@ -1639,7 +1652,7 @@ onmessage=async(ev)=>{
         meetLookups, meetCandidates, meetConfirmed,
         meetDbg,
         reEvalFixed, dupesKilled,
-        mode: useBitmask?"bitmask":"counts",
+        mode: runtimeMode,
         mt: (mt && threads>1) ? ("ON("+threads+")") : "OFF",
         profile: mode,
         beamF, beamR,
@@ -2101,6 +2114,7 @@ onmessage=async(ev)=>{
       type:"init",
       keyPrec:KEYP,
       useBitmask,
+      noConstraintFast,
       tCount,
       maxT: useBitmask?null:(maxT?Array.from(maxT):null),
       opsUn, opsBin,
@@ -2125,6 +2139,10 @@ onmessage=async(ev)=>{
       for(let i=0;i<lim;i++){ v[i]=src[i].v; mask[i]=src[i].mask|0; }
       return {len:lim, v, mask};
     }else{
+      if(noConstraintFast){
+        for(let i=0;i<lim;i++) v[i]=src[i].v;
+        return {len:lim, v};
+      }
       const cnt=new Uint16Array(lim*tCount);
       for(let i=0;i<lim;i++){
         v[i]=src[i].v;
@@ -2141,6 +2159,8 @@ onmessage=async(ev)=>{
       const layer=packLayer(cost);
       if(useBitmask){
         w.postMessage({type:"setLayer", cost, layer}, [layer.v.buffer, layer.mask.buffer]);
+      }else if(noConstraintFast){
+        w.postMessage({type:"setLayer", cost, layer}, [layer.v.buffer]);
       }else{
         w.postMessage({type:"setLayer", cost, layer}, [layer.v.buffer, layer.cnt.buffer]);
       }
@@ -2408,7 +2428,7 @@ onmessage=async(ev)=>{
     meetLookups, meetCandidates, meetConfirmed,
     meetDbg,
     reEvalFixed, dupesKilled,
-    mode:useBitmask?"bitmask":"counts",
+    mode:runtimeMode,
     mt:(mt && threads>1)?("ON("+threads+")"):"OFF",
     profile:mode,
     beamF, beamR,
