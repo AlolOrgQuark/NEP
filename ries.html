@@ -1752,7 +1752,7 @@ onmessage=async(ev)=>{
 
           const nf=mkFlags(v,opTag(op),false);
           const pW=a.wA;
-          const nW=pW?(fa=>mkU(op,pW(fa))):(fa=>mkU(op,fa));
+          const nW=pW?(fa=>pW(mkU(op,fa))):(fa=>mkU(op,fa));
           const score=revScore(v);
 
           if(useBitmask){
@@ -1793,7 +1793,7 @@ onmessage=async(ev)=>{
                 const m=combMask(f.mask,r.mask);
                 if(m>=0){
                   const pW=r.wA, fA=f.ast;
-                  const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));
+                  const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
                   put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false),keep:score,goal:score,bb:score});
                 }
@@ -1802,7 +1802,7 @@ onmessage=async(ev)=>{
                 if(cnt){
                   const ck=ckFromCnt(cnt);
                   const pW=r.wA, fA=f.ast;
-                  const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));
+                  const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
                   put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false),keep:score,goal:score,bb:score});
                 }
@@ -1820,7 +1820,7 @@ onmessage=async(ev)=>{
                   const m=combMask(f.mask,r.mask);
                   if(m>=0){
                     const pW=r.wA, fA=f.ast;
-                    const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));
+                    const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
                     put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false),keep:score,goal:score,bb:score});
                   }
@@ -1829,7 +1829,7 @@ onmessage=async(ev)=>{
                   if(cnt){
                     const ck=ckFromCnt(cnt);
                     const pW=r.wA, fA=f.ast;
-                    const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));
+                    const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
                     put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false),keep:score,goal:score,bb:score});
                   }
@@ -1862,17 +1862,21 @@ onmessage=async(ev)=>{
     }
 
     const scale=Math.max(1, Math.abs(T), Math.abs(f.v), Math.abs(r.v));
+    const matchGap = Math.abs(f.v - r.v);
     // bin key 会引入量化误差，给候选阶段额外 slack
     const binSlack = (MEET_STYLE==="bin") ? ((mp.binSlackMul??1) * Math.max(1,MEET_R)/Math.max(1,MEET_Q)) * scale : 0;
     const epsCand = (4e-10 * mp.candEpsMul) * scale + binSlack;
-    if(Math.abs(f.v - r.v) > epsCand){ meetDbg.rejEpsCand++; return; }
+    if(matchGap > epsCand){ meetDbg.rejEpsCand++; return; }
     meetCandidates++;
 
     const probeAST = r.wA ? r.wA(mkC("#",f.v)) : mkC("#",f.v);
     const probeVal = evalA(probeAST);
     if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){ meetDbg.rejEvalNaN++; return; }
 
-    const epsProbe = (8e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(probeVal)) * (1 + tc*0.03);
+    // 探测阶段使用温和的 gap 自适应阈值，避免放大误差导致误收
+    const epsProbeBase = (8e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(probeVal)) * (1 + tc*0.03);
+    const epsProbeGap = matchGap * (1.5 + tc*0.08);
+    const epsProbe = Math.max(epsProbeBase, epsProbeGap, mp.confirmAbsFloor||0);
     const probeErr = Math.abs(probeVal - T);
     if(probeErr > epsProbe){
       meetDbg.rejProbeConfirm++;
@@ -1884,9 +1888,10 @@ onmessage=async(ev)=>{
     const trueVal = evalA(combinedAST);
     if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){ meetDbg.rejEvalNaN++; return; }
 
-    // 确认阶段使用更稳健的相对误差 + 复杂度容忍，减少浮点重算误杀
+    // 终确认保持更严格的 gap 自适应阈值，控制 meet 结果精度
     const epsConfirmBase = (7e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(trueVal)) * (1 + tc*0.025);
-    const epsConfirm = Math.max(epsConfirmBase, mp.confirmAbsFloor||0);
+    const epsConfirmGap = matchGap * (2.0 + tc*0.10);
+    const epsConfirm = Math.max(epsConfirmBase, epsConfirmGap, mp.confirmAbsFloor||0);
     const err = Math.abs(trueVal - T);
     if(err > epsConfirm){
       meetDbg.rejConfirm++;
