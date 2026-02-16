@@ -949,7 +949,7 @@ function modeParams(mode){
     spillMul:0.55, capMul:0.6, keepMeetDup:false,
     meetSweepMul:0.28,
     beamMul:0.78, subLayerCapMul:0.72,
-    revIdxKeyCap:56, meetKeyProbeCap:40, meetSweepRevCap:48
+    revIdxKeyCap:96, meetKeyProbeCap:88, meetSweepRevCap:120
   };
   // balanced
   return {
@@ -1823,7 +1823,10 @@ onmessage=async(ev)=>{
       if(!c) return;
     }
 
-    const epsCand = (2.5e-11 * mp.candEpsMul) * Math.max(1, Math.abs(f.v), Math.abs(r.v));
+    const scale=Math.max(1, Math.abs(T), Math.abs(f.v), Math.abs(r.v));
+    // bin key 会引入量化误差，给候选阶段额外 slack
+    const binSlack = (MEET_STYLE==="bin") ? (Math.max(1,MEET_R)/Math.max(1,MEET_Q)) * scale : 0;
+    const epsCand = (4e-10 * mp.candEpsMul) * scale + binSlack;
     if(Math.abs(f.v - r.v) > epsCand) return;
     meetCandidates++;
 
@@ -1831,7 +1834,8 @@ onmessage=async(ev)=>{
     const trueVal = evalA(combinedAST);
     if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP) return;
 
-    const epsConfirm = (5e-12 * mp.confirmEpsMul) * Math.max(1, Math.abs(T));
+    // 确认阶段使用更稳健的相对误差 + 复杂度容忍，减少浮点重算误杀
+    const epsConfirm = (7e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(trueVal)) * (1 + tc*0.025);
     if(Math.abs(trueVal - T) > epsConfirm) return;
 
     meetConfirmed++;
