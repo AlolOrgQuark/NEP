@@ -102,10 +102,11 @@
         <option value="accuracy">精度(覆盖)优先</option>
         <option value="ries">RIES(构件)优先</option>
         <option value="meet">双向Meet优先</option>
+        <option value="meetfast">Meet快速模式</option>
         <option value="free">Free(多线程内存/速度优先)</option>
       </select>
       <div class="muted" style="margin-top:6px;line-height:1.25">
-        RIES：保留“构件值”(整数/简单分数)以避免卡在差解。Meet：提高相遇覆盖与保留相遇可用值。Free：为多线程降低层传输和索引内存，优先吞吐。
+        RIES：保留“构件值”(整数/简单分数)以避免卡在差解。Meet：提高相遇覆盖与保留相遇可用值。Meet快速：降低反向开销优先速度。Free：为多线程降低层传输和索引内存，优先吞吐。
       </div>
     </div>
 
@@ -527,7 +528,7 @@ $("mt").addEventListener("change",()=>{updateMtHint();scheduleSave();});
 $("threads").addEventListener("input",()=>{updateMtHint();scheduleSave();});
 $("mode").addEventListener("change",()=>{
   // meet 模式强制建议开启 bidir
-  if($("mode").value==="meet"){
+  if(["meet","meetfast"].includes($("mode").value)){
     $("bidir").checked=true;
   }
   scheduleSave();
@@ -935,11 +936,23 @@ function modeParams(mode){
     qGoal:0.40,qBB:0.12,qMeet:0.38,qDiv:0.10,
     meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
     revBeamMul:3.0, meetHitBonus:0.25,
-    candEpsMul:4.0, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:4e-6,
+    candEpsMul:4.0, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:0.0,
     spillMul:2.2, capMul:1.7, keepMeetDup:true,
     meetSweepMul:0.35,
     beamMul:1.0, subLayerCapMul:1.0,
     revIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:320
+  };
+  if(mode==="meetfast") return {
+    keyPrec:11, bestPrec:10, keepMode:"min",
+    bbD:36, bbMagA:0.02,
+    qGoal:0.45,qBB:0.10,qMeet:0.35,qDiv:0.10,
+    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:6,
+    revBeamMul:1.8, meetHitBonus:0.18,
+    candEpsMul:3.0, confirmEpsMul:0.9, binSlackMul:0.12, confirmAbsFloor:0.0,
+    spillMul:1.2, capMul:1.0, keepMeetDup:false,
+    meetSweepMul:0.16,
+    beamMul:0.85, subLayerCapMul:0.75,
+    revIdxKeyCap:120, meetKeyProbeCap:120, meetSweepRevCap:140
   };
   if(mode==="free") return {
     keyPrec:11, bestPrec:10, keepMode:"goal",
@@ -1034,6 +1047,25 @@ function safePow(a,b){
   const r=Math.pow(a,b);
   return(!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r
 }
+function safePowStable(a,b){
+  if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
+  if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb}
+  if(Math.abs(b)>60)return NaN;
+  if(a===0) return b>0?0:NaN;
+
+  const r1=Math.pow(a,b);
+  let r2=NaN;
+  if(a>0){
+    if(Math.abs(a-1)<0.25) r2=Math.exp(b*Math.log1p(a-1));
+    else r2=Math.exp(b*Math.log(a));
+  }
+  const cands=[r1,r2].filter(v=>Number.isFinite(v)&&Math.abs(v)<=CAP);
+  if(!cands.length) return NaN;
+  if(cands.length===1) return cands[0];
+  const gap=Math.abs(cands[0]-cands[1]);
+  const scale=Math.max(1,Math.abs(cands[0]),Math.abs(cands[1]));
+  return (gap<=1e-10*scale)?(0.5*(cands[0]+cands[1])):cands[0];
+}
 function erf(x){
   const s=x<0?-1:1;x=Math.abs(x);
   const t=1/(1+.3275911*x);
@@ -1108,6 +1140,44 @@ function evalA(n){
   if(n.t===0)return n.val;
   if(n.t===1)return applyUn(n.op,evalA(n.ch));
   return applyBin(n.op,evalA(n.l),evalA(n.r));
+}
+function evalAStable(n){
+  if(n.t===0)return n.val;
+  if(n.t===1)return applyUn(n.op,evalAStable(n.ch));
+  const lv=evalAStable(n.l), rv=evalAStable(n.r);
+  if(n.op==="^") return safePowStable(lv,rv);
+  return applyBin(n.op,lv,rv);
+}
+function astPowStats(n){
+  if(!n) return {cnt:0, risk:0, val:NaN};
+  if(n.t===0) return {cnt:0, risk:0, val:n.val};
+
+  if(n.t===1){
+    const cs=astPowStats(n.ch);
+    return {cnt:cs.cnt, risk:cs.risk, val:applyUn(n.op, cs.val)};
+  }
+
+  const ls=astPowStats(n.l), rs=astPowStats(n.r);
+  let cnt=ls.cnt+rs.cnt;
+  let risk=ls.risk+rs.risk;
+  const val=applyBin(n.op, ls.val, rs.val);
+
+  if(n.op==="^"){
+    cnt++;
+    const b=ls.val, e=rs.val;
+    if(Number.isFinite(b)&&Number.isFinite(e)){
+      const ab=Math.abs(b), ae=Math.abs(e);
+      const nearOne = 1/Math.max(1e-6, Math.abs(ab-1));
+      const sens = ae/Math.max(1e-6, ab);
+      const expAmp = Math.max(0, ae-2);
+      const localRisk = Math.min(20, 0.05*sens + 0.15*expAmp + 2e-4*nearOne);
+      risk += localRisk;
+    }else{
+      risk += 5;
+    }
+  }
+
+  return {cnt, risk, val};
 }
 
 // ===== Pretty Unicode printer (no simplification) =====
@@ -1752,7 +1822,7 @@ onmessage=async(ev)=>{
 
           const nf=mkFlags(v,opTag(op),false);
           const pW=a.wA;
-          const nW=pW?(fa=>mkU(op,pW(fa))):(fa=>mkU(op,fa));
+          const nW=pW?(fa=>pW(mkU(op,fa))):(fa=>mkU(op,fa));
           const score=revScore(v);
 
           if(useBitmask){
@@ -1793,7 +1863,7 @@ onmessage=async(ev)=>{
                 const m=combMask(f.mask,r.mask);
                 if(m>=0){
                   const pW=r.wA, fA=f.ast;
-                  const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));
+                  const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
                   put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false),keep:score,goal:score,bb:score});
                 }
@@ -1802,7 +1872,7 @@ onmessage=async(ev)=>{
                 if(cnt){
                   const ck=ckFromCnt(cnt);
                   const pW=r.wA, fA=f.ast;
-                  const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));
+                  const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
                   put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false),keep:score,goal:score,bb:score});
                 }
@@ -1820,7 +1890,7 @@ onmessage=async(ev)=>{
                   const m=combMask(f.mask,r.mask);
                   if(m>=0){
                     const pW=r.wA, fA=f.ast;
-                    const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));
+                    const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
                     put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false),keep:score,goal:score,bb:score});
                   }
@@ -1829,7 +1899,7 @@ onmessage=async(ev)=>{
                   if(cnt){
                     const ck=ckFromCnt(cnt);
                     const pW=r.wA, fA=f.ast;
-                    const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));
+                    const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
                     put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false),keep:score,goal:score,bb:score});
                   }
@@ -1862,17 +1932,27 @@ onmessage=async(ev)=>{
     }
 
     const scale=Math.max(1, Math.abs(T), Math.abs(f.v), Math.abs(r.v));
+    const matchGap = Math.abs(f.v - r.v);
     // bin key 会引入量化误差，给候选阶段额外 slack
     const binSlack = (MEET_STYLE==="bin") ? ((mp.binSlackMul??1) * Math.max(1,MEET_R)/Math.max(1,MEET_Q)) * scale : 0;
     const epsCand = (4e-10 * mp.candEpsMul) * scale + binSlack;
-    if(Math.abs(f.v - r.v) > epsCand){ meetDbg.rejEpsCand++; return; }
+    if(matchGap > epsCand){ meetDbg.rejEpsCand++; return; }
     meetCandidates++;
 
     const probeAST = r.wA ? r.wA(mkC("#",f.v)) : mkC("#",f.v);
     const probeVal = evalA(probeAST);
     if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){ meetDbg.rejEvalNaN++; return; }
 
-    const epsProbe = (8e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(probeVal)) * (1 + tc*0.03);
+    const combinedAST = r.wA ? r.wA(f.ast) : f.ast;
+    const powStat = astPowStats(combinedAST);
+    const powCnt = powStat.cnt;
+    const powRisk = powStat.risk;
+    const powTighten = 1/(1 + 0.28*powCnt + 0.10*powRisk);
+
+    // 探测阶段使用 gap 自适应阈值；含幂且风险高的表达式额外收紧，减少指数放大误收
+    const epsProbeBase = (8e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(probeVal)) * (1 + tc*0.03);
+    const epsProbeGap = matchGap * (1.5 + tc*0.08) * powTighten;
+    const epsProbe = Math.max(epsProbeBase, epsProbeGap, mp.confirmAbsFloor||0);
     const probeErr = Math.abs(probeVal - T);
     if(probeErr > epsProbe){
       meetDbg.rejProbeConfirm++;
@@ -1880,18 +1960,46 @@ onmessage=async(ev)=>{
       return;
     }
 
-    const combinedAST = r.wA ? r.wA(f.ast) : f.ast;
     const trueVal = evalA(combinedAST);
     if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){ meetDbg.rejEvalNaN++; return; }
 
-    // 确认阶段使用更稳健的相对误差 + 复杂度容忍，减少浮点重算误杀
+    const structuralDrift = Math.abs(trueVal - probeVal);
+    const driftCap = matchGap * (3.0 + tc*0.15) * (1 + powCnt*0.20) / (1 + 0.12*powRisk) + 2e-12 * scale;
+    if(structuralDrift > driftCap){
+      meetDbg.rejProbeConfirm++;
+      if(structuralDrift > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = structuralDrift;
+      return;
+    }
+
+    // 终确认保持更严格的 gap 自适应阈值，含幂且风险高时进一步收紧
     const epsConfirmBase = (7e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(trueVal)) * (1 + tc*0.025);
-    const epsConfirm = Math.max(epsConfirmBase, mp.confirmAbsFloor||0);
+    const epsConfirmGap = matchGap * (2.0 + tc*0.10) * powTighten;
+    const epsConfirm = Math.max(epsConfirmBase, epsConfirmGap, mp.confirmAbsFloor||0);
     const err = Math.abs(trueVal - T);
     if(err > epsConfirm){
       meetDbg.rejConfirm++;
       if(err > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = err;
       return;
+    }
+
+    if(powCnt>0){
+      const stableVal=evalAStable(combinedAST);
+      if(!Number.isFinite(stableVal)||Math.abs(stableVal)>CAP){ meetDbg.rejEvalNaN++; return; }
+      const stableGap=Math.abs(stableVal-trueVal);
+      const stableCap=Math.max(2e-12*scale, matchGap*(0.35 + tc*0.02)/(1 + 0.25*powRisk));
+      if(stableGap>stableCap){
+        meetDbg.rejConfirm++;
+        if(stableGap > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = stableGap;
+        return;
+      }
+
+      const relErr=err/Math.max(1,Math.abs(T));
+      const relCap=(1.0e-8)/(1 + 0.45*powRisk);
+      if(relErr>relCap){
+        meetDbg.rejConfirm++;
+        if(err > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = err;
+        return;
+      }
     }
 
     meetConfirmed++;
@@ -2322,7 +2430,7 @@ $("btnStart").onclick=()=>{
 
   const mode=$("mode").value;
   let bidir=$("bidir").checked;
-  if(mode==="meet") bidir=true; // meet优先模式强制开启双向
+  if(mode==="meet"||mode==="meetfast") bidir=true; // meet类模式强制开启双向
 
   const maxC=Math.max(1,Math.min(200,Number($("maxC").value||30)));
   const beam=Math.max(50,Math.min(50000,Number($("beam").value||4000)));
