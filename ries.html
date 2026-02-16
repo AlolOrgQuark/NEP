@@ -1548,7 +1548,10 @@ onmessage=async(ev)=>{
     rejCntLimit: 0,
     rejEpsCand: 0,
     rejEvalNaN: 0,
+<<<<<<< codex/add-meet-failure-reason-statistics
     rejProbeConfirm: 0,
+=======
+>>>>>>> main
     rejConfirm: 0,
     revInvBad: 0,
     maxConfirmErr: 0,
@@ -2398,7 +2401,11 @@ $("btnStart").onclick=()=>{
           "<br><b>MEET Debug</b> " +
           `revIdxKeys=${d.revIdxKeys} revIdxItems=${d.revIdxItems} ` +
           `keyHits=${d.keyHits} pairsTried=${d.pairsTried}<br>` +
+<<<<<<< codex/add-meet-failure-reason-statistics
           `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, probe=${d.rejProbeConfirm}, confirm=${d.rejConfirm}) ` +
+=======
+          `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, confirm=${d.rejConfirm}) ` +
+>>>>>>> main
           `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}`;
       }
 
