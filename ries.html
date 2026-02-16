@@ -102,9 +102,10 @@
         <option value="accuracy">精度(覆盖)优先</option>
         <option value="ries">RIES(构件)优先</option>
         <option value="meet">双向Meet优先</option>
+        <option value="free">Free(多线程内存/速度优先)</option>
       </select>
       <div class="muted" style="margin-top:6px;line-height:1.25">
-        RIES：保留“构件值”(整数/简单分数)以避免卡在差解。Meet：提高相遇覆盖与保留相遇可用值。
+        RIES：保留“构件值”(整数/简单分数)以避免卡在差解。Meet：提高相遇覆盖与保留相遇可用值。Free：为多线程降低层传输和索引内存，优先吞吐。
       </div>
     </div>
 
@@ -897,7 +898,10 @@ function modeParams(mode){
     meetStyle:"prec", meetPrec:10, meetQ:8192, meetR:2,
     revBeamMul:1.0, meetHitBonus:0.0,
     candEpsMul:1.6, confirmEpsMul:1.0,
-    spillMul:0.75, capMul:0.75, keepMeetDup:false
+    spillMul:0.75, capMul:0.75, keepMeetDup:false,
+    meetSweepMul:0.05,
+    beamMul:1.0, subLayerCapMul:1.0,
+    revIdxKeyCap:64, meetKeyProbeCap:64, meetSweepRevCap:80
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"min",
@@ -906,7 +910,10 @@ function modeParams(mode){
     meetStyle:"prec", meetPrec:12, meetQ:8192, meetR:2,
     revBeamMul:1.6, meetHitBonus:0.10,
     candEpsMul:1.1, confirmEpsMul:0.75,
-    spillMul:1.7, capMul:1.25, keepMeetDup:false
+    spillMul:1.7, capMul:1.25, keepMeetDup:false,
+    meetSweepMul:0.22,
+    beamMul:1.0, subLayerCapMul:1.0,
+    revIdxKeyCap:120, meetKeyProbeCap:120, meetSweepRevCap:140
   };
   if(mode==="ries") return {
     keyPrec:12, bestPrec:11, keepMode:"min",
@@ -915,7 +922,10 @@ function modeParams(mode){
     meetStyle:"prec", meetPrec:11, meetQ:8192, meetR:2,
     revBeamMul:1.4, meetHitBonus:0.08,
     candEpsMul:1.2, confirmEpsMul:0.9,
-    spillMul:2.1, capMul:1.5, keepMeetDup:false
+    spillMul:2.1, capMul:1.5, keepMeetDup:false,
+    meetSweepMul:0.18,
+    beamMul:1.0, subLayerCapMul:1.0,
+    revIdxKeyCap:160, meetKeyProbeCap:180, meetSweepRevCap:220
   };
   if(mode==="meet") return {
     keyPrec:12, bestPrec:11, keepMode:"min",
@@ -924,7 +934,22 @@ function modeParams(mode){
     meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
     revBeamMul:3.0, meetHitBonus:0.25,
     candEpsMul:4.0, confirmEpsMul:1.0,
-    spillMul:2.2, capMul:1.7, keepMeetDup:true
+    spillMul:2.2, capMul:1.7, keepMeetDup:true,
+    meetSweepMul:0.35,
+    beamMul:1.0, subLayerCapMul:1.0,
+    revIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:320
+  };
+  if(mode==="free") return {
+    keyPrec:11, bestPrec:10, keepMode:"goal",
+    bbD:20, bbMagA:0.03,
+    qGoal:0.74,qBB:0.06,qMeet:0.14,qDiv:0.06,
+    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:6,
+    revBeamMul:2.2, meetHitBonus:0.20,
+    candEpsMul:3.0, confirmEpsMul:1.0,
+    spillMul:0.55, capMul:0.6, keepMeetDup:false,
+    meetSweepMul:0.28,
+    beamMul:0.78, subLayerCapMul:0.72,
+    revIdxKeyCap:56, meetKeyProbeCap:40, meetSweepRevCap:48
   };
   // balanced
   return {
@@ -934,7 +959,10 @@ function modeParams(mode){
     meetStyle:"prec", meetPrec:10, meetQ:8192, meetR:2,
     revBeamMul:1.2, meetHitBonus:0.05,
     candEpsMul:1.5, confirmEpsMul:1.0,
-    spillMul:1.0, capMul:1.0, keepMeetDup:false
+    spillMul:1.0, capMul:1.0, keepMeetDup:false,
+    meetSweepMul:0.12,
+    beamMul:1.0, subLayerCapMul:1.0,
+    revIdxKeyCap:96, meetKeyProbeCap:96, meetSweepRevCap:120
   };
 }
 
@@ -1424,8 +1452,9 @@ onmessage=async(ev)=>{
   threads=Math.max(1,Math.min(64,(threads|0)||1));
 
   // internal beams
-  const beamF = Math.max(50, Math.floor(beam));
-  const beamR = Math.max(50, Math.floor(beam * (mp.revBeamMul||1)));
+  const beamF = Math.max(50, Math.floor(beam * (mp.beamMul||1)));
+  const beamR = Math.max(50, Math.floor(beamF * (mp.revBeamMul||1)));
+  const subLayerCap = Math.max(32, Math.floor(beamF * (mp.subLayerCapMul||1)));
 
   // constraints analysis
   const nC=consts.length;
@@ -1559,7 +1588,10 @@ onmessage=async(ev)=>{
     const idx=bestSeen.get(key);
     if(idx!==undefined){
       const old=best[idx];
-      if(old && old.cost <= (obj.cost||999)){
+      const newCost=(obj.cost||999);
+      const oldDelta=Math.abs(old?.delta??INF);
+      const newDelta=Math.abs(delta);
+      if(old && (oldDelta < newDelta || (oldDelta===newDelta && old.cost <= newCost))){
         dupesKilled++;
         return;
       }
@@ -1588,11 +1620,19 @@ onmessage=async(ev)=>{
   const revIdx=new Map();
 
   function addRevIdx(items){
+    const cap=Math.max(8, mp.revIdxKeyCap|0 || 96);
     for(const it of items){
       const k2=meetPrimaryKey(it.v);
       let arr=revIdx.get(k2);
       if(!arr){ arr=[]; revIdx.set(k2,arr); }
-      arr.push(it);
+
+      let pos=arr.length;
+      for(let i=0;i<arr.length;i++){
+        const a=arr[i];
+        if((it.cost<a.cost) || (it.cost===a.cost && (it.keep??INF)<(a.keep??INF))){ pos=i; break; }
+      }
+      arr.splice(pos,0,it);
+      if(arr.length>cap) arr.length=cap;
     }
   }
 
@@ -1772,6 +1812,37 @@ onmessage=async(ev)=>{
     addRevIdx(rev[c]);
   }
 
+  function tryMeetPair(f, r){
+    const tc=f.cost + r.cost;
+    if(tc>maxC) return;
+
+    if(useBitmask){
+      if((f.mask & r.mask)!==0) return;
+    }else{
+      const c=addCnt(f.cnt??EMPTY, r.cnt??EMPTY);
+      if(!c) return;
+    }
+
+    const epsCand = (2.5e-11 * mp.candEpsMul) * Math.max(1, Math.abs(f.v), Math.abs(r.v));
+    if(Math.abs(f.v - r.v) > epsCand) return;
+    meetCandidates++;
+
+    const combinedAST = r.wA ? r.wA(f.ast) : f.ast;
+    const trueVal = evalA(combinedAST);
+    if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP) return;
+
+    const epsConfirm = (5e-12 * mp.confirmEpsMul) * Math.max(1, Math.abs(T));
+    if(Math.abs(trueVal - T) > epsConfirm) return;
+
+    meetConfirmed++;
+    if(useBitmask){
+      pushBest({v:trueVal, ast:combinedAST, mask:(f.mask|r.mask), cost:tc, searchType:"meet"});
+    }else{
+      const cnt=addCnt(f.cnt??EMPTY, r.cnt??EMPTY);
+      pushBest({v:trueVal, ast:combinedAST, cnt, cost:tc, searchType:"meet"});
+    }
+  }
+
   // ===== meet attempt =====
   function tryMeet(f){
     if(!bidir) return;
@@ -1779,7 +1850,6 @@ onmessage=async(ev)=>{
 
     meetLookups += keys.length;
 
-    // 去重 keys
     let seen=null;
     if(keys.length>1) seen=new Set();
 
@@ -1790,37 +1860,29 @@ onmessage=async(ev)=>{
       }
       const rl=revIdx.get(k2);
       if(!rl) continue;
+      const lim=Math.min(rl.length, Math.max(8, mp.meetKeyProbeCap|0 || 96));
+      for(let i=0;i<lim;i++) tryMeetPair(f, rl[i]);
+    }
+  }
 
-      for(const r of rl){
-        const tc=f.cost + r.cost;
-        if(tc>maxC) continue;
+  function meetSweepWithNewReverseLayer(rc){
+    if(!bidir) return;
+    const rr=rev[rc];
+    if(!rr||!rr.length) return;
 
-        if(useBitmask){
-          if((f.mask & r.mask)!==0) continue;
-        }else{
-          const c=addCnt(f.cnt??EMPTY, r.cnt??EMPTY);
-          if(!c) continue;
-        }
+    const perLayerCap=Math.max(24, Math.floor(beamF * (mp.meetSweepMul||0.1)));
+    const maxFc=Math.min(maxC-rc, rc);
+    if(maxFc<1) return;
 
-        // candidate eps
-        const epsCand = (2.5e-11 * mp.candEpsMul) * Math.max(1, Math.abs(f.v), Math.abs(r.v));
-        if(Math.abs(f.v - r.v) > epsCand) continue;
-        meetCandidates++;
-
-        // build full AST and confirm by recompute
-        const combinedAST = r.wA ? r.wA(f.ast) : f.ast;
-        const trueVal = evalA(combinedAST);
-        if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP) continue;
-
-        const epsConfirm = (5e-12 * mp.confirmEpsMul) * Math.max(1, Math.abs(T));
-        if(Math.abs(trueVal - T) > epsConfirm) continue;
-
-        meetConfirmed++;
-        if(useBitmask){
-          pushBest({v:trueVal, ast:combinedAST, mask:(f.mask|r.mask), cost:tc, searchType:"meet"});
-        }else{
-          const cnt=addCnt(f.cnt??EMPTY, r.cnt??EMPTY);
-          pushBest({v:trueVal, ast:combinedAST, cnt, cost:tc, searchType:"meet"});
+    for(let fc=1; fc<=maxFc; fc++){
+      const ff=fwd[fc];
+      if(!ff||!ff.length) continue;
+      const lim=Math.min(ff.length, perLayerCap);
+      for(let i=0;i<lim;i++){
+        const f=ff[i];
+        const rLim=Math.min(rr.length, Math.max(8, mp.meetSweepRevCap|0 || 120));
+        for(let j=0;j<rLim;j++){
+          tryMeetPair(f, rr[j]);
         }
       }
     }
@@ -1856,7 +1918,7 @@ onmessage=async(ev)=>{
 
   function packLayer(cost){
     const src=fwd[cost];
-    const lim=src.length;
+    const lim=Math.min(src.length, subLayerCap);
     const v=new Float64Array(lim);
     const flags=new Uint32Array(lim);
     if(useBitmask){
@@ -2021,7 +2083,10 @@ onmessage=async(ev)=>{
     if(stopFlag) break;
     if(performance.now()-t0>lim) break;
 
-    if(bidir) buildRev(c);
+    if(bidir){
+      buildRev(c);
+      meetSweepWithNewReverseLayer(c);
+    }
 
     let capUn=Math.max(80, Math.floor(beamF/8));
     let capBin=Math.max(60, Math.floor(beamF/14));
