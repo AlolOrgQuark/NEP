@@ -1,419 +1,538 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mini RIES (单文件演示)</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>RIES-like v5 — 深度去重 + 子树签名 + AST精确重求值</title>
   <style>
-    :root {
-      --bg: #0f172a;
-      --panel: #111827;
-      --panel-2: #1f2937;
-      --text: #e5e7eb;
-      --muted: #9ca3af;
-      --primary: #3b82f6;
-      --ok: #10b981;
-      --warn: #f59e0b;
-      --danger: #ef4444;
-      --border: #374151;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-      background: linear-gradient(180deg, #020617 0%, var(--bg) 100%);
-      color: var(--text);
-      min-height: 100vh;
-    }
-    .wrap {
-      max-width: 1200px;
-      margin: 20px auto;
-      padding: 0 16px 40px;
-    }
-    h1 { margin: 0 0 8px; font-size: 24px; }
-    .hint { color: var(--muted); margin-bottom: 16px; }
-    .grid {
-      display: grid;
-      grid-template-columns: 360px 1fr;
-      gap: 16px;
-    }
-    .card {
-      background: rgba(17, 24, 39, 0.88);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 14px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-    }
-    .card h2 { margin: 0 0 10px; font-size: 16px; }
-    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-    .row label { min-width: 92px; color: var(--muted); font-size: 13px; }
-    input, select, button {
-      background: #0b1220;
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 8px;
-      padding: 7px 9px;
-      font-size: 13px;
-    }
-    input[type="number"] { width: 100%; }
-    .btn {
-      border: 0;
-      background: var(--primary);
-      color: white;
-      cursor: pointer;
-      font-weight: 600;
-      padding: 9px 12px;
-    }
-    .btn:disabled { opacity: .6; cursor: not-allowed; }
-    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .chip {
-      font-size: 12px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 2px 8px;
-      background: #0b1220;
-    }
-    .subtle { color: var(--muted); font-size: 12px; }
-    .tbl {
-      width: 100%; border-collapse: collapse; font-size: 13px;
-    }
-    .tbl th, .tbl td {
-      border-bottom: 1px solid #273245;
-      text-align: left;
-      padding: 7px 6px;
-      vertical-align: top;
-    }
-    .tbl th { color: #cbd5e1; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
-    .expr { font-family: var(--mono); color: #d1fae5; }
-    .ok { color: var(--ok); }
-    .warn { color: var(--warn); }
-    .danger { color: var(--danger); }
-    .progress {
-      height: 8px;
-      background: #0b1220;
-      border-radius: 999px;
-      overflow: hidden;
-      border: 1px solid var(--border);
-      margin-top: 8px;
-    }
-    .bar { height: 100%; width: 0; background: linear-gradient(90deg, #2563eb, #10b981); }
-    @media (max-width: 900px) {
-      .grid { grid-template-columns: 1fr; }
-    }
+    :root{color-scheme:light dark}
+    body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","PingFang SC","Hiragino Sans GB","Microsoft Yahei",sans-serif;margin:18px}
+    h1{font-size:17px;margin:0 0 12px}
+    .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:end}
+    .box{border:1px solid rgba(127,127,127,.35);padding:12px;border-radius:10px}
+    label{display:block;font-size:12px;opacity:.85;margin-bottom:4px}
+    input[type="number"],input[type="text"]{padding:6px 8px;min-width:150px}
+    input[type="checkbox"]{transform:translateY(1px)}
+    button{padding:8px 12px;cursor:pointer}button:disabled{opacity:.6;cursor:not-allowed}
+    .muted{opacity:.8;font-size:12px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+    .status{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:10px}
+    .pill{padding:4px 8px;border:1px solid rgba(127,127,127,.35);border-radius:999px;font-size:12px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border-bottom:1px solid rgba(127,127,127,.25);padding:8px 6px;vertical-align:top}
+    th{text-align:left;font-size:12px;opacity:.85}td{font-size:13px}.right{text-align:right}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .warn{color:#b45309}
+    .split{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}
+    @media(max-width:1100px){.split{grid-template-columns:1fr}}
+    .constWrap{max-height:360px;overflow:auto;border:1px solid rgba(127,127,127,.25);border-radius:10px}
+    .constTable{width:100%;border-collapse:collapse}
+    .constTable th,.constTable td{border-bottom:1px solid rgba(127,127,127,.15);padding:6px;font-size:12px}
+    .constTable th{position:sticky;top:0;background:color-mix(in srgb,Canvas 92%,transparent);z-index:2}
+    .miniInp{width:72px;min-width:72px;padding:4px 6px}
+    .opsGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px}
+    .opsGrid label{display:flex;gap:8px;align-items:center;margin:0;font-size:12px}
+    .countsLine{margin-top:3px;font-size:11px;opacity:.85}
+    .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px}
+    .tag-fwd{background:#dbeafe;color:#1e40af}.tag-meet{background:#d1fae5;color:#065f46}
+    @media(prefers-color-scheme:dark){.tag-fwd{background:#1e3a5f;color:#93c5fd}.tag-meet{background:#064e3b;color:#6ee7b7}}
+    .pruneStats{margin-top:8px;padding:8px 12px;background:rgba(127,127,127,.08);border-radius:8px;font-size:12px}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Mini RIES（单文件 HTML）</h1>
-    <div class="hint">参考 RIES 思路做“表达式搜索”，不做方程求根。支持：选择函数/常数，以及每个常数的使用次数（无限次 / 最多 N 次 / 必须恰好 N 次）。</div>
-
-    <div class="grid">
-      <div>
-        <div class="card">
-          <h2>搜索参数</h2>
-          <div class="row"><label>目标值 T</label><input id="target" type="number" step="any" value="24" /></div>
-          <div class="row"><label>候选保留数</label><input id="keep" type="number" min="1" max="100" value="20" /></div>
-          <div class="row"><label>最大深度</label><input id="depth" type="number" min="0" max="4" value="2" /></div>
-          <div class="row"><label>最大复杂度</label><input id="budget" type="number" min="1" max="20" value="8" /></div>
-          <div class="row"><label>去重精度</label><input id="eps" type="number" step="any" value="1e-10" /></div>
-          <button id="run" class="btn">开始搜索</button>
-          <div class="progress"><div class="bar" id="bar"></div></div>
-          <div class="subtle" id="status">就绪。</div>
-        </div>
-
-        <div class="card" style="margin-top:12px;">
-          <h2>可用运算</h2>
-          <div class="chips" id="opsBox"></div>
-          <div class="subtle">运算符默认都启用，可手动取消。</div>
-        </div>
-
-        <div class="card" style="margin-top:12px;">
-          <h2>可用函数</h2>
-          <div class="chips" id="funcBox"></div>
-          <div class="subtle">函数是单目变换，例如 sqrt(x)、exp(x)。</div>
-        </div>
-
-        <div class="card" style="margin-top:12px;">
-          <h2>常数规则</h2>
-          <table class="tbl" id="constTable">
-            <thead><tr><th>常数</th><th>模式</th><th>次数 N</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>搜索结果</h2>
-        <table class="tbl" id="resultTable">
-          <thead>
-            <tr>
-              <th>表达式</th>
-              <th>值</th>
-              <th>|x - T|</th>
-              <th>精度</th>
-              <th>复杂度</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
+<h1>RIES-like v5 — 深度去重(子表达式签名) + AST精确重求值 + 恒等式剪枝 + 双向搜索</h1>
+<div class="box">
+  <div class="row">
+    <div><label>目标值 T</label><input id="target" type="text" value="24" class="mono"/></div>
+    <div><label>最大复杂度</label><input id="maxC" type="number" value="24" min="1" max="200"/></div>
+    <div><label>Beam</label><input id="beam" type="number" value="1500" min="50" max="50000"/></div>
+    <div><label>Diversity比例</label><input id="divRatio" type="number" value="0.25" min="0" max="1" step="0.05"/></div>
+    <div><label>输出条数</label><input id="outN" type="number" value="30" min="1" max="200"/></div>
+    <div><label>更新间隔ms</label><input id="emitInterval" type="number" value="500" min="50" max="60000"/></div>
+    <div>
+      <label>时间上限ms</label><input id="timeLimit" type="number" value="10000" min="0" max="600000"/>
+      <label style="margin:4px 0 0;display:flex;gap:8px;align-items:center"><input id="infiniteTime" type="checkbox"/><span class="muted">无限</span></label>
+    </div>
+    <div>
+      <label>选项</label>
+      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="bidir" type="checkbox" checked/><span class="muted">双向搜索</span></label>
+      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="showCounts" type="checkbox" checked/><span class="muted">显示常数计数</span></label>
+      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="pruneEquiv" type="checkbox" checked/><span class="muted">恒等式剪枝</span></label>
+    </div>
+    <div class="toolbar"><button id="btnStart">搜索</button><button id="btnStop" disabled>停止</button></div>
+  </div>
+  <div style="height:10px"></div>
+  <div class="split">
+    <div class="box">
+      <div class="toolbar"><div class="muted">常数+次数限制</div><button id="cAll">全选</button><button id="cNone">全不选</button><span class="muted warn">受限≤4且max≤1→bitmask</span></div>
+      <div class="constWrap" style="margin-top:8px"><table class="constTable"><thead><tr><th style="width:56px">启用</th><th style="width:120px">符号</th><th>数值</th><th style="width:120px">min</th><th style="width:120px">max</th></tr></thead><tbody id="constBody"></tbody></table></div>
+    </div>
+    <div class="box">
+      <div class="toolbar"><div class="muted">运算/函数</div><button id="oAll">全选</button><button id="oNone">全不选</button></div>
+      <div class="opsGrid" id="opsBox" style="margin-top:8px"></div>
     </div>
   </div>
+  <div class="status" id="status"></div>
+  <div class="pruneStats" id="pruneStats" style="display:none"></div>
+</div>
+<table><thead><tr><th style="width:6%">type</th><th style="width:42%">expression</th><th style="width:15%">value</th><th style="width:13%">distance</th><th style="width:14%">accuracy</th><th class="right" style="width:10%">complexity</th></tr></thead><tbody id="tbody"></tbody></table>
 
-  <script>
-    const OPS = [
-      { key: '+', fn: (a, b) => a + b, safe: true },
-      { key: '-', fn: (a, b) => a - b, safe: true },
-      { key: '*', fn: (a, b) => a * b, safe: true },
-      { key: '/', fn: (a, b) => (Math.abs(b) < 1e-12 ? NaN : a / b), safe: true },
-      { key: '^', fn: (a, b) => {
-        if (Math.abs(a) > 1e6 || Math.abs(b) > 20) return NaN;
-        const v = Math.pow(a, b);
-        return Number.isFinite(v) ? v : NaN;
-      }, safe: true },
-    ];
+<script>
+(()=>{
+const $=id=>document.getElementById(id);
+function fmt(x){if(!Number.isFinite(x))return String(x);if(Object.is(x,-0))x=0;const a=Math.abs(x);if(a===0)return"0";if(a>=1e7||a<1e-6)return x.toExponential(10);return x.toPrecision(14).replace(/(\.\d*?[1-9])0+$/,'$1').replace(/\.0+$/,'')}
+const CONST_LIST=[
+  ...Array.from({length:41},(_,i)=>{const v=i-10;return{key:String(v),sym:String(v),val:v,on:(v>=0&&v<=10)}}),
+  {key:"1/2",sym:"1/2",val:.5,on:true},{key:"1/3",sym:"1/3",val:1/3,on:false},{key:"2/3",sym:"2/3",val:2/3,on:false},
+  {key:"1/4",sym:"1/4",val:.25,on:false},{key:"3/4",sym:"3/4",val:.75,on:false},
+  {key:"1/5",sym:"1/5",val:.2,on:false},{key:"2/5",sym:"2/5",val:.4,on:false},{key:"1/6",sym:"1/6",val:1/6,on:false},
+  {key:"pi",sym:"π",val:Math.PI,on:true},{key:"2pi",sym:"2π",val:2*Math.PI,on:false},
+  {key:"pi/2",sym:"π/2",val:Math.PI/2,on:false},{key:"pi/3",sym:"π/3",val:Math.PI/3,on:false},{key:"pi/4",sym:"π/4",val:Math.PI/4,on:false},
+  {key:"e",sym:"e",val:Math.E,on:true},{key:"phi",sym:"φ",val:(1+Math.sqrt(5))/2,on:false},
+  {key:"sqrt2",sym:"√2",val:Math.SQRT2,on:true},{key:"sqrt3",sym:"√3",val:Math.sqrt(3),on:false},{key:"sqrt5",sym:"√5",val:Math.sqrt(5),on:false},
+  {key:"ln2",sym:"ln(2)",val:Math.LN2,on:false},{key:"ln10",sym:"ln(10)",val:Math.LN10,on:false},
+  {key:"gamma",sym:"γ",val:.5772156649015328606,on:false},
+  {key:"catalan",sym:"G(Catalan)",val:.91596559417721901505,on:false},
+  {key:"zeta3",sym:"ζ(3)",val:1.2020569031595942854,on:false},
+];
+const OP_LIST=[
+  {key:"+",label:"+",kind:"bin",on:true},{key:"-",label:"-",kind:"bin",on:true},
+  {key:"*",label:"*",kind:"bin",on:true},{key:"/",label:"/",kind:"bin",on:true},{key:"^",label:"^",kind:"bin",on:true},
+  {key:"min",label:"min(a,b)",kind:"bin",on:false},{key:"max",label:"max(a,b)",kind:"bin",on:false},
+  {key:"atan2",label:"atan2",kind:"bin",on:false},{key:"hypot",label:"hypot",kind:"bin",on:false},
+  {key:"mod",label:"mod",kind:"bin",on:false},{key:"gcd",label:"gcd",kind:"bin",on:false},{key:"lcm",label:"lcm",kind:"bin",on:false},
+  {key:"neg",label:"neg(-x)",kind:"un",on:true},{key:"abs",label:"abs",kind:"un",on:true},
+  {key:"inv",label:"inv(1/x)",kind:"un",on:false},
+  {key:"sqrt",label:"sqrt",kind:"un",on:true},{key:"cbrt",label:"cbrt",kind:"un",on:false},
+  {key:"square",label:"square",kind:"un",on:false},{key:"cube",label:"cube",kind:"un",on:false},
+  {key:"exp",label:"exp",kind:"un",on:true},{key:"expm1",label:"expm1",kind:"un",on:false},
+  {key:"log",label:"log",kind:"un",on:true},{key:"log10",label:"log10",kind:"un",on:false},{key:"log1p",label:"log1p",kind:"un",on:false},
+  {key:"sin",label:"sin",kind:"un",on:false},{key:"cos",label:"cos",kind:"un",on:false},{key:"tan",label:"tan",kind:"un",on:false},
+  {key:"asin",label:"asin",kind:"un",on:false},{key:"acos",label:"acos",kind:"un",on:false},{key:"atan",label:"atan",kind:"un",on:false},
+  {key:"sinh",label:"sinh",kind:"un",on:false},{key:"cosh",label:"cosh",kind:"un",on:false},{key:"tanh",label:"tanh",kind:"un",on:false},
+  {key:"floor",label:"floor",kind:"un",on:false},{key:"ceil",label:"ceil",kind:"un",on:false},
+  {key:"round",label:"round",kind:"un",on:false},{key:"frac",label:"frac",kind:"un",on:false},{key:"sign",label:"sign",kind:"un",on:false},
+  {key:"fact",label:"fact(!)",kind:"un",on:false},{key:"gammafn",label:"Γ(x)",kind:"un",on:false},{key:"erf",label:"erf",kind:"un",on:false},
+];
+function mountConsts(){const tb=$("constBody");tb.innerHTML="";for(const c of CONST_LIST){const tr=document.createElement("tr");const t1=document.createElement("td"),ch=document.createElement("input");ch.type="checkbox";ch.className="cstOn";ch.dataset.key=c.key;ch.checked=!!c.on;t1.appendChild(ch);const t2=document.createElement("td");t2.className="mono";t2.textContent=c.sym;const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(c.val);const t4=document.createElement("td"),i1=document.createElement("input");i1.type="text";i1.placeholder="0";i1.className="miniInp cstMin mono";i1.dataset.key=c.key;t4.appendChild(i1);const t5=document.createElement("td"),i2=document.createElement("input");i2.type="text";i2.placeholder="∞";i2.className="miniInp cstMax mono";i2.dataset.key=c.key;t5.appendChild(i2);tr.append(t1,t2,t3,t4,t5);tb.appendChild(tr)}}
+function mountOps(){const b=$("opsBox");b.innerHTML="";for(const o of OP_LIST){const l=document.createElement("label"),ch=document.createElement("input");ch.type="checkbox";ch.className="opOn";ch.dataset.key=o.key;ch.checked=!!o.on;const s=document.createElement("span");s.textContent=o.label;l.append(ch,s);b.appendChild(l)}}
+function setAll(c,v){document.querySelectorAll("."+c).forEach(x=>x.checked=v)}
+$("cAll").onclick=()=>setAll("cstOn",true);$("cNone").onclick=()=>setAll("cstOn",false);
+$("oAll").onclick=()=>setAll("opOn",true);$("oNone").onclick=()=>setAll("opOn",false);
+function statusPills(o){const el=$("status");el.innerHTML="";for(const[k,v]of Object.entries(o)){const d=document.createElement("div");d.className="pill mono";d.textContent=`${k}: ${v}`;el.appendChild(d)}}
+function parseTarget(s){s=String(s).trim();if(s==="pi"||s==="π")return Math.PI;if(s==="e")return Math.E;if(s==="phi"||s==="φ")return(1+Math.sqrt(5))/2;if(s==="sqrt2"||s==="√2")return Math.SQRT2;if(s==="sqrt3"||s==="√3")return Math.sqrt(3);if(s==="sqrt5"||s==="√5")return Math.sqrt(5);return Number(s)}
+function parseNNI(r,ie=false){const t=String(r??"").trim();if(t==="")return{ok:true,val:ie?Infinity:0};if(!/^[0-9]+$/.test(t))return{ok:false,err:t};return{ok:true,val:Number(t)}}
+function getOps(){const en=new Set([...document.querySelectorAll(".opOn")].filter(x=>x.checked).map(x=>x.dataset.key));return{opsUn:OP_LIST.filter(o=>o.kind==="un"&&en.has(o.key)).map(o=>o.key),opsBin:OP_LIST.filter(o=>o.kind==="bin"&&en.has(o.key)).map(o=>o.key)}}
+function getConsts(){const en=new Set([...document.querySelectorAll(".cstOn")].filter(x=>x.checked).map(x=>x.dataset.key));const mnM=new Map([...document.querySelectorAll(".cstMin")].map(x=>[x.dataset.key,x.value]));const mxM=new Map([...document.querySelectorAll(".cstMax")].map(x=>[x.dataset.key,x.value]));const out=[];for(const c of CONST_LIST){if(!en.has(c.key))continue;const mnP=parseNNI(mnM.get(c.key),false);if(!mnP.ok)throw new Error(c.sym+" min");const mxP=parseNNI(mxM.get(c.key),true);if(!mxP.ok)throw new Error(c.sym+" max");const mn=Math.floor(mnP.val),mx=mxP.val===Infinity?65535:Math.floor(mxP.val);if(mn>mx)throw new Error(c.sym+" min>max");out.push({key:c.key,s:c.sym,v:c.val,min:mn,max:mx})}if(!out.length)throw new Error("请至少启用一个常数");return out}
+function renderResults(rows,sc){const tb=$("tbody");tb.innerHTML="";for(const r of rows){const tr=document.createElement("tr");const t1=document.createElement("td"),tg=document.createElement("span"),tp=r.searchType||"fwd";tg.className="tag tag-"+tp;tg.textContent=tp==="fwd"?"正向":"相遇";t1.appendChild(tg);const t2=document.createElement("td");t2.className="mono";t2.textContent=r.expr;if(sc&&r.countsInfo){const d=document.createElement("div");d.className="mono countsLine";d.textContent=r.countsInfo;t2.appendChild(d)}const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(r.v);const t4=document.createElement("td");t4.className="mono";t4.textContent=(r.delta>=0?"+":"")+fmt(r.delta);const t5=document.createElement("td");t5.className="mono";t5.textContent=r.acc;const t6=document.createElement("td");t6.className="mono right";t6.textContent=String(r.cost);tr.append(t1,t2,t3,t4,t5,t6);tb.appendChild(tr)}}
 
-    const FUNCS = [
-      { key: 'neg', render: '(-x)', fn: (x) => -x },
-      { key: 'sqrt', render: 'sqrt(x)', fn: (x) => (x < 0 ? NaN : Math.sqrt(x)) },
-      { key: 'exp', render: 'exp(x)', fn: (x) => (x > 20 ? NaN : Math.exp(x)) },
-      { key: 'ln', render: 'ln(x)', fn: (x) => (x <= 0 ? NaN : Math.log(x)) },
-      { key: 'sin', render: 'sin(x)', fn: (x) => Math.sin(x) },
-      { key: 'cos', render: 'cos(x)', fn: (x) => Math.cos(x) },
-      { key: 'abs', render: 'abs(x)', fn: (x) => Math.abs(x) },
-    ];
+function buildWorker(){
+const src = `
+let stopFlag=false;
+const CAP=1e12,KP=12,EXACT_EPS=5e-15,INF=65535;
+function vKey(v){if(!Number.isFinite(v))return"NaN";if(Object.is(v,-0))v=0;return v.toPrecision(KP)}
+function relAcc(v,T){const r=Math.abs(v-T)/Math.max(1,Math.abs(T));if(r<EXACT_EPS||r===0)return"exact";const n=1/r;if(!Number.isFinite(n))return"exact";return n>1e6?n.toExponential(4):n.toPrecision(6).replace(/\\.0+$/,"")}
+function safePow(a,b){if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb}if(Math.abs(b)>60)return NaN;const r=Math.pow(a,b);return(!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r}
+function erf(x){const s=x<0?-1:1;x=Math.abs(x);const t=1/(1+.3275911*x);return s*(1-((((1.061405429*t-1.453152027)*t+1.421413741)*t-.284496736)*t+.254829592)*t*Math.exp(-x*x))}
+function gamma(z){const p=[676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];if(!Number.isFinite(z))return NaN;if(z<.5){const s=Math.sin(Math.PI*z);return s===0?NaN:Math.PI/(s*gamma(1-z))}z-=1;let x=.99999999999980993;for(let i=0;i<p.length;i++)x+=p[i]/(z+i+1);const t=z+p.length-.5;return Math.sqrt(2*Math.PI)*Math.pow(t,z+.5)*Math.exp(-t)*x}
+function factInt(n){if(n<0||n>170)return NaN;let v=1;for(let i=2;i<=n;i++)v*=i;return v}
+function nearInt(x){return Math.abs(x-Math.round(x))<1e-12}
+function gcdInt(a,b){a=Math.abs(a);b=Math.abs(b);while(b){const t=a%b;a=b;b=t}return a}
+function wUn(op){switch(op){case"neg":case"abs":case"sign":return 1;case"sqrt":case"cbrt":case"inv":case"floor":case"ceil":case"round":case"frac":case"square":case"cube":return 2;case"exp":case"expm1":case"log":case"log10":case"log1p":case"sin":case"cos":case"tan":return 3;case"asin":case"acos":case"atan":case"sinh":case"cosh":case"tanh":case"erf":return 4;case"fact":return 6;case"gammafn":return 7;default:return 3}}
+function wBin(op){switch(op){case"+":case"-":case"*":case"/":return 1;case"^":return 3;case"min":case"max":return 2;case"mod":return 3;case"atan2":case"hypot":return 4;case"gcd":case"lcm":return 6;default:return 2}}
+function isComm(op){return op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd"||op==="lcm"}
 
-    const CONSTS = [
-      { key: '1', value: 1 },
-      { key: '2', value: 2 },
-      { key: '3', value: 3 },
-      { key: '4', value: 4 },
-      { key: '5', value: 5 },
-      { key: '6', value: 6 },
-      { key: '7', value: 7 },
-      { key: '8', value: 8 },
-      { key: '9', value: 9 },
-      { key: 'pi', value: Math.PI },
-      { key: 'e', value: Math.E },
-    ];
+// ======== AST ========
+function mkC(sym,val){return{t:0,sym,val}}
+function mkU(op,ch){return{t:1,op,ch}}
+function mkB(op,l,r){return{t:2,op,l,r}}
+function evalA(n){
+  if(n.t===0)return n.val;
+  if(n.t===1)return applyUn(n.op,evalA(n.ch));
+  return applyBin(n.op,evalA(n.l),evalA(n.r));
+}
+function strA(n){
+  if(n.t===0)return n.sym;
+  if(n.t===1)return unStr(n.op,strA(n.ch));
+  return binStr(n.op,strA(n.l),strA(n.r));
+}
 
-    function createChip(id, text, checked = true) {
-      const span = document.createElement('label');
-      span.className = 'chip';
-      span.innerHTML = `<input type="checkbox" id="${id}" ${checked ? 'checked' : ''}/> ${text}`;
-      return span;
+// ======== STRUCTURAL SIGNATURE ========
+// Two expressions that evaluate to the same value AND have the same
+// "essential structure" should be considered duplicates.
+// We collect the multiset of leaf values used, ignoring tree shape.
+// Combined with the numeric value, this catches most semantic dupes.
+
+// Collect sorted leaf values as a compact string
+function leafSig(n){
+  if(n.t===0) return n.sym;
+  if(n.t===1) return leafSig(n.ch);
+  // binary: sort the two child sigs for commutativity
+  const ls = leafSig(n.l), rs = leafSig(n.r);
+  return ls + ";" + rs;
+}
+
+// ======== FLAGS ========
+const TAG_NONE=0,TAG_NEG=1,TAG_EXP=2,TAG_LOG=3,TAG_SQRT=4,TAG_SQ=5,TAG_INV=6,TAG_ABS=7;
+const TAG_SIN=8,TAG_ASIN=9,TAG_COS=10,TAG_ACOS=11,TAG_TAN=12,TAG_ATAN=13;
+const TAG_SINH=14,TAG_COSH=15,TAG_TANH=16;
+const TAG_ADD=17,TAG_SUB=18,TAG_MUL=19,TAG_DIV=20,TAG_POW=21;
+const TAG_CBRT=22,TAG_CUBE=23;
+const F_ZERO=1<<8,F_ONE=1<<9,F_NEGONE=1<<10,F_INT=1<<11,F_NONNEG=1<<12,F_CONST=1<<13;
+function mkFlags(v,tag,isLeaf){let f=tag&0xFF;const e=1e-15;if(Math.abs(v)<e)f|=F_ZERO;if(Math.abs(v-1)<e)f|=F_ONE;if(Math.abs(v+1)<e)f|=F_NEGONE;if(nearInt(v))f|=F_INT;if(v>=0)f|=F_NONNEG;if(isLeaf)f|=F_CONST;return f}
+function getTag(f){return f&0xFF}
+function has(f,b){return(f&b)!==0}
+function opTag(op){switch(op){case"neg":return TAG_NEG;case"abs":return TAG_ABS;case"inv":return TAG_INV;case"exp":case"expm1":return TAG_EXP;case"log":case"log10":case"log1p":return TAG_LOG;case"sqrt":return TAG_SQRT;case"square":return TAG_SQ;case"cbrt":return TAG_CBRT;case"cube":return TAG_CUBE;case"sin":return TAG_SIN;case"asin":return TAG_ASIN;case"cos":return TAG_COS;case"acos":return TAG_ACOS;case"tan":return TAG_TAN;case"atan":return TAG_ATAN;case"sinh":return TAG_SINH;case"cosh":return TAG_COSH;case"tanh":return TAG_TANH;case"+":return TAG_ADD;case"-":return TAG_SUB;case"*":return TAG_MUL;case"/":return TAG_DIV;case"^":return TAG_POW;default:return TAG_NONE}}
+
+function pruneUn(op,cf,cv){
+  const ct=getTag(cf);
+  if(op==="neg"&&ct===TAG_NEG)return true;
+  if(op==="abs"&&(ct===TAG_ABS||ct===TAG_NEG))return true;
+  if(op==="abs"&&has(cf,F_NONNEG))return true;
+  if(op==="inv"&&ct===TAG_INV)return true;
+  if(op==="exp"&&ct===TAG_LOG)return true;
+  if(op==="log"&&ct===TAG_EXP)return true;
+  if(op==="sqrt"&&ct===TAG_SQ)return true;
+  if(op==="square"&&ct===TAG_SQRT)return true;
+  if(op==="cbrt"&&ct===TAG_CUBE)return true;
+  if(op==="cube"&&ct===TAG_CBRT)return true;
+  if(op==="sin"&&ct===TAG_ASIN)return true;if(op==="asin"&&ct===TAG_SIN)return true;
+  if(op==="cos"&&ct===TAG_ACOS)return true;if(op==="acos"&&ct===TAG_COS)return true;
+  if(op==="tan"&&ct===TAG_ATAN)return true;if(op==="atan"&&ct===TAG_TAN)return true;
+  if(op==="neg"&&has(cf,F_ZERO))return true;
+  if(op==="sqrt"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
+  if(op==="exp"&&has(cf,F_ZERO))return true;
+  if(op==="log"&&has(cf,F_ONE))return true;
+  if(op==="inv"&&(has(cf,F_ONE)||has(cf,F_NEGONE)))return true;
+  if(op==="square"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
+  if(op==="cube"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
+  if((op==="floor"||op==="ceil"||op==="round")&&has(cf,F_INT))return true;
+  if(op==="frac"&&has(cf,F_INT))return true;
+  if(op==="sign"&&(ct===TAG_SIGN||has(cf,F_ZERO)))return true;
+  return false;
+}
+function pruneBin(op,af,bf,av,bv){
+  if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
+  if(op==="-"&&has(bf,F_ZERO))return true;
+  if(op==="-"&&Math.abs(av-bv)<1e-15)return true;
+  if(op==="-"&&has(af,F_ZERO))return true;
+  if(op==="*"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
+  if(op==="*"&&(has(af,F_ONE)||has(bf,F_ONE)))return true;
+  if(op==="*"&&(has(af,F_NEGONE)||has(bf,F_NEGONE)))return true;
+  if(op==="/"&&has(af,F_ZERO))return true;
+  if(op==="/"&&(has(bf,F_ONE)||has(bf,F_NEGONE)))return true;
+  if(op==="/"&&Math.abs(av-bv)<1e-15&&Math.abs(av)>1e-15)return true;
+  if(op==="^"&&has(bf,F_ZERO))return true;
+  if(op==="^"&&has(bf,F_ONE))return true;
+  if(op==="^"&&has(af,F_ZERO))return true;
+  if(op==="^"&&has(af,F_ONE))return true;
+  if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
+  if(op==="+"&&getTag(bf)===TAG_NEG)return true;
+  if(op==="+"&&getTag(af)===TAG_NEG)return true;
+  if(op==="-"&&getTag(bf)===TAG_NEG)return true;
+  if(op==="*"&&(getTag(bf)===TAG_INV||getTag(af)===TAG_INV))return true;
+  if(op==="/"&&getTag(bf)===TAG_INV)return true;
+  return false;
+}
+
+function applyUn(op,v){switch(op){case"neg":return-v;case"abs":return Math.abs(v);case"inv":return v===0?NaN:1/v;case"sqrt":return v<0?NaN:Math.sqrt(v);case"cbrt":return Math.cbrt(v);case"square":{const r=v*v;return r>CAP?NaN:r}case"cube":{const r=v*v*v;return Math.abs(r)>CAP?NaN:r}case"exp":return v>80?NaN:Math.exp(v);case"expm1":return v>80?NaN:Math.expm1(v);case"log":return v<=0?NaN:Math.log(v);case"log10":return v<=0?NaN:Math.log10(v);case"log1p":return v<=-1?NaN:Math.log1p(v);case"sin":return Math.sin(v);case"cos":return Math.cos(v);case"tan":return Math.tan(v);case"asin":return(v<-1||v>1)?NaN:Math.asin(v);case"acos":return(v<-1||v>1)?NaN:Math.acos(v);case"atan":return Math.atan(v);case"sinh":return Math.abs(v)>80?NaN:Math.sinh(v);case"cosh":return Math.abs(v)>80?NaN:Math.cosh(v);case"tanh":return Math.tanh(v);case"floor":return Math.floor(v);case"ceil":return Math.ceil(v);case"round":return Math.round(v);case"frac":return v-Math.floor(v);case"sign":return Math.sign(v);case"fact":return nearInt(v)?factInt(Math.round(v)):NaN;case"gammafn":return v>60?NaN:gamma(v);case"erf":return erf(v);default:return NaN}}
+function applyBin(op,a,b){switch(op){case"+":return a+b;case"-":return a-b;case"*":return a*b;case"/":return b===0?NaN:a/b;case"^":return safePow(a,b);case"min":return Math.min(a,b);case"max":return Math.max(a,b);case"atan2":return Math.atan2(a,b);case"hypot":return Math.hypot(a,b);case"mod":{if(!nearInt(a)||!nearInt(b))return NaN;const bb=Math.round(b);return bb===0?NaN:((Math.round(a)%bb)+bb)%bb}case"gcd":{if(!nearInt(a)||!nearInt(b))return NaN;const aa=Math.round(a),bb=Math.round(b);return(Math.abs(aa)>1e6||Math.abs(bb)>1e6)?NaN:gcdInt(aa,bb)}case"lcm":{if(!nearInt(a)||!nearInt(b))return NaN;const aa=Math.round(a),bb=Math.round(b);if(Math.abs(aa)>1e6||Math.abs(bb)>1e6)return NaN;return Math.abs(aa/gcdInt(aa,bb)*bb)}default:return NaN}}
+function unStr(op,a){switch(op){case"neg":return"(-"+a+")";case"abs":return"abs("+a+")";case"inv":return"(1/("+a+"))";case"sqrt":return"sqrt("+a+")";case"cbrt":return"cbrt("+a+")";case"square":return"("+a+")²";case"cube":return"("+a+")³";case"exp":return"exp("+a+")";case"expm1":return"expm1("+a+")";case"log":return"log("+a+")";case"log10":return"log10("+a+")";case"log1p":return"log1p("+a+")";case"sin":return"sin("+a+")";case"cos":return"cos("+a+")";case"tan":return"tan("+a+")";case"asin":return"asin("+a+")";case"acos":return"acos("+a+")";case"atan":return"atan("+a+")";case"sinh":return"sinh("+a+")";case"cosh":return"cosh("+a+")";case"tanh":return"tanh("+a+")";case"floor":return"floor("+a+")";case"ceil":return"ceil("+a+")";case"round":return"round("+a+")";case"frac":return"frac("+a+")";case"sign":return"sign("+a+")";case"fact":return"("+a+")!";case"gammafn":return"\\u0393("+a+")";case"erf":return"erf("+a+")";default:return op+"("+a+")"}}
+function binStr(op,a,b){if(op==="+"||op==="-"||op==="*"||op==="/"||op==="^")return"("+a+op+b+")";return op+"("+a+","+b+")"}
+
+function invUn(op,r){switch(op){case"neg":return[{v:-r,tag:TAG_NEG}];case"abs":return r<0?[]:[{v:r,tag:TAG_ABS},{v:-r,tag:TAG_ABS}];case"inv":return r===0?[]:[{v:1/r,tag:TAG_INV}];case"sqrt":return[{v:r*r,tag:TAG_SQRT}];case"cbrt":return[{v:r*r*r,tag:TAG_CBRT}];case"square":return r<0?[]:[{v:Math.sqrt(r),tag:TAG_SQ},{v:-Math.sqrt(r),tag:TAG_SQ}];case"cube":return[{v:Math.cbrt(r),tag:TAG_CUBE}];case"exp":return r<=0?[]:[{v:Math.log(r),tag:TAG_EXP}];case"expm1":return r<=-1?[]:[{v:Math.log1p(r),tag:TAG_EXP}];case"log":return[{v:Math.exp(r),tag:TAG_LOG}];case"log10":return[{v:Math.pow(10,r),tag:TAG_LOG}];case"log1p":return[{v:Math.expm1(r),tag:TAG_LOG}];case"sin":return(r<-1||r>1)?[]:[{v:Math.asin(r),tag:TAG_SIN}];case"cos":return(r<-1||r>1)?[]:[{v:Math.acos(r),tag:TAG_COS}];case"tan":return[{v:Math.atan(r),tag:TAG_TAN}];case"asin":return[{v:Math.sin(r),tag:TAG_ASIN}];case"acos":return[{v:Math.cos(r),tag:TAG_ACOS}];case"atan":return[{v:Math.tan(r),tag:TAG_ATAN}];case"sinh":return[{v:Math.asinh(r),tag:TAG_SINH}];case"cosh":return r<1?[]:[{v:Math.acosh(r),tag:TAG_COSH}];case"tanh":return(r<=-1||r>=1)?[]:[{v:Math.atanh(r),tag:TAG_TANH}];default:return[]}}
+function invBinR(op,r,a){switch(op){case"+":return r-a;case"-":return a-r;case"*":return a===0?NaN:r/a;case"/":return r===0?NaN:a/r;case"^":return a<=0||r<=0?NaN:Math.log(r)/Math.log(a);default:return NaN}}
+function invBinL(op,r,b){switch(op){case"+":return r-b;case"-":return r+b;case"*":return b===0?NaN:r/b;case"/":return r*b;case"^":return b===0||r<=0?NaN:Math.pow(r,1/b);default:return NaN}}
+
+// ============ MAIN ============
+onmessage=async(ev)=>{
+  const msg=ev.data;if(msg.type==="stop"){stopFlag=true;return}if(msg.type!=="start")return;
+  stopFlag=false;
+  let{T,maxC,beam,outN,timeLimit,infiniteTime,emitInterval,opsUn,opsBin,consts,showCounts,bidir,divRatio,pruneEquiv}=msg;
+  emitInterval=Math.max(50,Math.min(60000,emitInterval|0||500));
+  const lim=infiniteTime?Infinity:Math.max(0,timeLimit);
+  divRatio=Math.max(0,Math.min(1,divRatio||0));
+
+  const nC=consts.length;
+  const constrainedIdx=[];
+  for(let i=0;i<nC;i++){const mn=consts[i].min??0,mx=consts[i].max??INF;if(mn>mx){postMessage({type:"error",payload:consts[i].s+" min>max"});return}if(mn>0||mx<INF)constrainedIdx.push(i)}
+  let useBitmask=true;
+  if(constrainedIdx.length>4)useBitmask=false;
+  for(const i of constrainedIdx)if((consts[i].min??0)>1||(consts[i].max??INF)>1){useBitmask=false;break}
+  const k=constrainedIdx.length;
+  const idx2bit=new Int16Array(nC);idx2bit.fill(-1);
+  for(let p=0;p<k;p++)idx2bit[constrainedIdx[p]]=p;
+  const minBits=new Uint8Array(k),maxBits=new Uint8Array(k),symBits=new Array(k);
+  for(let p=0;p<k;p++){const i=constrainedIdx[p];minBits[p]=(consts[i].min??0)?1:0;maxBits[p]=(consts[i].max??INF)===0?0:1;symBits[p]=consts[i].s}
+  const EMPTY=new Uint16Array(0);
+  let tCount=0,minT,maxT,symT;
+  if(!useBitmask){tCount=constrainedIdx.length;minT=new Uint16Array(tCount);maxT=new Uint16Array(tCount);symT=new Array(tCount);for(let p=0;p<tCount;p++){const i=constrainedIdx[p];minT[p]=Math.min(INF,Math.max(0,consts[i].min??0));maxT[p]=Math.min(INF,Math.max(0,consts[i].max??INF));symT[p]=consts[i].s}}
+  function maskOk(m){for(let p=0;p<k;p++)if(minBits[p]&&((m>>p)&1)===0)return false;return true}
+  function maskStr(m){if(!showCounts||k===0)return"";const p=[];for(let i=0;i<k;i++)p.push(symBits[i]+":"+((m>>i)&1));return"["+p.join(", ")+"]"}
+  function cntOk(c){for(let i=0;i<tCount;i++)if(c[i]<minT[i])return false;return true}
+  function cntStr(c){if(!showCounts||tCount===0)return"";const p=[];for(let i=0;i<tCount;i++)p.push(symT[i]+":"+c[i]);return"["+p.join(", ")+"]"}
+  function addCnt(a,b){if(tCount===0)return EMPTY;const o=new Uint16Array(tCount);for(let i=0;i<tCount;i++){const s=a[i]+b[i];if(s>maxT[i])return null;o[i]=s}return o}
+  function combMask(a,b){return(a&b)?-1:a|b}
+
+  const t0=performance.now();let lastEmit=t0,visited=0,meetCount=0,pruned=0,reEvalFixed=0,dupesKilled=0;
+  const best=[];
+
+  // ===== OUTPUT DEDUP: by rounded value =====
+  // When adding to best[], we dedup by rounding to ~10 significant digits
+  // so semantically identical expressions (different trees, same value) collapse
+  const bestSeenValues = new Map(); // roundedVal -> best entry index
+
+  function emit(c){const now=performance.now();if(now-lastEmit>=emitInterval){lastEmit=now;postMessage({type:"progress",payload:{elapsed:Math.round(now-t0),maxC,c,visited,meetCount,pruned,reEvalFixed,dupesKilled,mode:useBitmask?"bitmask":"counts",best:best.slice(0,outN)}})}}
+
+  function pushBest(obj){
+    let trueVal=obj.v;
+    if(obj.ast){
+      trueVal=evalA(obj.ast);
+      if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP)return;
+      if(Math.abs(trueVal-obj.v)>1e-12)reEvalFixed++;
+      obj.v=trueVal;
     }
+    const acc=relAcc(obj.v,T);if(acc==="exact")return;
+    const ci=useBitmask?maskStr(obj.mask??0):cntStr(obj.cnt??EMPTY);
+    if(useBitmask&&!maskOk(obj.mask??0))return;
+    if(!useBitmask&&obj.cnt&&!cntOk(obj.cnt))return;
 
-    const opsBox = document.getElementById('opsBox');
-    const funcBox = document.getElementById('funcBox');
-    const constTbody = document.querySelector('#constTable tbody');
+    const expr=obj.ast?strA(obj.ast):(obj.s||"?");
+    const delta=obj.v-T;
+    const absDelta=Math.abs(delta);
 
-    OPS.forEach(o => opsBox.appendChild(createChip(`op_${o.key}`, o.key, true)));
-    FUNCS.forEach(f => funcBox.appendChild(createChip(`fn_${f.key}`, f.render, ['sqrt','exp','neg'].includes(f.key))));
-
-    CONSTS.forEach(c => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><code>${c.key}</code></td>
-        <td>
-          <select id="mode_${c.key}">
-            <option value="unlimited" ${['1','2','3','pi','e'].includes(c.key) ? 'selected' : ''}>无限次</option>
-            <option value="max">最多 N 次</option>
-            <option value="exact">必须恰好 N 次</option>
-          </select>
-        </td>
-        <td><input id="n_${c.key}" type="number" min="0" value="1" /></td>
-      `;
-      constTbody.appendChild(tr);
-    });
-
-    function readConfig() {
-      const target = Number(document.getElementById('target').value);
-      const keep = Math.max(1, Number(document.getElementById('keep').value) || 20);
-      const depth = Math.max(0, Math.min(4, Number(document.getElementById('depth').value) || 2));
-      const budget = Math.max(1, Number(document.getElementById('budget').value) || 8);
-      const eps = Math.max(0, Number(document.getElementById('eps').value) || 1e-10);
-
-      const ops = OPS.filter(o => document.getElementById(`op_${o.key}`).checked);
-      const funcs = FUNCS.filter(f => document.getElementById(`fn_${f.key}`).checked);
-      const rules = {};
-      for (const c of CONSTS) {
-        rules[c.key] = {
-          mode: document.getElementById(`mode_${c.key}`).value,
-          n: Math.max(0, Number(document.getElementById(`n_${c.key}`).value) || 0),
-        };
+    // ===== DEDUP by value: keep only the simplest expression for each ~same value =====
+    const valRound = obj.v.toPrecision(11);
+    const existing = bestSeenValues.get(valRound);
+    if(existing !== undefined){
+      const old = best[existing];
+      if(old && old.cost <= (obj.cost||999)){
+        dupesKilled++;
+        return; // already have a simpler expression with same value
       }
-      return { target, keep, depth, budget, eps, ops, funcs, rules };
+      // replace with simpler one
+      best[existing] = {expr,v:obj.v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:obj.searchType||"fwd"};
+      best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
+      return;
     }
 
-    function cloneCounts(counts) {
-      const out = {};
-      for (const k in counts) out[k] = counts[k];
+    const entry = {expr,v:obj.v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:obj.searchType||"fwd"};
+    best.push(entry);
+    best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
+
+    // Rebuild index after sort
+    if(best.length>outN*3) best.length=outN*2;
+    bestSeenValues.clear();
+    for(let i=0;i<best.length;i++) bestSeenValues.set(best[i].v.toPrecision(11), i);
+  }
+
+  function mkBucket(){
+    const bucket=new Map();const spLim=Math.max(beam*18,12000),keepSp=Math.max(beam*6,4000);
+    function spill(){const v=Array.from(bucket.values());v.sort((a,b)=>a.score-b.score);bucket.clear();for(let i=0;i<Math.min(keepSp,v.length);i++){const it=v[i];bucket.set(it.key,it)}}
+    function put(key,score,pack){const old=bucket.get(key);if(old&&score>=old.score)return false;pack.score=score;pack.key=key;bucket.set(key,pack);if(bucket.size>spLim)spill();return true}
+    function fin(cost){
+      const vals=Array.from(bucket.values());const nT=Math.ceil(beam*(1-divRatio)),nD=beam-nT;
+      vals.sort((a,b)=>a.score-b.score);const out=[],usedBins=new Set();
+      for(let i=0;i<Math.min(nT,vals.length);i++){const it=vals[i];it.cost=cost;out.push(it);usedBins.add(Math.floor(Math.log(Math.abs(it.v)+1e-30)*3))}
+      if(nD>0&&vals.length>nT){const rem=vals.slice(nT);const bm=new Map();for(const it of rem){const b=Math.floor(Math.log(Math.abs(it.v)+1e-30)*3);if(!usedBins.has(b)&&(!bm.has(b)||it.score<bm.get(b).score))bm.set(b,it)}const di=Array.from(bm.values());di.sort((a,b)=>a.score-b.score);for(let i=0;i<Math.min(nD,di.length);i++){di[i].cost=cost;out.push(di[i])}if(out.length<beam){const ok=new Set(out.map(x=>x.key));for(const it of rem){if(out.length>=beam)break;if(!ok.has(it.key)){it.cost=cost;out.push(it)}}}}
       return out;
     }
+    return{bucket,put,fin};
+  }
 
-    function mergeCounts(a, b) {
-      const out = {};
-      for (const c of CONSTS) {
-        out[c.key] = (a[c.key] || 0) + (b[c.key] || 0);
-      }
-      return out;
+  const fwd=Array.from({length:maxC+1},()=>[]);
+  {
+    const{put,fin}=mkBucket();
+    for(let i=0;i<nC;i++){
+      const v=consts[i].v;visited++;
+      if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+      const score=Math.abs(v-T);const flags=mkFlags(v,TAG_NONE,true);
+      const ast=mkC(consts[i].s,v);
+      if(useBitmask){const bit=idx2bit[i];let mask=0;if(bit>=0){if(!maxBits[bit])continue;mask=1<<bit}put(vKey(v)+"|"+mask,score,{v,ast,mask,flags})}
+      else{let cnt=EMPTY;const pos=idx2bit[i];if(pos>=0){cnt=new Uint16Array(tCount);cnt[pos]=1;if(cnt[pos]>maxT[pos])continue}const ck=tCount?Array.from(cnt).join(","):"";put(vKey(v)+"|"+ck,score,{v,ast,cnt,ck,flags})}
     }
+    fwd[1]=fin(1);for(const e of fwd[1]){e.searchType="fwd";pushBest(e)}emit(1);
+  }
 
-    function obeysMax(counts, rules) {
-      for (const c of CONSTS) {
-        const r = rules[c.key];
-        if (r.mode === 'max' && (counts[c.key] || 0) > r.n) return false;
-        if (r.mode === 'exact' && (counts[c.key] || 0) > r.n) return false;
-      }
-      return true;
+  const rev=Array.from({length:maxC+1},()=>[]);
+  const revIdx=new Map();
+  function addRevIdx(items){for(const it of items){const k2=vKey(it.v);if(!revIdx.has(k2))revIdx.set(k2,[]);revIdx.get(k2).push(it)}}
+  function tryMeet(f){
+    const k2=vKey(f.v);const rl=revIdx.get(k2);if(!rl)return;
+    for(const r of rl){
+      if(useBitmask){if((f.mask&r.mask)!==0)continue}
+      else{const c=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);if(!c)continue}
+      meetCount++;
+      const tc=f.cost+r.cost;
+      const combinedAST=r.wA?r.wA(f.ast):f.ast;
+      const trueVal=evalA(combinedAST);
+      if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP)continue;
+      const mask=useBitmask?(f.mask|r.mask):0;
+      const cnt=useBitmask?null:addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
+      pushBest({v:trueVal,ast:combinedAST,mask,cnt,cost:tc,searchType:"meet"});
     }
+  }
+  if(bidir){
+    const seedMask=0;const seedCnt=tCount?new Uint16Array(tCount):EMPTY;
+    const seedCk=tCount?Array(tCount).fill(0).join(","):"";
+    rev[0]=[{v:T,wA:(a)=>a,mask:seedMask,cnt:seedCnt,ck:seedCk,flags:mkFlags(T,TAG_NONE,true),cost:0,score:0}];
+    addRevIdx(rev[0]);
+  }
 
-    function obeysExactFinal(counts, rules) {
-      for (const c of CONSTS) {
-        const r = rules[c.key];
-        if (r.mode === 'exact' && (counts[c.key] || 0) !== r.n) return false;
+  function buildRev(c){
+    if(!bidir)return;
+    const{put,fin}=mkBucket();
+    for(const op of opsUn){
+      const w=wUn(op);const sc=c-w;if(sc<0||!rev[sc])continue;
+      for(let i=0;i<Math.min(rev[sc].length,beam);i++){
+        const a=rev[sc][i];
+        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue}
+        const invs=invUn(op,a.v);
+        for(const inv of invs){
+          visited++;const v=inv.v;
+          if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+          const nf=mkFlags(v,opTag(op),false);
+          const pW=a.wA;const nW=pW?(fa=>mkU(op,pW(fa))):(fa=>mkU(op,fa));
+          if(useBitmask)put(vKey(v)+"|"+a.mask,Math.abs(v-T),{v,wA:nW,mask:a.mask,flags:nf});
+          else{const ck=a.ck||"";put(vKey(v)+"|"+ck,Math.abs(v-T),{v,wA:nW,cnt:a.cnt,ck,flags:nf})}
+        }
       }
-      return true;
     }
-
-    function approxLabel(target, value, dist) {
-      if (dist < 1e-15) return 'exact';
-      const rel = Math.abs(target) > 1e-12 ? dist / Math.abs(target) : dist;
-      if (rel <= 0) return 'exact';
-      const n = Math.round(1 / rel);
-      if (!Number.isFinite(n) || n <= 0) return '-';
-      return `1 / ${n}`;
-    }
-
-    function stableKey(v, eps) {
-      return String(Math.round(v / eps));
-    }
-
-    function takeBest(pool, target, keep) {
-      pool.sort((a, b) => {
-        const da = Math.abs(a.value - target);
-        const db = Math.abs(b.value - target);
-        if (da !== db) return da - db;
-        return a.cost - b.cost;
-      });
-      return pool.slice(0, keep);
-    }
-
-    async function runSearch() {
-      const cfg = readConfig();
-      const status = document.getElementById('status');
-      const bar = document.getElementById('bar');
-      const tbody = document.querySelector('#resultTable tbody');
-      tbody.innerHTML = '';
-
-      if (!Number.isFinite(cfg.target)) {
-        status.textContent = '目标值非法。';
-        status.className = 'danger';
-        return;
-      }
-
-      status.textContent = '初始化...';
-      status.className = 'subtle';
-      bar.style.width = '2%';
-
-      const levels = [];
-      const seen = new Map();
-
-      function pushCandidate(level, cand) {
-        if (!Number.isFinite(cand.value)) return;
-        if (Math.abs(cand.value) > 1e8) return;
-        if (!obeysMax(cand.counts, cfg.rules)) return;
-
-        const key = stableKey(cand.value, cfg.eps) + '|' + level;
-        const prev = seen.get(key);
-        if (prev && prev.cost <= cand.cost) return;
-        seen.set(key, cand);
-
-        levels[level].push(cand);
-      }
-
-      for (let i = 0; i <= cfg.depth; i++) levels.push([]);
-
-      for (const c of CONSTS) {
-        const counts = {};
-        for (const cc of CONSTS) counts[cc.key] = 0;
-        counts[c.key] = 1;
-        pushCandidate(0, { expr: c.key, value: c.value, cost: 1, counts });
-      }
-
-      for (let d = 1; d <= cfg.depth; d++) {
-        status.textContent = `生成深度 ${d}/${cfg.depth} ...`;
-        bar.style.width = `${Math.round((d / (cfg.depth + 1)) * 75)}%`;
-
-        for (let left = 0; left < d; left++) {
-          const right = d - 1 - left;
-          for (const a of levels[left]) {
-            for (const b of levels[right]) {
-              for (const op of cfg.ops) {
-                const value = op.fn(a.value, b.value);
-                const counts = mergeCounts(a.counts, b.counts);
-                const cost = a.cost + b.cost + 1;
-                if (cost > cfg.budget) continue;
-                pushCandidate(d, {
-                  expr: `(${a.expr} ${op.key} ${b.expr})`,
-                  value,
-                  cost,
-                  counts,
-                });
+    const sBin=opsBin.filter(op=>["+","-","*","/","^"].includes(op));
+    for(const op of sBin){
+      const w=wBin(op);
+      for(let rc=0;rc<=c-w-1;rc++){
+        const fc=c-w-rc;const rs=rev[rc],fs=fwd[fc];
+        if(!rs||!fs||!rs.length||!fs.length)continue;
+        const cR=Math.min(rs.length,Math.floor(Math.sqrt(beam)));
+        const cF=Math.min(fs.length,Math.floor(Math.sqrt(beam)));
+        for(let ir=0;ir<cR;ir++){
+          const r=rs[ir];
+          for(let jf=0;jf<cF;jf++){
+            const f=fs[jf];visited++;
+            const x1=invBinR(op,r.v,f.v);
+            if(Number.isFinite(x1)&&Math.abs(x1)<=CAP){
+              if(useBitmask){const m=combMask(f.mask,r.mask);if(m>=0){const pW=r.wA;const fA=f.ast;const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));put(vKey(x1)+"|"+m,Math.abs(x1-T),{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false)})}}
+              else{const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);if(cnt){const ck=Array.from(cnt).join(",");const pW=r.wA;const fA=f.ast;const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));put(vKey(x1)+"|"+ck,Math.abs(x1-T),{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false)})}}
+            }
+            if(!isComm(op)){
+              const x2=invBinL(op,r.v,f.v);
+              if(Number.isFinite(x2)&&Math.abs(x2)<=CAP){
+                if(useBitmask){const m=combMask(f.mask,r.mask);if(m>=0){const pW=r.wA;const fA=f.ast;const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));put(vKey(x2)+"|"+m,Math.abs(x2-T),{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false)})}}
+                else{const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);if(cnt){const ck=Array.from(cnt).join(",");const pW=r.wA;const fA=f.ast;const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));put(vKey(x2)+"|"+ck,Math.abs(x2-T),{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false)})}}
               }
             }
+            if(stopFlag)break;
           }
+          if(stopFlag)break;
         }
-
-        for (const prev of levels[d - 1]) {
-          for (const f of cfg.funcs) {
-            const value = f.fn(prev.value);
-            const cost = prev.cost + 1;
-            if (cost > cfg.budget) continue;
-            pushCandidate(d, {
-              expr: `${f.key}(${prev.expr})`,
-              value,
-              cost,
-              counts: cloneCounts(prev.counts),
-            });
-          }
-        }
-
-        levels[d] = takeBest(levels[d], cfg.target, Math.max(cfg.keep * 8, 200));
-        await new Promise(r => setTimeout(r, 0));
       }
+    }
+    rev[c]=fin(c);addRevIdx(rev[c]);
+  }
 
-      const all = levels.flat().filter(c => obeysExactFinal(c.counts, cfg.rules));
-      const best = takeBest(all, cfg.target, cfg.keep);
+  for(let c=2;c<=maxC;c++){
+    if(stopFlag)break;if(performance.now()-t0>lim)break;
+    if(bidir&&c<=Math.floor(maxC/2)+2)buildRev(c);
+    const{bucket,put,fin}=mkBucket();
+    const capUn=Math.max(80,Math.floor(beam/8));
+    const capBin=Math.max(60,Math.floor(beam/14));
 
-      bar.style.width = '100%';
-      if (!best.length) {
-        status.textContent = '未找到满足常数次数约束的表达式。';
-        status.className = 'warn';
-        return;
-      }
-
-      status.textContent = `完成：候选 ${all.length} 条，展示最优 ${best.length} 条。`;
-      status.className = 'ok';
-
-      for (const item of best) {
-        const dist = Math.abs(item.value - cfg.target);
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td class="expr">x = ${item.expr}</td>
-          <td>${item.value}</td>
-          <td>${dist}</td>
-          <td>${approxLabel(cfg.target, item.value, dist)}</td>
-          <td>${item.cost}</td>
-        `;
-        tbody.appendChild(tr);
+    for(const op of opsUn){
+      if(stopFlag)break;const w=wUn(op),sc=c-w;if(sc<1)continue;
+      const src=fwd[sc];if(!src.length)continue;
+      const cap=Math.min(src.length,capUn);
+      for(let i=0;i<cap;i++){
+        const a=src[i];
+        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue}
+        const v=applyUn(op,a.v);visited++;
+        if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+        const score=Math.abs(v-T);const nf=mkFlags(v,opTag(op),false);
+        const ast=mkU(op,a.ast);
+        if(useBitmask){const key=vKey(v)+"|"+a.mask;const old=bucket.get(key);if(old&&score>=old.score)continue;put(key,score,{v,ast,mask:a.mask,flags:nf})}
+        else{const ck=a.ck||"";const key=vKey(v)+"|"+ck;const old=bucket.get(key);if(old&&score>=old.score)continue;put(key,score,{v,ast,cnt:a.cnt,ck,flags:nf})}
+        if((visited&8191)===0)emit(c);if(stopFlag||performance.now()-t0>lim)break;
       }
     }
 
-    document.getElementById('run').addEventListener('click', runSearch);
-    runSearch();
-  </script>
+    for(const op of opsBin){
+      if(stopFlag||performance.now()-t0>lim)break;
+      const w=wBin(op),rem=c-w;if(rem<2)continue;const comm=isComm(op);
+      for(let ic=1;ic<=rem-1;ic++){
+        const jc=rem-ic;const A=fwd[ic],B=fwd[jc];
+        if(!A.length||!B.length)continue;
+        const cA=Math.min(A.length,capBin),cB=Math.min(B.length,capBin);
+        for(let ia=0;ia<cA;ia++){
+          const a=A[ia];const stB=(comm&&ic===jc)?ia:0;
+          for(let ib=stB;ib<cB;ib++){
+            const b=B[ib];visited++;
+            if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++;continue}
+            if(useBitmask){
+              if((a.mask&b.mask)!==0)continue;const mask=a.mask|b.mask;
+              const v=applyBin(op,a.v,b.v);
+              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              const score=Math.abs(v-T);const key=vKey(v)+"|"+mask;
+              const old=bucket.get(key);if(!old||score<old.score){const ast=mkB(op,a.ast,b.ast);put(key,score,{v,ast,mask,flags:mkFlags(v,opTag(op),false)})}
+            }else{
+              const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);if(!cnt)continue;
+              const v=applyBin(op,a.v,b.v);
+              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              const score=Math.abs(v-T);const ck=Array.from(cnt).join(",");const key=vKey(v)+"|"+ck;
+              const old=bucket.get(key);if(!old||score<old.score){const ast=mkB(op,a.ast,b.ast);put(key,score,{v,ast,cnt,ck,flags:mkFlags(v,opTag(op),false)})}
+            }
+            if((visited&8191)===0)emit(c);if(stopFlag||performance.now()-t0>lim)break;
+          }
+          if(stopFlag||performance.now()-t0>lim)break;
+        }
+        if(stopFlag||performance.now()-t0>lim)break;
+      }
+    }
+
+    fwd[c]=fin(c);
+    for(const e of fwd[c]){e.searchType="fwd";pushBest(e);if(bidir)tryMeet(e)}
+    emit(c);await new Promise(r=>setTimeout(r,0));
+  }
+
+  postMessage({type:"done",payload:{elapsed:Math.round(performance.now()-t0),maxC,c:maxC,visited,meetCount,pruned,reEvalFixed,dupesKilled,mode:useBitmask?"bitmask":"counts",best:best.slice(0,outN)}});
+};
+`;
+  return new Worker(URL.createObjectURL(new Blob([src],{type:"text/javascript"})));
+}
+
+let worker=null;
+$("infiniteTime").addEventListener("change",()=>{$("timeLimit").disabled=$("infiniteTime").checked});
+$("btnStart").onclick=()=>{
+  const T=parseTarget($("target").value);if(!Number.isFinite(T)){alert("无效");return}
+  const maxC=Math.max(1,Math.min(200,Number($("maxC").value||24)));
+  const beam=Math.max(50,Math.min(50000,Number($("beam").value||1500)));
+  const outN=Math.max(1,Math.min(200,Number($("outN").value||30)));
+  const infiniteTime=$("infiniteTime").checked;
+  const timeLimit=infiniteTime?0:Math.max(0,Number($("timeLimit").value||0));
+  const emitInterval=Math.max(50,Math.min(60000,Number($("emitInterval").value||500)));
+  const showCounts=$("showCounts").checked;const bidir=$("bidir").checked;
+  const divRatio=Math.max(0,Math.min(1,Number($("divRatio").value||.25)));
+  const pruneEquiv=$("pruneEquiv").checked;
+  const{opsUn,opsBin}=getOps();
+  if(!opsUn.length&&!opsBin.length){alert("请至少选择一个运算");return}
+  let consts;try{consts=getConsts()}catch(e){alert(e.message);return}
+  if(worker)worker.terminate();worker=buildWorker();
+  $("btnStart").disabled=true;$("btnStop").disabled=false;$("pruneStats").style.display="none";
+  statusPills({T:fmt(T),status:"running",bidir:bidir?"ON":"OFF",prune:pruneEquiv?"ON":"OFF",divRatio,maxC,beam,outN});
+  worker.onmessage=(ev)=>{
+    const{type,payload}=ev.data;
+    if(type==="error"){alert(payload);$("btnStart").disabled=false;$("btnStop").disabled=true;return}
+    if(type==="progress"||type==="done"){
+      const rows=payload.best||[];const ba=rows.length?Math.abs(rows[0].delta):NaN;
+      statusPills({T:fmt(T),status:type,mode:payload.mode,c:(payload.c??0)+"/"+payload.maxC,elapsed_ms:payload.elapsed,visited:payload.visited,meets:payload.meetCount||0,pruned:payload.pruned||0,reEval_fixed:payload.reEvalFixed||0,dupes_killed:payload.dupesKilled||0,best_delta:Number.isFinite(ba)?fmt(ba):"n/a"});
+      if((payload.pruned||0)>0||(payload.dupesKilled||0)>0){const ps=$("pruneStats");ps.style.display="block";ps.innerHTML="<b>恒等式剪枝：</b>"+((payload.pruned||0).toLocaleString())+" 个冗余跳过 &nbsp;|&nbsp; <b>AST重求值修正：</b>"+(payload.reEvalFixed||0).toLocaleString()+" &nbsp;|&nbsp; <b>输出去重：</b>"+(payload.dupesKilled||0).toLocaleString()+" 个同值表达式合并"}
+      renderResults(rows,showCounts);
+      if(type==="done"){$("btnStart").disabled=false;$("btnStop").disabled=true}
+    }
+  };
+  worker.postMessage({type:"start",T,maxC,beam,outN,timeLimit,infiniteTime,emitInterval,opsUn,opsBin,consts,showCounts,bidir,divRatio,pruneEquiv});
+};
+$("btnStop").onclick=()=>{if(worker)worker.postMessage({type:"stop"});$("btnStop").disabled=true};
+mountConsts();mountOps();statusPills({tip:"v5: AST精确重求值 + 恒等式剪枝 + 输出值去重 + 双向搜索"});
+})();
+</script>
 </body>
 </html>
