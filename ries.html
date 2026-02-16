@@ -3,90 +3,215 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>RIES 公式搜索器</title>
+  <title>RIES Solver</title>
   <style>
     :root{color-scheme:light dark}
-    body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","PingFang SC","Hiragino Sans GB","Microsoft Yahei",sans-serif;margin:18px}
-    h1{font-size:17px;margin:0 0 12px}
-    .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:end}
-    .box{border:1px solid rgba(127,127,127,.35);padding:12px;border-radius:10px;min-width:0}
+    body{
+      font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","PingFang SC","Hiragino Sans GB","Microsoft Yahei",sans-serif;
+      margin:18px;
+      overflow-x:hidden; /* 页面不横向滚动 */
+    }
+    h1{font-size:16px;margin:0 0 12px}
+
+    /* 溢出在容器内滚动 */
+    .box{
+      border:1px solid rgba(127,127,127,.35);
+      padding:12px;
+      border-radius:10px;
+      max-width:100%;
+      overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
+    }
+
+    .row{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:end}
+    .row > div{flex:1 1 160px;min-width:0;max-width:100%}
+    @media(max-width:560px){ .row > div{flex:1 1 100%} }
+
     label{display:block;font-size:12px;opacity:.85;margin-bottom:4px}
-    input[type="number"],input[type="text"]{padding:6px 8px;min-width:150px}
+    input[type="text"],input[type="number"],select{
+      padding:6px 8px;width:100%;max-width:100%;
+      box-sizing:border-box;
+    }
     input[type="checkbox"]{transform:translateY(1px)}
-    button{padding:8px 12px;cursor:pointer}button:disabled{opacity:.6;cursor:not-allowed}
-    .muted{opacity:.8;font-size:12px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
-    .status{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:10px}
+    button{padding:8px 12px;cursor:pointer}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .muted{opacity:.8;font-size:12px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+
+    .status{display:flex;flex-wrap:wrap;gap:10px 12px;margin-top:10px}
     .pill{padding:4px 8px;border:1px solid rgba(127,127,127,.35);border-radius:999px;font-size:12px}
-    table{width:100%;border-collapse:collapse;margin-top:12px;table-layout:fixed}
-    .tableWrap{width:100%;overflow:auto;-webkit-overflow-scrolling:touch}
-    th,td{border-bottom:1px solid rgba(127,127,127,.25);padding:8px 6px;vertical-align:top}
-    th{text-align:left;font-size:12px;opacity:.85}td{font-size:13px}.right{text-align:right}
-    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-width:0}
-    .warn{color:#b45309;overflow-wrap:anywhere}
-    .split{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;min-width:0}
+
+    .split{display:grid;grid-template-columns:1.1fr .9fr;gap:12px}
     @media(max-width:1100px){.split{grid-template-columns:1fr}}
-    .constWrap{max-height:360px;max-width:100%;overflow:auto;border:1px solid rgba(127,127,127,.25);border-radius:10px}
-    .constTable{width:100%;border-collapse:collapse}
+    .split > .box{min-width:0}
+
+    .constWrap{max-height:360px;overflow:auto;border:1px solid rgba(127,127,127,.25);border-radius:10px}
+    .constTable{width:100%;border-collapse:collapse;min-width:420px}
     .constTable th,.constTable td{border-bottom:1px solid rgba(127,127,127,.15);padding:6px;font-size:12px}
     .constTable th{position:sticky;top:0;background:color-mix(in srgb,Canvas 92%,transparent);z-index:2}
-    .miniInp{width:72px;min-width:72px;padding:4px 6px}
+    .miniInp{width:70px;min-width:70px;padding:4px 6px;box-sizing:border-box}
+
     .opsGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px}
     .opsGrid label{display:flex;gap:8px;align-items:center;margin:0;font-size:12px}
-    .countsLine{margin-top:3px;font-size:11px;opacity:.85}
-    .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:6px}
-    .tag-fwd{background:#dbeafe;color:#1e40af}.tag-meet{background:#d1fae5;color:#065f46}
-    @media(prefers-color-scheme:dark){.tag-fwd{background:#1e3a5f;color:#93c5fd}.tag-meet{background:#064e3b;color:#6ee7b7}}
+    @media(max-width:640px){.opsGrid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .warn{color:#b45309}
+
     .pruneStats{margin-top:8px;padding:8px 12px;background:rgba(127,127,127,.08);border-radius:8px;font-size:12px}
-    .cellExpr{word-break:break-word}
-    @media(max-width:760px){body{margin:10px}.box{padding:10px}.row{gap:8px}.split{gap:8px}input[type="number"],input[type="text"]{min-width:120px;width:100%}.opsGrid{grid-template-columns:repeat(2,minmax(0,1fr))}th,td{padding:6px 4px;font-size:12px}}
+
+    .tableWrap{
+      margin-top:12px;border:1px solid rgba(127,127,127,.25);
+      border-radius:10px;overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
+      max-width:100%;
+    }
+    table{width:100%;border-collapse:collapse;min-width:920px}
+    th,td{border-bottom:1px solid rgba(127,127,127,.25);padding:8px 6px;vertical-align:top}
+    th{text-align:left;font-size:12px;opacity:.85}
+    td{font-size:13px}
+    .right{text-align:right}
+    td.expr{white-space:nowrap} /* 表达式不剧烈换行 */
+
+    .countsLine{margin-top:3px;font-size:11px;opacity:.85}
+
+    .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px}
+    .tag-fwd{background:#dbeafe;color:#1e40af}
+    .tag-meet{background:#d1fae5;color:#065f46}
+    @media(prefers-color-scheme:dark){
+      .tag-fwd{background:#1e3a5f;color:#93c5fd}
+      .tag-meet{background:#064e3b;color:#6ee7b7}
+    }
+
+    .copyBtn{padding:6px 10px;font-size:12px}
+    .copyTiny{padding:4px 8px;font-size:12px}
   </style>
 </head>
 <body>
-<h1>RIES 公式搜索器</h1>
+<h1>RIES Solver</h1>
+
 <div class="box">
   <div class="row">
     <div><label>目标值 T</label><input id="target" type="text" value="24" class="mono"/></div>
-    <div><label>最大复杂度</label><input id="maxC" type="number" value="24" min="1" max="200"/></div>
-    <div><label>Beam</label><input id="beam" type="number" value="1500" min="50" max="50000"/></div>
+
+    <div>
+      <label>模式</label>
+      <select id="mode">
+        <option value="balanced" selected>均衡</option>
+        <option value="speed">速度优先</option>
+        <option value="accuracy">精度(覆盖)优先</option>
+        <option value="ries">RIES(构件)优先</option>
+        <option value="meet">双向Meet优先</option>
+      </select>
+      <div class="muted" style="margin-top:6px;line-height:1.25">
+        RIES：保留“构件值”(整数/简单分数)以避免卡在差解。Meet：提高相遇覆盖与保留相遇可用值。
+      </div>
+    </div>
+
+    <div><label>最大复杂度</label><input id="maxC" type="number" value="30" min="1" max="200"/></div>
+    <div><label>Beam</label><input id="beam" type="number" value="4000" min="50" max="50000"/></div>
     <div><label>Diversity比例</label><input id="divRatio" type="number" value="0.25" min="0" max="1" step="0.05"/></div>
     <div><label>输出条数</label><input id="outN" type="number" value="30" min="1" max="200"/></div>
-    <div><label>线程数</label><input id="threads" type="number" value="1" min="1" max="16"/></div>
     <div><label>更新间隔ms</label><input id="emitInterval" type="number" value="500" min="50" max="60000"/></div>
+
     <div>
-      <label>时间上限ms</label><input id="timeLimit" type="number" value="10000" min="0" max="600000"/>
-      <label style="margin:4px 0 0;display:flex;gap:8px;align-items:center"><input id="infiniteTime" type="checkbox"/><span class="muted">无限</span></label>
+      <label>时间上限ms</label><input id="timeLimit" type="number" value="12000" min="0" max="600000"/>
+      <label style="margin:4px 0 0;display:flex;gap:8px;align-items:center">
+        <input id="infiniteTime" type="checkbox"/><span class="muted">无限</span>
+      </label>
     </div>
+
     <div>
-      <label>选项</label>
+      <label>搜索选项</label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="bidir" type="checkbox" checked/><span class="muted">双向搜索</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="showCounts" type="checkbox" checked/><span class="muted">显示常数计数</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="pruneEquiv" type="checkbox" checked/><span class="muted">恒等式剪枝</span></label>
-      <label style="margin:6px 0 0">性能模式<select id="perfMode" style="padding:6px 8px;min-width:140px"><option value="balanced" selected>平衡</option><option value="speed">速度优先</option><option value="memory">内存优先</option><option value="quality">结果优先</option></select></label>
-      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="crossHint" type="checkbox" checked/><span class="muted">多线程协作提示</span></label>
+      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="excludeExact" type="checkbox"/><span class="muted">排除 exact</span></label>
     </div>
-    <div class="toolbar"><button id="btnStart">搜索</button><button id="btnStop" disabled>停止</button></div>
+
+    <div>
+      <label>多线程</label>
+      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="mt" type="checkbox" checked/><span class="muted">启用</span></label>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+        <input id="threads" type="number" value="6" min="1" max="64" style="max-width:140px"/>
+        <span class="muted">线程</span>
+        <span class="muted warn" id="mtHint"></span>
+      </div>
+      <div class="muted" style="margin-top:6px;line-height:1.25">
+        提示：无约束或少约束更快。counts(大约束)也能并行但更重。
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button id="btnStart">搜索</button>
+      <button id="btnStop" disabled>停止</button>
+    </div>
   </div>
+
   <div style="height:10px"></div>
+
   <div class="split">
     <div class="box">
-      <div class="toolbar"><div class="muted">常数+次数限制</div><button id="cAll">全选</button><button id="cNone">全不选</button><span class="muted warn">受限≤4且max≤1→bitmask</span></div>
-      <div class="constWrap" style="margin-top:8px"><table class="constTable"><thead><tr><th style="width:56px">启用</th><th style="width:120px">符号</th><th>数值</th><th style="width:120px">min</th><th style="width:120px">max</th></tr></thead><tbody id="constBody"></tbody></table></div>
+      <div class="toolbar">
+        <div class="muted">常数+次数限制</div>
+        <button id="cAll">全选</button>
+        <button id="cNone">全不选</button>
+      </div>
+      <div class="constWrap" style="margin-top:8px">
+        <table class="constTable">
+          <thead><tr><th style="width:56px">启用</th><th style="width:120px">符号</th><th>数值</th><th style="width:120px">min</th><th style="width:120px">max</th></tr></thead>
+          <tbody id="constBody"></tbody>
+        </table>
+      </div>
     </div>
+
     <div class="box">
       <div class="toolbar"><div class="muted">运算/函数</div><button id="oAll">全选</button><button id="oNone">全不选</button></div>
       <div class="opsGrid" id="opsBox" style="margin-top:8px"></div>
     </div>
   </div>
+
   <div class="status" id="status"></div>
   <div class="pruneStats" id="pruneStats" style="display:none"></div>
 </div>
-<div class="toolbar" style="margin-top:12px"><button id="copyAll" disabled>复制全部结果</button></div>
-<div class="tableWrap"><table><thead><tr><th style="width:7%">type</th><th style="width:35%">expression</th><th style="width:14%">value</th><th style="width:12%">distance</th><th style="width:12%">accuracy</th><th class="right" style="width:9%">complexity</th><th class="right" style="width:11%">copy</th></tr></thead><tbody id="tbody"></tbody></table></div>
+
+<div class="toolbar" style="margin-top:12px">
+  <button class="copyBtn" id="btnCopyAllExpr">复制全部（表达式）</button>
+  <button class="copyBtn" id="btnCopyAllTable">复制全部（含数值）</button>
+  <span class="muted" id="copyMsg"></span>
+</div>
+
+<div class="tableWrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:6%">type</th>
+        <th style="width:56%">expression</th>
+        <th style="width:12%">value</th>
+        <th style="width:10%">distance</th>
+        <th style="width:10%">accuracy</th>
+        <th class="right" style="width:4%">C</th>
+        <th style="width:2%">copy</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
 
 <script>
 (()=>{
 const $=id=>document.getElementById(id);
-function fmt(x){if(!Number.isFinite(x))return String(x);if(Object.is(x,-0))x=0;const a=Math.abs(x);if(a===0)return"0";if(a>=1e7||a<1e-6)return x.toExponential(10);return x.toPrecision(14).replace(/(\.\d*?[1-9])0+$/,'$1').replace(/\.0+$/,'')}
+
+function fmt(x){
+  if(!Number.isFinite(x))return String(x);
+  if(Object.is(x,-0))x=0;
+  const a=Math.abs(x);
+  if(a===0)return"0";
+  if(a>=1e7||a<1e-6)return x.toExponential(10);
+  return x.toPrecision(14).replace(/(\.\d*?[1-9])0+$/,'$1').replace(/\.0+$/,'');
+}
+
+// ---------- constants / ops ----------
 const CONST_LIST=[
   ...Array.from({length:41},(_,i)=>{const v=i-10;return{key:String(v),sym:String(v),val:v,on:(v>=0&&v<=10)}}),
   {key:"1/2",sym:"1/2",val:.5,on:true},{key:"1/3",sym:"1/3",val:1/3,on:false},{key:"2/3",sym:"2/3",val:2/3,on:false},
@@ -101,113 +226,432 @@ const CONST_LIST=[
   {key:"catalan",sym:"G(Catalan)",val:.91596559417721901505,on:false},
   {key:"zeta3",sym:"ζ(3)",val:1.2020569031595942854,on:false},
 ];
+
 const OP_LIST=[
   {key:"+",label:"+",kind:"bin",on:true},{key:"-",label:"-",kind:"bin",on:true},
   {key:"*",label:"*",kind:"bin",on:true},{key:"/",label:"/",kind:"bin",on:true},{key:"^",label:"^",kind:"bin",on:true},
+
   {key:"min",label:"min(a,b)",kind:"bin",on:false},{key:"max",label:"max(a,b)",kind:"bin",on:false},
   {key:"atan2",label:"atan2",kind:"bin",on:false},{key:"hypot",label:"hypot",kind:"bin",on:false},
   {key:"mod",label:"mod",kind:"bin",on:false},{key:"gcd",label:"gcd",kind:"bin",on:false},{key:"lcm",label:"lcm",kind:"bin",on:false},
+
   {key:"neg",label:"neg(-x)",kind:"un",on:true},{key:"abs",label:"abs",kind:"un",on:true},
   {key:"inv",label:"inv(1/x)",kind:"un",on:false},
   {key:"sqrt",label:"sqrt",kind:"un",on:true},{key:"cbrt",label:"cbrt",kind:"un",on:false},
   {key:"square",label:"square",kind:"un",on:false},{key:"cube",label:"cube",kind:"un",on:false},
   {key:"exp",label:"exp",kind:"un",on:true},{key:"expm1",label:"expm1",kind:"un",on:false},
   {key:"log",label:"log",kind:"un",on:true},{key:"log10",label:"log10",kind:"un",on:false},{key:"log1p",label:"log1p",kind:"un",on:false},
+
   {key:"sin",label:"sin",kind:"un",on:false},{key:"cos",label:"cos",kind:"un",on:false},{key:"tan",label:"tan",kind:"un",on:false},
   {key:"asin",label:"asin",kind:"un",on:false},{key:"acos",label:"acos",kind:"un",on:false},{key:"atan",label:"atan",kind:"un",on:false},
+
   {key:"sinh",label:"sinh",kind:"un",on:false},{key:"cosh",label:"cosh",kind:"un",on:false},{key:"tanh",label:"tanh",kind:"un",on:false},
+
   {key:"floor",label:"floor",kind:"un",on:false},{key:"ceil",label:"ceil",kind:"un",on:false},
   {key:"round",label:"round",kind:"un",on:false},{key:"frac",label:"frac",kind:"un",on:false},{key:"sign",label:"sign",kind:"un",on:false},
+
   {key:"fact",label:"fact(!)",kind:"un",on:false},{key:"gammafn",label:"Γ(x)",kind:"un",on:false},{key:"erf",label:"erf",kind:"un",on:false},
 ];
-function mountConsts(){const tb=$("constBody");tb.innerHTML="";for(const c of CONST_LIST){const tr=document.createElement("tr");const t1=document.createElement("td"),ch=document.createElement("input");ch.type="checkbox";ch.className="cstOn";ch.dataset.key=c.key;ch.checked=!!c.on;t1.appendChild(ch);const t2=document.createElement("td");t2.className="mono cellExpr";t2.textContent=c.sym;const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(c.val);const t4=document.createElement("td"),i1=document.createElement("input");i1.type="text";i1.placeholder="0";i1.className="miniInp cstMin mono";i1.dataset.key=c.key;t4.appendChild(i1);const t5=document.createElement("td"),i2=document.createElement("input");i2.type="text";i2.placeholder="∞";i2.className="miniInp cstMax mono";i2.dataset.key=c.key;t5.appendChild(i2);tr.append(t1,t2,t3,t4,t5);tb.appendChild(tr)}}
-function mountOps(){const b=$("opsBox");b.innerHTML="";for(const o of OP_LIST){const l=document.createElement("label"),ch=document.createElement("input");ch.type="checkbox";ch.className="opOn";ch.dataset.key=o.key;ch.checked=!!o.on;const s=document.createElement("span");s.textContent=o.label;l.append(ch,s);b.appendChild(l)}}
-function setAll(c,v){document.querySelectorAll("."+c).forEach(x=>x.checked=v);if(typeof saveConfig==="function")saveConfig()}
-$("cAll").onclick=()=>setAll("cstOn",true);$("cNone").onclick=()=>setAll("cstOn",false);
-$("oAll").onclick=()=>setAll("opOn",true);$("oNone").onclick=()=>setAll("opOn",false);
-function statusPills(o){const el=$("status");el.innerHTML="";for(const[k,v]of Object.entries(o)){const d=document.createElement("div");d.className="pill mono";d.textContent=`${k}: ${v}`;el.appendChild(d)}}
-function parseTarget(s){s=String(s).trim();if(s==="pi"||s==="π")return Math.PI;if(s==="e")return Math.E;if(s==="phi"||s==="φ")return(1+Math.sqrt(5))/2;if(s==="sqrt2"||s==="√2")return Math.SQRT2;if(s==="sqrt3"||s==="√3")return Math.sqrt(3);if(s==="sqrt5"||s==="√5")return Math.sqrt(5);return Number(s)}
-function parseNNI(r,ie=false){const t=String(r??"").trim();if(t==="")return{ok:true,val:ie?Infinity:0};if(!/^[0-9]+$/.test(t))return{ok:false,err:t};return{ok:true,val:Number(t)}}
-function getOps(){const en=new Set([...document.querySelectorAll(".opOn")].filter(x=>x.checked).map(x=>x.dataset.key));return{opsUn:OP_LIST.filter(o=>o.kind==="un"&&en.has(o.key)).map(o=>o.key),opsBin:OP_LIST.filter(o=>o.kind==="bin"&&en.has(o.key)).map(o=>o.key)}}
-function getConsts(){const en=new Set([...document.querySelectorAll(".cstOn")].filter(x=>x.checked).map(x=>x.dataset.key));const mnM=new Map([...document.querySelectorAll(".cstMin")].map(x=>[x.dataset.key,x.value]));const mxM=new Map([...document.querySelectorAll(".cstMax")].map(x=>[x.dataset.key,x.value]));const out=[];for(const c of CONST_LIST){if(!en.has(c.key))continue;const mnP=parseNNI(mnM.get(c.key),false);if(!mnP.ok)throw new Error(c.sym+" min");const mxP=parseNNI(mxM.get(c.key),true);if(!mxP.ok)throw new Error(c.sym+" max");const mn=Math.floor(mnP.val),mx=mxP.val===Infinity?65535:Math.floor(mxP.val);if(mn>mx)throw new Error(c.sym+" min>max");out.push({key:c.key,s:c.sym,v:c.val,min:mn,max:mx})}if(!out.length)throw new Error("请至少启用一个常数");return out}
-function stripOuterParen(s){let x=String(s||"").trim();while(x.startsWith("(")&&x.endsWith(")")){let d=0,ok=true;for(let i=0;i<x.length;i++){const c=x[i];if(c==="(")d++;else if(c===")")d--;if(d===0&&i<x.length-1){ok=false;break}}if(!ok)break;x=x.slice(1,-1).trim()}return x}
-function extractBalanced(src,start){if(src[start]!=="(")return null;let d=0;for(let i=start;i<src.length;i++){const c=src[i];if(c==="(")d++;else if(c===")")d--;if(d===0)return{inside:src.slice(start+1,i),end:i}}return null}
-function splitTopLevelArgs(text){const out=[];let d=0,last=0;for(let i=0;i<text.length;i++){const c=text[i];if(c==="(")d++;else if(c===")")d--;else if(c===","&&d===0){out.push(text.slice(last,i).trim());last=i+1}}out.push(text.slice(last).trim());return out}
-function findTopLevelOp(s){let d=0,pm=-1,md=-1,pw=-1;for(let i=0;i<s.length;i++){const c=s[i];if(c==="(")d++;else if(c===")")d--;else if(d===0){if((c==="+"||c==="-")&&i!==0)pm=i;else if(c==="*"||c==="/")md=i;else if(c==="^")pw=i}}if(pm>=0)return{i:pm,op:s[pm]};if(md>=0)return{i:md,op:s[md]};if(pw>=0)return{i:pw,op:s[pw]};return null}
-function rewriteExpr(expr){let t=stripOuterParen(expr);const fn=t.match(/^([A-Za-zΓ][\w]*)\((.*)\)$/);if(fn){const b=extractBalanced(t,fn[1].length);if(b&&b.end===t.length-1){const args=splitTopLevelArgs(b.inside).map(rewriteExpr);return `${fn[1]}(${args.join(",")})`}}
-  const top=findTopLevelOp(t);if(!top)return t;let L=rewriteExpr(t.slice(0,top.i)),R=rewriteExpr(t.slice(top.i+1)),op=top.op;
-  if(op==="+"){if(L==="0")return R;if(R==="0")return L;if(R.startsWith("-")&&R.length>1)return rewriteExpr(`(${L}-${R.slice(1)})`);if(L.startsWith("-")&&L.length>1)return rewriteExpr(`(${R}-${L.slice(1)})`)}
-  if(op==="-"){if(R==="0")return L;if(L===R)return"0";if(L==="0")return `-${R}`;const rs=R.match(/^\((.+)-(.+)\)$/);if(rs)return rewriteExpr(`((${L}-${rs[1]})+${rs[2]})`)}
-  if(op==="*"){if(L==="1")return R;if(R==="1")return L;if(L==="0"||R==="0")return"0"}
-  if(op==="/"){if(R==="1")return L}
-  return `(${L}${op}${R})`}
-function prettifyExpr(expr){let out=stripOuterParen(rewriteExpr(expr));out=out.replace(/\bpi\b/g,"π").replace(/\bphi\b/g,"φ");
-  let changed=true;while(changed){changed=false;const idx=out.indexOf("pow(");if(idx!==-1){const b=extractBalanced(out,idx+3);if(b){const args=splitTopLevelArgs(b.inside);if(args.length===2){const a=stripOuterParen(args[0]),bb=stripOuterParen(args[1]);out=out.slice(0,idx)+a+"^"+bb+out.slice(b.end+1);changed=true}}}}
-  changed=true;while(changed){changed=false;const idx=out.indexOf("sqrt(");if(idx!==-1){const b=extractBalanced(out,idx+4);if(b){const inner=stripOuterParen(prettifyExpr(b.inside));const atom=/^[\wπφ.-]+$/.test(inner);out=out.slice(0,idx)+"√"+(atom?inner:"("+inner+")")+out.slice(b.end+1);changed=true}}}
-  out=out.replace(/\(\(([^()]+)\)\)/g,"($1)");
-  return out}
-async function copyText(text){if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(text);return true}const ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);ta.select();const ok=document.execCommand("copy");ta.remove();return ok}
-function rowToCopyText(r){const pretty=prettifyExpr(r.expr);return `${pretty} = ${fmt(r.v)}  (Δ=${r.delta>=0?"+":""}${fmt(r.delta)}, complexity=${r.cost})`}
-function renderResults(rows,sc){const tb=$("tbody");tb.innerHTML="";$("copyAll").disabled=!rows.length;for(const r of rows){const tr=document.createElement("tr");const t1=document.createElement("td"),tg=document.createElement("span"),tp=r.searchType||"fwd";tg.className="tag tag-"+tp;tg.textContent=tp==="fwd"?"正向":"相遇";t1.appendChild(tg);const t2=document.createElement("td");t2.className="mono cellExpr";t2.textContent=prettifyExpr(r.expr);if(sc&&r.countsInfo){const d=document.createElement("div");d.className="mono countsLine";d.textContent=r.countsInfo;t2.appendChild(d)}const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(r.v);const t4=document.createElement("td");t4.className="mono";t4.textContent=(r.delta>=0?"+":"")+fmt(r.delta);const t5=document.createElement("td");t5.className="mono";t5.textContent=r.acc;const t6=document.createElement("td");t6.className="mono right";t6.textContent=String(r.cost);const t7=document.createElement("td");t7.className="right";const b=document.createElement("button");b.textContent="复制";b.onclick=async()=>{await copyText(rowToCopyText(r))};t7.appendChild(b);tr.append(t1,t2,t3,t4,t5,t6,t7);tb.appendChild(tr)}}
 
-function buildWorker(){
-const src = `
+function mountConsts(){
+  const tb=$("constBody");tb.innerHTML="";
+  for(const c of CONST_LIST){
+    const tr=document.createElement("tr");
+
+    const t1=document.createElement("td"),ch=document.createElement("input");
+    ch.type="checkbox";ch.className="cstOn";ch.dataset.key=c.key;ch.checked=!!c.on;t1.appendChild(ch);
+
+    const t2=document.createElement("td");t2.className="mono";t2.textContent=c.sym;
+    const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(c.val);
+
+    const t4=document.createElement("td"),i1=document.createElement("input");
+    i1.type="text";i1.placeholder="0";i1.className="miniInp cstMin mono";i1.dataset.key=c.key;t4.appendChild(i1);
+
+    const t5=document.createElement("td"),i2=document.createElement("input");
+    i2.type="text";i2.placeholder="∞";i2.className="miniInp cstMax mono";i2.dataset.key=c.key;t5.appendChild(i2);
+
+    tr.append(t1,t2,t3,t4,t5);tb.appendChild(tr);
+  }
+}
+function mountOps(){
+  const b=$("opsBox");b.innerHTML="";
+  for(const o of OP_LIST){
+    const l=document.createElement("label"),ch=document.createElement("input");
+    ch.type="checkbox";ch.className="opOn";ch.dataset.key=o.key;ch.checked=!!o.on;
+    const s=document.createElement("span");s.textContent=o.label;
+    l.append(ch,s);b.appendChild(l);
+  }
+}
+function setAll(cls,v){document.querySelectorAll("."+cls).forEach(x=>x.checked=v);}
+$("cAll").onclick=()=>setAll("cstOn",true);
+$("cNone").onclick=()=>setAll("cstOn",false);
+$("oAll").onclick=()=>setAll("opOn",true);
+$("oNone").onclick=()=>setAll("opOn",false);
+
+function statusPills(o){
+  const el=$("status");el.innerHTML="";
+  for(const [k,v] of Object.entries(o)){
+    const d=document.createElement("div");
+    d.className="pill mono";
+    d.textContent=`${k}: ${v}`;
+    el.appendChild(d);
+  }
+}
+
+function parseTarget(s){
+  s=String(s).trim();
+  if(s==="pi"||s==="π")return Math.PI;
+  if(s==="e")return Math.E;
+  if(s==="phi"||s==="φ")return(1+Math.sqrt(5))/2;
+  if(s==="sqrt2"||s==="√2")return Math.SQRT2;
+  if(s==="sqrt3"||s==="√3")return Math.sqrt(3);
+  if(s==="sqrt5"||s==="√5")return Math.sqrt(5);
+  return Number(s);
+}
+function parseNNI(r,ie=false){
+  const t=String(r??"").trim();
+  if(t==="")return{ok:true,val:ie?Infinity:0};
+  if(!/^[0-9]+$/.test(t))return{ok:false,err:t};
+  return{ok:true,val:Number(t)};
+}
+function getOps(){
+  const en=new Set([...document.querySelectorAll(".opOn")].filter(x=>x.checked).map(x=>x.dataset.key));
+  return{
+    opsUn:OP_LIST.filter(o=>o.kind==="un"&&en.has(o.key)).map(o=>o.key),
+    opsBin:OP_LIST.filter(o=>o.kind==="bin"&&en.has(o.key)).map(o=>o.key),
+  };
+}
+function getConsts(){
+  const en=new Set([...document.querySelectorAll(".cstOn")].filter(x=>x.checked).map(x=>x.dataset.key));
+  const mnM=new Map([...document.querySelectorAll(".cstMin")].map(x=>[x.dataset.key,x.value]));
+  const mxM=new Map([...document.querySelectorAll(".cstMax")].map(x=>[x.dataset.key,x.value]));
+
+  const out=[];
+  for(const c of CONST_LIST){
+    if(!en.has(c.key))continue;
+    const mnP=parseNNI(mnM.get(c.key),false);if(!mnP.ok)throw new Error(c.sym+" min");
+    const mxP=parseNNI(mxM.get(c.key),true); if(!mxP.ok)throw new Error(c.sym+" max");
+    const mn=Math.floor(mnP.val),mx=mxP.val===Infinity?65535:Math.floor(mxP.val);
+    if(mn>mx)throw new Error(c.sym+" min>max");
+    out.push({key:c.key,s:c.sym,v:c.val,min:mn,max:mx});
+  }
+  if(!out.length)throw new Error("请至少启用一个常数");
+  return out;
+}
+
+// ---------- Copy with fallback ----------
+async function copyText(text){
+  text=String(text??"");
+  const setMsg=(s)=>{ $("copyMsg").textContent=s; setTimeout(()=>{$("copyMsg").textContent="";}, 1200); };
+
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+      setMsg("已复制");
+      return true;
+    }
+  }catch(e){}
+
+  try{
+    const ta=document.createElement("textarea");
+    ta.value=text;
+    ta.style.position="fixed";
+    ta.style.left="-9999px";
+    ta.style.top="0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok=document.execCommand("copy");
+    document.body.removeChild(ta);
+    if(ok){ setMsg("已复制"); return true; }
+  }catch(e){}
+
+  try{
+    window.prompt("复制以下文本：", text);
+    setMsg("已打开复制框");
+    return false;
+  }catch(e){
+    setMsg("复制失败");
+    return false;
+  }
+}
+
+let lastRows=[];
+$("btnCopyAllExpr").onclick=()=>{ if(!lastRows.length)return; copyText(lastRows.map(r=>r.expr).join("\n")); };
+$("btnCopyAllTable").onclick=()=>{
+  if(!lastRows.length)return;
+  const lines=lastRows.map(r=>{
+    const d=(r.delta>=0?"+":"")+fmt(r.delta);
+    return `${r.expr}\t= ${fmt(r.v)}\tΔ ${d}\tC ${r.cost}\t${r.acc}`;
+  });
+  copyText(lines.join("\n"));
+};
+
+function renderResults(rows,showCounts){
+  lastRows=rows||[];
+  const tb=$("tbody");tb.innerHTML="";
+  for(const r of rows){
+    const tr=document.createElement("tr");
+
+    const t1=document.createElement("td");
+    const tg=document.createElement("span");
+    const tp=r.searchType||"fwd";
+    tg.className="tag "+(tp==="meet"?"tag-meet":"tag-fwd");
+    tg.textContent=tp;
+    t1.appendChild(tg);
+
+    const t2=document.createElement("td");
+    t2.className="mono expr";
+    t2.textContent=r.expr;
+    if(showCounts && r.countsInfo){
+      const d=document.createElement("div");
+      d.className="mono countsLine";
+      d.textContent=r.countsInfo;
+      t2.appendChild(d);
+    }
+
+    const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(r.v);
+    const t4=document.createElement("td");t4.className="mono";t4.textContent=(r.delta>=0?"+":"")+fmt(r.delta);
+    const t5=document.createElement("td");t5.className="mono";t5.textContent=r.acc;
+    const t6=document.createElement("td");t6.className="mono right";t6.textContent=String(r.cost);
+
+    const t7=document.createElement("td");
+    const b=document.createElement("button");
+    b.className="copyTiny";
+    b.textContent="复制";
+    b.onclick=()=>copyText(r.expr);
+    t7.appendChild(b);
+
+    tr.append(t1,t2,t3,t4,t5,t6,t7);
+    tb.appendChild(tr);
+  }
+}
+
+// ---------- localStorage ----------
+const LS_KEY="ries_solver_cfg_v5";
+function collectUIState(){
+  const ops={};
+  document.querySelectorAll(".opOn").forEach(ch=>{ops[ch.dataset.key]=!!ch.checked;});
+  const consts={};
+  document.querySelectorAll(".cstOn").forEach(ch=>{
+    const key=ch.dataset.key;
+    const mn=document.querySelector('.cstMin[data-key="'+CSS.escape(key)+'"]')?.value ?? "";
+    const mx=document.querySelector('.cstMax[data-key="'+CSS.escape(key)+'"]')?.value ?? "";
+    consts[key]={on:!!ch.checked,min:mn,max:mx};
+  });
+  return {
+    target:$("target").value,
+    mode:$("mode").value,
+    maxC:$("maxC").value,
+    beam:$("beam").value,
+    divRatio:$("divRatio").value,
+    outN:$("outN").value,
+    emitInterval:$("emitInterval").value,
+    timeLimit:$("timeLimit").value,
+    infiniteTime:$("infiniteTime").checked,
+    bidir:$("bidir").checked,
+    showCounts:$("showCounts").checked,
+    pruneEquiv:$("pruneEquiv").checked,
+    excludeExact:$("excludeExact").checked,
+    mt:$("mt").checked,
+    threads:$("threads").value,
+    ops,consts
+  };
+}
+function applyUIState(st){
+  if(!st||typeof st!=="object")return;
+  if(st.target!=null)$("target").value=st.target;
+  if(st.mode!=null)$("mode").value=st.mode;
+  if(st.maxC!=null)$("maxC").value=st.maxC;
+  if(st.beam!=null)$("beam").value=st.beam;
+  if(st.divRatio!=null)$("divRatio").value=st.divRatio;
+  if(st.outN!=null)$("outN").value=st.outN;
+  if(st.emitInterval!=null)$("emitInterval").value=st.emitInterval;
+  if(st.timeLimit!=null)$("timeLimit").value=st.timeLimit;
+  if(st.infiniteTime!=null)$("infiniteTime").checked=!!st.infiniteTime;
+  if(st.bidir!=null)$("bidir").checked=!!st.bidir;
+  if(st.showCounts!=null)$("showCounts").checked=!!st.showCounts;
+  if(st.pruneEquiv!=null)$("pruneEquiv").checked=!!st.pruneEquiv;
+  if(st.excludeExact!=null)$("excludeExact").checked=!!st.excludeExact;
+  if(st.mt!=null)$("mt").checked=!!st.mt;
+  if(st.threads!=null)$("threads").value=st.threads;
+
+  if(st.ops){
+    document.querySelectorAll(".opOn").forEach(ch=>{
+      const k=ch.dataset.key;
+      if(k in st.ops) ch.checked=!!st.ops[k];
+    });
+  }
+  if(st.consts){
+    document.querySelectorAll(".cstOn").forEach(ch=>{
+      const k=ch.dataset.key;
+      if(st.consts[k]){
+        ch.checked=!!st.consts[k].on;
+        const mn=document.querySelector('.cstMin[data-key="'+CSS.escape(k)+'"]');
+        const mx=document.querySelector('.cstMax[data-key="'+CSS.escape(k)+'"]');
+        if(mn) mn.value=st.consts[k].min ?? "";
+        if(mx) mx.value=st.consts[k].max ?? "";
+      }
+    });
+  }
+}
+let saveTimer=null;
+function scheduleSave(){
+  if(saveTimer)clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>{
+    try{localStorage.setItem(LS_KEY, JSON.stringify(collectUIState()));}catch(e){}
+  },250);
+}
+function hookAutoSave(){
+  const ids=["target","mode","maxC","beam","divRatio","outN","emitInterval","timeLimit","infiniteTime","bidir","showCounts","pruneEquiv","excludeExact","mt","threads"];
+  ids.forEach(id=>{
+    const el=$(id);
+    el.addEventListener("input",scheduleSave);
+    el.addEventListener("change",scheduleSave);
+  });
+  document.addEventListener("input",(e)=>{
+    if(e.target?.classList?.contains("cstOn")||e.target?.classList?.contains("cstMin")||e.target?.classList?.contains("cstMax")||e.target?.classList?.contains("opOn")){
+      scheduleSave();
+    }
+  });
+}
+
+// ---------- MT hint ----------
+function updateMtHint(){
+  const hc=navigator.hardwareConcurrency||4;
+  $("threads").max=String(Math.max(1,Math.min(64,hc)));
+  $("mtHint").textContent=$("mt").checked?("建议≤"+$("threads").max):"";
+}
+$("mt").addEventListener("change",()=>{updateMtHint();scheduleSave();});
+$("threads").addEventListener("input",()=>{updateMtHint();scheduleSave();});
+$("mode").addEventListener("change",()=>{
+  // meet 模式强制建议开启 bidir
+  if($("mode").value==="meet"){
+    $("bidir").checked=true;
+  }
+  scheduleSave();
+});
+$("infiniteTime").addEventListener("change",()=>{$("timeLimit").disabled=$("infiniteTime").checked;scheduleSave();});
+
+// ================= SubWorker code (sent to Worker) =================
+// 这里不再嵌套“外层模板字符串 -> 内层模板字符串”，避免引号地狱；直接把 subworker 源码当普通字符串传入 worker。
+const SUBWORKER_CODE = `
 let stopFlag=false;
-const CAP=1e12,KP=12,EXACT_EPS=5e-15,INF=65535;
-function vKey(v){if(!Number.isFinite(v))return"NaN";if(Object.is(v,-0))v=0;return v.toPrecision(KP)}
-function relAcc(v,T){const r=Math.abs(v-T)/Math.max(1,Math.abs(T));if(r<EXACT_EPS||r===0)return"exact";const n=1/r;if(!Number.isFinite(n))return"exact";return n>1e6?n.toExponential(4):n.toPrecision(6).replace(/\\.0+$/,"")}
-function safePow(a,b){if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb}if(Math.abs(b)>60)return NaN;const r=Math.pow(a,b);return(!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r}
-function erf(x){const s=x<0?-1:1;x=Math.abs(x);const t=1/(1+.3275911*x);return s*(1-((((1.061405429*t-1.453152027)*t+1.421413741)*t-.284496736)*t+.254829592)*t*Math.exp(-x*x))}
-function gamma(z){const p=[676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];if(!Number.isFinite(z))return NaN;if(z<.5){const s=Math.sin(Math.PI*z);return s===0?NaN:Math.PI/(s*gamma(1-z))}z-=1;let x=.99999999999980993;for(let i=0;i<p.length;i++)x+=p[i]/(z+i+1);const t=z+p.length-.5;return Math.sqrt(2*Math.PI)*Math.pow(t,z+.5)*Math.exp(-t)*x}
-function factInt(n){if(n<0||n>170)return NaN;let v=1;for(let i=2;i<=n;i++)v*=i;return v}
-function nearInt(x){return Math.abs(x-Math.round(x))<1e-12}
-function gcdInt(a,b){a=Math.abs(a);b=Math.abs(b);while(b){const t=a%b;a=b;b=t}return a}
-function wUn(op){switch(op){case"neg":case"abs":case"sign":return 1;case"sqrt":case"cbrt":case"inv":case"floor":case"ceil":case"round":case"frac":case"square":case"cube":return 2;case"exp":case"expm1":case"log":case"log10":case"log1p":case"sin":case"cos":case"tan":return 3;case"asin":case"acos":case"atan":case"sinh":case"cosh":case"tanh":case"erf":return 4;case"fact":return 6;case"gammafn":return 7;default:return 3}}
-function wBin(op){switch(op){case"+":case"-":case"*":case"/":return 1;case"^":return 3;case"min":case"max":return 2;case"mod":return 3;case"atan2":case"hypot":return 4;case"gcd":case"lcm":return 6;default:return 2}}
-function isComm(op){return op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd"||op==="lcm"}
+const CAP=1e12;
 
-// ======== AST ========
-function mkC(sym,val){return{t:0,sym,val}}
-function mkU(op,ch){return{t:1,op,ch}}
-function mkB(op,l,r){return{t:2,op,l,r}}
-function evalA(n){
-  if(n.t===0)return n.val;
-  if(n.t===1)return applyUn(n.op,evalA(n.ch));
-  return applyBin(n.op,evalA(n.l),evalA(n.r));
+let KEYP=12;
+let USE_BITMASK=true;
+let TCOUNT=0;
+let MAXT=null; // Uint16Array
+let OPS_UN=[], OPS_BIN=[];
+let PRUNE=true;
+
+// ---- keys ----
+function vKey(v){ if(!Number.isFinite(v))return "NaN"; if(Object.is(v,-0))v=0; return v.toPrecision(KEYP); }
+
+// ---- math ----
+function nearInt(x){ return Math.abs(x - Math.round(x)) < 1e-12; }
+function safePow(a,b){
+  if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
+  if(a<0){const rb=Math.round(b); if(Math.abs(b-rb)>1e-12)return NaN; b=rb;}
+  if(Math.abs(b)>60)return NaN;
+  const r=Math.pow(a,b);
+  return (!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r;
 }
-function strA(n){
-  if(n.t===0)return n.sym;
-  if(n.t===1)return unStr(n.op,strA(n.ch));
-  return binStr(n.op,strA(n.l),strA(n.r));
+function gcdInt(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ const t=a%b; a=b; b=t; } return a; }
+
+function applyUn(op,v){
+  switch(op){
+    case "neg": return -v;
+    case "abs": return Math.abs(v);
+    case "inv": return v===0?NaN:1/v;
+    case "sqrt": return v<0?NaN:Math.sqrt(v);
+    case "cbrt": return Math.cbrt(v);
+    case "square": { const r=v*v; return r>CAP?NaN:r; }
+    case "cube": { const r=v*v*v; return Math.abs(r)>CAP?NaN:r; }
+    case "exp": return v>80?NaN:Math.exp(v);
+    case "expm1": return v>80?NaN:Math.expm1(v);
+    case "log": return v<=0?NaN:Math.log(v);
+    case "log10": return v<=0?NaN:Math.log10(v);
+    case "log1p": return v<=-1?NaN:Math.log1p(v);
+    case "sin": return Math.sin(v);
+    case "cos": return Math.cos(v);
+    case "tan": return Math.tan(v);
+    case "asin": return (v<-1||v>1)?NaN:Math.asin(v);
+    case "acos": return (v<-1||v>1)?NaN:Math.acos(v);
+    case "atan": return Math.atan(v);
+    case "sinh": return Math.abs(v)>80?NaN:Math.sinh(v);
+    case "cosh": return Math.abs(v)>80?NaN:Math.cosh(v);
+    case "tanh": return Math.tanh(v);
+    case "floor": return Math.floor(v);
+    case "ceil": return Math.ceil(v);
+    case "round": return Math.round(v);
+    case "frac": return v-Math.floor(v);
+    case "sign": return Math.sign(v);
+    default: return NaN;
+  }
 }
-
-// ======== STRUCTURAL SIGNATURE ========
-// Two expressions that evaluate to the same value AND have the same
-// "essential structure" should be considered duplicates.
-// We collect the multiset of leaf values used, ignoring tree shape.
-// Combined with the numeric value, this catches most semantic dupes.
-
-// Collect sorted leaf values as a compact string
-function leafSig(n){
-  if(n.t===0) return n.sym;
-  if(n.t===1) return leafSig(n.ch);
-  // binary: sort the two child sigs for commutativity
-  const ls = leafSig(n.l), rs = leafSig(n.r);
-  return ls + ";" + rs;
+function applyBin(op,a,b){
+  switch(op){
+    case "+": return a+b;
+    case "-": return a-b;
+    case "*": return a*b;
+    case "/": return b===0?NaN:a/b;
+    case "^": return safePow(a,b);
+    case "min": return Math.min(a,b);
+    case "max": return Math.max(a,b);
+    case "atan2": return Math.atan2(a,b);
+    case "hypot": return Math.hypot(a,b);
+    case "mod":{
+      if(!nearInt(a)||!nearInt(b))return NaN;
+      const bb=Math.round(b);
+      return bb===0?NaN:((Math.round(a)%bb)+bb)%bb;
+    }
+    case "gcd":{
+      if(!nearInt(a)||!nearInt(b))return NaN;
+      const aa=Math.round(a),bb=Math.round(b);
+      return (Math.abs(aa)>1e6||Math.abs(bb)>1e6)?NaN:gcdInt(aa,bb);
+    }
+    case "lcm":{
+      if(!nearInt(a)||!nearInt(b))return NaN;
+      const aa=Math.round(a),bb=Math.round(b);
+      if(Math.abs(aa)>1e6||Math.abs(bb)>1e6)return NaN;
+      return Math.abs(aa/gcdInt(aa,bb)*bb);
+    }
+    default:return NaN;
+  }
 }
+function wUn(op){
+  switch(op){
+    case "neg":case "abs":case "sign":return 1;
+    case "sqrt":case "cbrt":case "inv":case "floor":case "ceil":case "round":case "frac":case "square":case "cube":return 2;
+    case "exp":case "expm1":case "log":case "log10":case "log1p":case "sin":case "cos":case "tan":return 3;
+    case "asin":case "acos":case "atan":case "sinh":case "cosh":case "tanh":return 4;
+    default:return 3;
+  }
+}
+function wBin(op){
+  switch(op){
+    case "+":case "-":case "*":case "/":return 1;
+    case "^":return 3;
+    case "min":case "max":return 2;
+    case "mod":return 3;
+    case "atan2":case "hypot":return 4;
+    case "gcd":case "lcm":return 6;
+    default:return 2;
+  }
+}
+function isComm(op){ return op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd"||op==="lcm"; }
 
-// ======== FLAGS ========
+// ---- pruning flags (minimal, matches coordinator) ----
 const TAG_NONE=0,TAG_NEG=1,TAG_EXP=2,TAG_LOG=3,TAG_SQRT=4,TAG_SQ=5,TAG_INV=6,TAG_ABS=7;
 const TAG_SIN=8,TAG_ASIN=9,TAG_COS=10,TAG_ACOS=11,TAG_TAN=12,TAG_ATAN=13;
 const TAG_SINH=14,TAG_COSH=15,TAG_TANH=16;
 const TAG_ADD=17,TAG_SUB=18,TAG_MUL=19,TAG_DIV=20,TAG_POW=21;
-const TAG_CBRT=22,TAG_CUBE=23;
+const TAG_CBRT=22,TAG_CUBE=23,TAG_SIGN=24;
 const F_ZERO=1<<8,F_ONE=1<<9,F_NEGONE=1<<10,F_INT=1<<11,F_NONNEG=1<<12,F_CONST=1<<13;
-function mkFlags(v,tag,isLeaf){let f=tag&0xFF;const e=1e-15;if(Math.abs(v)<e)f|=F_ZERO;if(Math.abs(v-1)<e)f|=F_ONE;if(Math.abs(v+1)<e)f|=F_NEGONE;if(nearInt(v))f|=F_INT;if(v>=0)f|=F_NONNEG;if(isLeaf)f|=F_CONST;return f}
-function getTag(f){return f&0xFF}
-function has(f,b){return(f&b)!==0}
-function opTag(op){switch(op){case"neg":return TAG_NEG;case"abs":return TAG_ABS;case"inv":return TAG_INV;case"exp":case"expm1":return TAG_EXP;case"log":case"log10":case"log1p":return TAG_LOG;case"sqrt":return TAG_SQRT;case"square":return TAG_SQ;case"cbrt":return TAG_CBRT;case"cube":return TAG_CUBE;case"sin":return TAG_SIN;case"asin":return TAG_ASIN;case"cos":return TAG_COS;case"acos":return TAG_ACOS;case"tan":return TAG_TAN;case"atan":return TAG_ATAN;case"sinh":return TAG_SINH;case"cosh":return TAG_COSH;case"tanh":return TAG_TANH;case"+":return TAG_ADD;case"-":return TAG_SUB;case"*":return TAG_MUL;case"/":return TAG_DIV;case"^":return TAG_POW;default:return TAG_NONE}}
-
+function getTag(f){return f&0xFF;}
+function has(f,b){return (f&b)!==0;}
 function pruneUn(op,cf,cv){
   const ct=getTag(cf);
   if(op==="neg"&&ct===TAG_NEG)return true;
@@ -220,9 +664,6 @@ function pruneUn(op,cf,cv){
   if(op==="square"&&ct===TAG_SQRT)return true;
   if(op==="cbrt"&&ct===TAG_CUBE)return true;
   if(op==="cube"&&ct===TAG_CBRT)return true;
-  if(op==="sin"&&ct===TAG_ASIN)return true;if(op==="asin"&&ct===TAG_SIN)return true;
-  if(op==="cos"&&ct===TAG_ACOS)return true;if(op==="acos"&&ct===TAG_COS)return true;
-  if(op==="tan"&&ct===TAG_ATAN)return true;if(op==="atan"&&ct===TAG_TAN)return true;
   if(op==="neg"&&has(cf,F_ZERO))return true;
   if(op==="sqrt"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
   if(op==="exp"&&has(cf,F_ZERO))return true;
@@ -251,327 +692,1579 @@ function pruneBin(op,af,bf,av,bv){
   if(op==="^"&&has(af,F_ZERO))return true;
   if(op==="^"&&has(af,F_ONE))return true;
   if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
+  return false;
+}
+
+// ---- building-block score (cheap) ----
+function bbScore(v, D, magA){
+  if(!Number.isFinite(v)) return 1e9;
+  const a=Math.abs(v);
+  const mag = magA * Math.log1p(a);
+  if(a===0) return mag;
+  // integer closeness
+  const r=Math.round(v);
+  let best=Math.abs(v-r);
+  // small rational closeness
+  const DD=D|0;
+  for(let d=2; d<=DD; d++){
+    const rd=Math.round(v*d);
+    const err=Math.abs(v*d - rd)/d;
+    if(err<best) best=err;
+    if(best<1e-15) break;
+  }
+  return best + mag;
+}
+
+// ---- layers storage ----
+let layers = new Map(); // cost -> packed layer
+function ckFromFlat(flat, off, tCount){
+  let s="";
+  for(let i=0;i<tCount;i++) s += String.fromCharCode(flat[off+i]);
+  return s;
+}
+function ckAdd(flatA, offA, flatB, offB, tCount, maxT){
+  let s="";
+  for(let i=0;i<tCount;i++){
+    const v = flatA[offA+i] + flatB[offB+i];
+    if(v>maxT[i]) return null;
+    s += String.fromCharCode(v);
+  }
+  return s;
+}
+
+// oversize local bucket to reduce quality loss before returning
+function mkBucket(beam){
+  const bucket=new Map();
+  const spLim=Math.max(beam*64, 50000);
+  const keepSp=Math.max(beam*20, 16000);
+  function spill(){
+    const v=Array.from(bucket.values());
+    v.sort((a,b)=>a.keep-b.keep);
+    bucket.clear();
+    for(let i=0;i<Math.min(keepSp,v.length);i++) bucket.set(v[i].key, v[i]);
+  }
+  function put(key, pack){
+    const old=bucket.get(key);
+    if(old && pack.keep>=old.keep) return;
+    pack.key=key;
+    bucket.set(key, pack);
+    if(bucket.size>spLim) spill();
+  }
+  return {bucket, put};
+}
+
+onmessage=(ev)=>{
+  const msg=ev.data;
+  if(msg.type==="init"){
+    KEYP=msg.keyPrec|0;
+    USE_BITMASK=!!msg.useBitmask;
+    TCOUNT=msg.tCount|0;
+    MAXT = msg.maxT ? new Uint16Array(msg.maxT) : null;
+    OPS_UN = msg.opsUn||[];
+    OPS_BIN = msg.opsBin||[];
+    PRUNE = !!msg.pruneEquiv;
+    layers = new Map();
+    postMessage({type:"inited"});
+    return;
+  }
+  if(msg.type==="setLayer"){
+    layers.set(msg.cost|0, msg.layer);
+    return;
+  }
+  if(msg.type==="task"){
+    const {T,c,beam,capUn,capBin,workerId,workerCount,bbD,bbMagA,keepMode} = msg;
+    const {bucket, put}=mkBucket(beam);
+    let visited=0, pruned=0;
+
+    function keepScore(goal, bb){
+      // keepMode: "goal" | "min"  (min(goal, bb))  (ries/meet/rich)
+      if(keepMode==="goal") return goal;
+      return Math.min(goal, bb);
+    }
+
+    // unary
+    for(const op of OPS_UN){
+      const w=wUn(op), sc=c-w;
+      if(sc<1) continue;
+      const src=layers.get(sc);
+      if(!src||!src.len) continue;
+      const lim=Math.min(src.len, capUn);
+
+      for(let i=workerId;i<lim;i+=workerCount){
+        const av=src.v[i], af=src.flags[i];
+        if(PRUNE && pruneUn(op, af, av)){ pruned++; continue; }
+        const v=applyUn(op,av); visited++;
+        if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+
+        const goal=Math.abs(v-T);
+        const bb=bbScore(v, bbD, bbMagA);
+        const keep=keepScore(goal, bb);
+
+        if(USE_BITMASK){
+          const mask=src.mask[i]|0;
+          const key=vKey(v)+"|"+mask;
+          put(key,{v,goal,bb,keep,mask,kind:"u",op,ac:sc,ai:i});
+        }else{
+          const ck=ckFromFlat(src.cnt, i*TCOUNT, TCOUNT);
+          const key=vKey(v)+"|"+ck;
+          put(key,{v,goal,bb,keep,ck,kind:"u",op,ac:sc,ai:i});
+        }
+      }
+    }
+
+    // binary
+    for(const op of OPS_BIN){
+      const w=wBin(op), rem=c-w;
+      if(rem<2) continue;
+      const comm=isComm(op);
+
+      for(let ic=1;ic<=rem-1;ic++){
+        const jc=rem-ic;
+        const A=layers.get(ic), B=layers.get(jc);
+        if(!A||!B||!A.len||!B.len) continue;
+        const cA=Math.min(A.len,capBin), cB=Math.min(B.len,capBin);
+
+        for(let ia=workerId; ia<cA; ia+=workerCount){
+          const av=A.v[ia], af=A.flags[ia];
+          const stB=(comm && ic===jc)?ia:0;
+
+          for(let ib=stB; ib<cB; ib++){
+            const bv=B.v[ib], bf=B.flags[ib];
+            if(PRUNE && pruneBin(op, af, bf, av, bv)){ pruned++; continue; }
+
+            if(USE_BITMASK){
+              const am=A.mask[ia]|0, bm=B.mask[ib]|0;
+              if((am&bm)!==0) continue;
+              const mask=am|bm;
+              const v=applyBin(op,av,bv); visited++;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+
+              const goal=Math.abs(v-T);
+              const bb=bbScore(v, bbD, bbMagA);
+              const keep=keepScore(goal, bb);
+
+              const key=vKey(v)+"|"+mask;
+              put(key,{v,goal,bb,keep,mask,kind:"b",op,ac:ic,ai:ia,bc:jc,bi:ib});
+            }else{
+              const ck=ckAdd(A.cnt, ia*TCOUNT, B.cnt, ib*TCOUNT, TCOUNT, MAXT);
+              if(ck===null) continue;
+              const v=applyBin(op,av,bv); visited++;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+
+              const goal=Math.abs(v-T);
+              const bb=bbScore(v, bbD, bbMagA);
+              const keep=keepScore(goal, bb);
+
+              const key=vKey(v)+"|"+ck;
+              put(key,{v,goal,bb,keep,ck,kind:"b",op,ac:ic,ai:ia,bc:jc,bi:ib});
+            }
+          }
+        }
+      }
+    }
+
+    postMessage({type:"taskDone", payload:{visited, pruned, items:Array.from(bucket.values())}});
+  }
+};
+`;
+
+// ================= Worker builder (single-file) =================
+function buildWorker(){
+const workerSrc = `
+let stopFlag=false;
+
+const CAP=1e12, EXACT_EPS=5e-15, INF=65535;
+
+// ===== mode params =====
+function modeParams(mode){
+  // keyPrec: 状态去重精度
+  // bestPrec: 输出同值去重精度
+  // keepMode: "goal" | "min"
+  // bbD: small rational check denom up to
+  // bbMagA: magnitude penalty
+  // quotas: goal/bb/meet/div in [0,1]
+  // meetStyle: "prec" | "bin"
+  // meetQ/meetR: bin quantize and neighbor radius
+  // revBeamMul: reverse beam multiplier
+  // meetHitBonus: prefer forward items that can meet
+  // candEpsMul: candidate eps multiplier for meet
+  // confirmEpsMul: confirmation eps multiplier for meet
+  // keepMeetDup: output shows meet separately (debug)
+  if(mode==="speed") return {
+    keyPrec:10, bestPrec:10, keepMode:"goal",
+    bbD:24, bbMagA:0.03,
+    qGoal:0.82,qBB:0.08,qMeet:0.02,qDiv:0.08,
+    meetStyle:"prec", meetPrec:10, meetQ:8192, meetR:2,
+    revBeamMul:1.0, meetHitBonus:0.0,
+    candEpsMul:1.6, confirmEpsMul:1.0,
+    spillMul:0.75, capMul:0.75, keepMeetDup:false
+  };
+  if(mode==="accuracy") return {
+    keyPrec:14, bestPrec:12, keepMode:"min",
+    bbD:64, bbMagA:0.02,
+    qGoal:0.55,qBB:0.28,qMeet:0.05,qDiv:0.12,
+    meetStyle:"prec", meetPrec:12, meetQ:8192, meetR:2,
+    revBeamMul:1.6, meetHitBonus:0.10,
+    candEpsMul:1.1, confirmEpsMul:0.75,
+    spillMul:1.7, capMul:1.25, keepMeetDup:false
+  };
+  if(mode==="ries") return {
+    keyPrec:12, bestPrec:11, keepMode:"min",
+    bbD:64, bbMagA:0.015,
+    qGoal:0.40,qBB:0.42,qMeet:0.06,qDiv:0.12,
+    meetStyle:"prec", meetPrec:11, meetQ:8192, meetR:2,
+    revBeamMul:1.4, meetHitBonus:0.08,
+    candEpsMul:1.2, confirmEpsMul:0.9,
+    spillMul:2.1, capMul:1.5, keepMeetDup:false
+  };
+  if(mode==="meet") return {
+    keyPrec:12, bestPrec:11, keepMode:"min",
+    bbD:48, bbMagA:0.02,
+    qGoal:0.40,qBB:0.12,qMeet:0.38,qDiv:0.10,
+    meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
+    revBeamMul:3.0, meetHitBonus:0.25,
+    candEpsMul:4.0, confirmEpsMul:1.0,
+    spillMul:2.2, capMul:1.7, keepMeetDup:true
+  };
+  // balanced
+  return {
+    keyPrec:12, bestPrec:11, keepMode:"min",
+    bbD:48, bbMagA:0.02,
+    qGoal:0.62,qBB:0.18,qMeet:0.05,qDiv:0.15,
+    meetStyle:"prec", meetPrec:10, meetQ:8192, meetR:2,
+    revBeamMul:1.2, meetHitBonus:0.05,
+    candEpsMul:1.5, confirmEpsMul:1.0,
+    spillMul:1.0, capMul:1.0, keepMeetDup:false
+  };
+}
+
+let KEYP=12, BESTP=11;
+function vKey(v){if(!Number.isFinite(v))return"NaN";if(Object.is(v,-0))v=0;return v.toPrecision(KEYP)}
+
+// ===== meet indexing =====
+let MEET_STYLE="prec";
+let MEETP=10;
+let MEET_Q=8192;
+let MEET_R=2;
+
+function meetKeyPrec(v){if(!Number.isFinite(v))return"NaN";if(Object.is(v,-0))v=0;return v.toPrecision(MEETP)}
+function meetKeyBinPrimary(v){
+  if(!Number.isFinite(v))return"NaN";
+  if(Object.is(v,-0))v=0;
+  if(v===0)return "0|0|0";
+  const sign=v<0?1:0;
+  const a=Math.abs(v);
+  const e=Math.floor(Math.log2(a));
+  const scale=Math.pow(2,e);
+  const x=a/scale;
+  const q=Math.round(x*MEET_Q);
+  return ""+sign+"|"+e+"|"+q;
+}
+function meetPrimaryKey(v){
+  return MEET_STYLE==="bin" ? meetKeyBinPrimary(v) : meetKeyPrec(v);
+}
+function meetKeys(v){
+  if(MEET_STYLE!=="bin") return [meetKeyPrec(v)];
+  if(!Number.isFinite(v)) return ["NaN"];
+  if(Object.is(v,-0))v=0;
+  if(v===0) return ["0|0|0"];
+
+  const sign=v<0?1:0;
+  const a=Math.abs(v);
+  const e=Math.floor(Math.log2(a));
+  const scale=Math.pow(2,e);
+  const x=a/scale;
+
+  const out=[];
+  for(let de=-1;de<=1;de++){
+    const e2=e+de;
+    const x2=x*Math.pow(2,-de);
+    const q0=Math.round(x2*MEET_Q);
+    for(let dq=-MEET_R;dq<=MEET_R;dq++){
+      out.push(""+sign+"|"+e2+"|"+(q0+dq));
+    }
+  }
+  return out;
+}
+
+// ===== accuracy label =====
+function relAcc(v,T){
+  const r=Math.abs(v-T)/Math.max(1,Math.abs(T));
+  if(r<EXACT_EPS||r===0)return"exact";
+  const n=1/r;
+  if(!Number.isFinite(n))return"exact";
+  return n>1e6?n.toExponential(4):n.toPrecision(6).replace(/\\.0+$/,"");
+}
+
+// ===== math =====
+function safePow(a,b){
+  if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
+  if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb}
+  if(Math.abs(b)>60)return NaN;
+  const r=Math.pow(a,b);
+  return(!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r
+}
+function erf(x){
+  const s=x<0?-1:1;x=Math.abs(x);
+  const t=1/(1+.3275911*x);
+  return s*(1-((((1.061405429*t-1.453152027)*t+1.421413741)*t-.284496736)*t+.254829592)*t*Math.exp(-x*x))
+}
+function gamma(z){
+  const p=[676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+  if(!Number.isFinite(z))return NaN;
+  if(z<.5){const s=Math.sin(Math.PI*z);return s===0?NaN:Math.PI/(s*gamma(1-z))}
+  z-=1;let x=.99999999999980993;
+  for(let i=0;i<p.length;i++)x+=p[i]/(z+i+1);
+  const t=z+p.length-.5;
+  return Math.sqrt(2*Math.PI)*Math.pow(t,z+.5)*Math.exp(-t)*x
+}
+function factInt(n){if(n<0||n>170)return NaN;let v=1;for(let i=2;i<=n;i++)v*=i;return v}
+function nearInt(x){return Math.abs(x-Math.round(x))<1e-12}
+function gcdInt(a,b){a=Math.abs(a);b=Math.abs(b);while(b){const t=a%b;a=b;b=t}return a}
+
+// ===== weights =====
+function wUn(op){switch(op){
+  case"neg":case"abs":case"sign":return 1;
+  case"sqrt":case"cbrt":case"inv":case"floor":case"ceil":case"round":case"frac":case"square":case"cube":return 2;
+  case"exp":case"expm1":case"log":case"log10":case"log1p":case"sin":case"cos":case"tan":return 3;
+  case"asin":case"acos":case"atan":case"sinh":case"cosh":case"tanh":case"erf":return 4;
+  case"fact":return 6;
+  case"gammafn":return 7;
+  default:return 3
+}}
+function wBin(op){switch(op){
+  case"+":case"-":case"*":case"/":return 1;
+  case"^":return 3;
+  case"min":case"max":return 2;
+  case"mod":return 3;
+  case"atan2":case"hypot":return 4;
+  case"gcd":case"lcm":return 6;
+  default:return 2
+}}
+function isComm(op){return op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd"||op==="lcm"}
+
+// ===== AST =====
+function mkC(sym,val){return{t:0,sym,val}}
+function mkU(op,ch){return{t:1,op,ch}}
+function mkB(op,l,r){return{t:2,op,l,r}}
+
+function applyUn(op,v){switch(op){
+  case"neg":return-v;case"abs":return Math.abs(v);case"inv":return v===0?NaN:1/v;
+  case"sqrt":return v<0?NaN:Math.sqrt(v);case"cbrt":return Math.cbrt(v);
+  case"square":{const r=v*v;return r>CAP?NaN:r}
+  case"cube":{const r=v*v*v;return Math.abs(r)>CAP?NaN:r}
+  case"exp":return v>80?NaN:Math.exp(v);case"expm1":return v>80?NaN:Math.expm1(v);
+  case"log":return v<=0?NaN:Math.log(v);case"log10":return v<=0?NaN:Math.log10(v);case"log1p":return v<=-1?NaN:Math.log1p(v);
+  case"sin":return Math.sin(v);case"cos":return Math.cos(v);case"tan":return Math.tan(v);
+  case"asin":return(v<-1||v>1)?NaN:Math.asin(v);case"acos":return(v<-1||v>1)?NaN:Math.acos(v);case"atan":return Math.atan(v);
+  case"sinh":return Math.abs(v)>80?NaN:Math.sinh(v);case"cosh":return Math.abs(v)>80?NaN:Math.cosh(v);case"tanh":return Math.tanh(v);
+  case"floor":return Math.floor(v);case"ceil":return Math.ceil(v);case"round":return Math.round(v);
+  case"frac":return v-Math.floor(v);case"sign":return Math.sign(v);
+  case"fact":return nearInt(v)?factInt(Math.round(v)):NaN;
+  case"gammafn":return v>60?NaN:gamma(v);
+  case"erf":return erf(v);
+  default:return NaN
+}}
+function applyBin(op,a,b){switch(op){
+  case"+":return a+b;case"-":return a-b;case"*":return a*b;case"/":return b===0?NaN:a/b;case"^":return safePow(a,b);
+  case"min":return Math.min(a,b);case"max":return Math.max(a,b);
+  case"atan2":return Math.atan2(a,b);case"hypot":return Math.hypot(a,b);
+  case"mod":{if(!nearInt(a)||!nearInt(b))return NaN;const bb=Math.round(b);return bb===0?NaN:((Math.round(a)%bb)+bb)%bb}
+  case"gcd":{if(!nearInt(a)||!nearInt(b))return NaN;const aa=Math.round(a),bb=Math.round(b);return(Math.abs(aa)>1e6||Math.abs(bb)>1e6)?NaN:gcdInt(aa,bb)}
+  case"lcm":{if(!nearInt(a)||!nearInt(b))return NaN;const aa=Math.round(a),bb=Math.round(b);if(Math.abs(aa)>1e6||Math.abs(bb)>1e6)return NaN;return Math.abs(aa/gcdInt(aa,bb)*bb)}
+  default:return NaN
+}}
+function evalA(n){
+  if(n.t===0)return n.val;
+  if(n.t===1)return applyUn(n.op,evalA(n.ch));
+  return applyBin(n.op,evalA(n.l),evalA(n.r));
+}
+
+// ===== Pretty Unicode printer (no simplification) =====
+const PREC_ATOM=100, PREC_POSTFIX=96, PREC_UN=90, PREC_POW=80, PREC_MUL=70, PREC_ADD=60, PREC_FUNC=50;
+function prec(n){
+  if(n.t===0)return PREC_ATOM;
+  if(n.t===1){ if(n.op==="fact")return PREC_POSTFIX; return PREC_UN; }
+  if(n.t===2){
+    switch(n.op){
+      case "^":return PREC_POW;
+      case "*":case "/":return PREC_MUL;
+      case "+":case "-":return PREC_ADD;
+      default:return PREC_FUNC;
+    }
+  }
+  return PREC_FUNC;
+}
+function needParen(child,parentOp,side){
+  if(!parentOp)return false;
+  const cp=prec(child);
+  let pp;
+  switch(parentOp){
+    case "^":pp=PREC_POW;break;
+    case "*":case "/":pp=PREC_MUL;break;
+    case "+":case "-":pp=PREC_ADD;break;
+    default:pp=PREC_FUNC;
+  }
+  if(cp>pp)return false;
+  if(cp<pp)return true;
+  if(parentOp==="-"&&side==="right")return true;
+  if(parentOp==="/"&&side==="right")return true;
+  if(parentOp==="^"){ if(side==="left")return true; return false; }
+  return false;
+}
+function pretty(n,parentOp=null,side=null){
+  if(n.t===0)return n.sym;
+  if(n.t===1){
+    const op=n.op, ch=n.ch;
+    if(op==="neg"){
+      const s=pretty(ch,"neg","right");
+      const need=prec(ch)<PREC_UN;
+      return "−"+(need?"("+s+")":s);
+    }
+    if(op==="sqrt"){
+      const s=pretty(ch,null,null);
+      const need=prec(ch)<PREC_UN;
+      return "√"+(need?"("+s+")":s);
+    }
+    if(op==="cbrt"){
+      const s=pretty(ch,null,null);
+      const need=prec(ch)<PREC_UN;
+      return "∛"+(need?"("+s+")":s);
+    }
+    if(op==="inv"){
+      const s=pretty(ch,null,null);
+      const need=prec(ch)<PREC_MUL;
+      return "1/"+(need?"("+s+")":s);
+    }
+    if(op==="square"){
+      const s=pretty(ch,null,null);
+      const need=prec(ch)<PREC_POSTFIX;
+      return (need?"("+s+")":s)+"²";
+    }
+    if(op==="cube"){
+      const s=pretty(ch,null,null);
+      const need=prec(ch)<PREC_POSTFIX;
+      return (need?"("+s+")":s)+"³";
+    }
+    if(op==="fact"){
+      const s=pretty(ch,null,null);
+      const need=prec(ch)<PREC_POSTFIX;
+      return (need?"("+s+")":s)+"!";
+    }
+    const s=pretty(ch,null,null);
+    const name=(op==="gammafn")?"Γ":op;
+    return name+"("+s+")";
+  }
+  const op=n.op;
+  if(op==="min"||op==="max"||op==="atan2"||op==="hypot"||op==="mod"||op==="gcd"||op==="lcm"){
+    const a=pretty(n.l,null,null), b=pretty(n.r,null,null);
+    return op+"("+a+","+b+")";
+  }
+  const L=n.l,R=n.r;
+  const ls=pretty(L,op,"left"), rs=pretty(R,op,"right");
+  const lout=needParen(L,op,"left")?"("+ls+")":ls;
+  const rout=needParen(R,op,"right")?"("+rs+")":rs;
+  return lout+op+rout;
+}
+function strA(n){return pretty(n,null,null);}
+
+// ===== pruning flags =====
+const TAG_NONE=0,TAG_NEG=1,TAG_EXP=2,TAG_LOG=3,TAG_SQRT=4,TAG_SQ=5,TAG_INV=6,TAG_ABS=7;
+const TAG_SIN=8,TAG_ASIN=9,TAG_COS=10,TAG_ACOS=11,TAG_TAN=12,TAG_ATAN=13;
+const TAG_SINH=14,TAG_COSH=15,TAG_TANH=16;
+const TAG_ADD=17,TAG_SUB=18,TAG_MUL=19,TAG_DIV=20,TAG_POW=21;
+const TAG_CBRT=22,TAG_CUBE=23,TAG_SIGN=24;
+const F_ZERO=1<<8,F_ONE=1<<9,F_NEGONE=1<<10,F_INT=1<<11,F_NONNEG=1<<12,F_CONST=1<<13;
+
+function mkFlags(v,tag,isLeaf){
+  let f=tag&0xFF;const e=1e-15;
+  if(Math.abs(v)<e)f|=F_ZERO;
+  if(Math.abs(v-1)<e)f|=F_ONE;
+  if(Math.abs(v+1)<e)f|=F_NEGONE;
+  if(nearInt(v))f|=F_INT;
+  if(v>=0)f|=F_NONNEG;
+  if(isLeaf)f|=F_CONST;
+  return f
+}
+function getTag(f){return f&0xFF}
+function has(f,b){return(f&b)!==0}
+function opTag(op){switch(op){
+  case"neg":return TAG_NEG;case"abs":return TAG_ABS;case"inv":return TAG_INV;
+  case"exp":case"expm1":return TAG_EXP;
+  case"log":case"log10":case"log1p":return TAG_LOG;
+  case"sqrt":return TAG_SQRT;case"square":return TAG_SQ;
+  case"cbrt":return TAG_CBRT;case"cube":return TAG_CUBE;
+  case"sin":return TAG_SIN;case"asin":return TAG_ASIN;
+  case"cos":return TAG_COS;case"acos":return TAG_ACOS;
+  case"tan":return TAG_TAN;case"atan":return TAG_ATAN;
+  case"sinh":return TAG_SINH;case"cosh":return TAG_COSH;case"tanh":return TAG_TANH;
+  case"sign":return TAG_SIGN;
+  case"+":return TAG_ADD;case"-":return TAG_SUB;case"*":return TAG_MUL;case"/":return TAG_DIV;case"^":return TAG_POW;
+  default:return TAG_NONE
+}}
+function pruneUn(op,cf,cv){
+  const ct=getTag(cf);
+  if(op==="neg"&&ct===TAG_NEG)return true;
+  if(op==="abs"&&(ct===TAG_ABS||ct===TAG_NEG))return true;
+  if(op==="abs"&&has(cf,F_NONNEG))return true;
+  if(op==="inv"&&ct===TAG_INV)return true;
+  if(op==="exp"&&ct===TAG_LOG)return true;
+  if(op==="log"&&ct===TAG_EXP)return true;
+  if(op==="sqrt"&&ct===TAG_SQ)return true;
+  if(op==="square"&&ct===TAG_SQRT)return true;
+  if(op==="cbrt"&&ct===TAG_CUBE)return true;
+  if(op==="cube"&&ct===TAG_CBRT)return true;
+  if(op==="sin"&&ct===TAG_ASIN)return true;if(op==="asin"&&ct===TAG_SIN)return true;
+  if(op==="cos"&&ct===TAG_ACOS)return true;if(op==="acos"&&ct===TAG_COS)return true;
+  if(op==="tan"&&ct===TAG_ATAN)return true;if(op==="atan"&&ct===TAG_TAN)return true;
+
+  if(op==="neg"&&has(cf,F_ZERO))return true;
+  if(op==="sqrt"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
+  if(op==="exp"&&has(cf,F_ZERO))return true;
+  if(op==="log"&&has(cf,F_ONE))return true;
+  if(op==="inv"&&(has(cf,F_ONE)||has(cf,F_NEGONE)))return true;
+  if(op==="square"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
+  if(op==="cube"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
+  if((op==="floor"||op==="ceil"||op==="round")&&has(cf,F_INT))return true;
+  if(op==="frac"&&has(cf,F_INT))return true;
+  if(op==="sign"&&(ct===TAG_SIGN||has(cf,F_ZERO)))return true;
+  return false
+}
+function pruneBin(op,af,bf,av,bv){
+  if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
+  if(op==="-"&&has(bf,F_ZERO))return true;
+  if(op==="-"&&Math.abs(av-bv)<1e-15)return true;
+  if(op==="-"&&has(af,F_ZERO))return true;
+  if(op==="*"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
+  if(op==="*"&&(has(af,F_ONE)||has(bf,F_ONE)))return true;
+  if(op==="*"&&(has(af,F_NEGONE)||has(bf,F_NEGONE)))return true;
+  if(op==="/"&&has(af,F_ZERO))return true;
+  if(op==="/"&&(has(bf,F_ONE)||has(bf,F_NEGONE)))return true;
+  if(op==="/"&&Math.abs(av-bv)<1e-15&&Math.abs(av)>1e-15)return true;
+  if(op==="^"&&has(bf,F_ZERO))return true;
+  if(op==="^"&&has(bf,F_ONE))return true;
+  if(op==="^"&&has(af,F_ZERO))return true;
+  if(op==="^"&&has(af,F_ONE))return true;
+  if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
+
   if(op==="+"&&getTag(bf)===TAG_NEG)return true;
   if(op==="+"&&getTag(af)===TAG_NEG)return true;
   if(op==="-"&&getTag(bf)===TAG_NEG)return true;
   if(op==="*"&&(getTag(bf)===TAG_INV||getTag(af)===TAG_INV))return true;
   if(op==="/"&&getTag(bf)===TAG_INV)return true;
-  return false;
+  return false
 }
 
-function applyUn(op,v){switch(op){case"neg":return-v;case"abs":return Math.abs(v);case"inv":return v===0?NaN:1/v;case"sqrt":return v<0?NaN:Math.sqrt(v);case"cbrt":return Math.cbrt(v);case"square":{const r=v*v;return r>CAP?NaN:r}case"cube":{const r=v*v*v;return Math.abs(r)>CAP?NaN:r}case"exp":return v>80?NaN:Math.exp(v);case"expm1":return v>80?NaN:Math.expm1(v);case"log":return v<=0?NaN:Math.log(v);case"log10":return v<=0?NaN:Math.log10(v);case"log1p":return v<=-1?NaN:Math.log1p(v);case"sin":return Math.sin(v);case"cos":return Math.cos(v);case"tan":return Math.tan(v);case"asin":return(v<-1||v>1)?NaN:Math.asin(v);case"acos":return(v<-1||v>1)?NaN:Math.acos(v);case"atan":return Math.atan(v);case"sinh":return Math.abs(v)>80?NaN:Math.sinh(v);case"cosh":return Math.abs(v)>80?NaN:Math.cosh(v);case"tanh":return Math.tanh(v);case"floor":return Math.floor(v);case"ceil":return Math.ceil(v);case"round":return Math.round(v);case"frac":return v-Math.floor(v);case"sign":return Math.sign(v);case"fact":return nearInt(v)?factInt(Math.round(v)):NaN;case"gammafn":return v>60?NaN:gamma(v);case"erf":return erf(v);default:return NaN}}
-function applyBin(op,a,b){switch(op){case"+":return a+b;case"-":return a-b;case"*":return a*b;case"/":return b===0?NaN:a/b;case"^":return safePow(a,b);case"min":return Math.min(a,b);case"max":return Math.max(a,b);case"atan2":return Math.atan2(a,b);case"hypot":return Math.hypot(a,b);case"mod":{if(!nearInt(a)||!nearInt(b))return NaN;const bb=Math.round(b);return bb===0?NaN:((Math.round(a)%bb)+bb)%bb}case"gcd":{if(!nearInt(a)||!nearInt(b))return NaN;const aa=Math.round(a),bb=Math.round(b);return(Math.abs(aa)>1e6||Math.abs(bb)>1e6)?NaN:gcdInt(aa,bb)}case"lcm":{if(!nearInt(a)||!nearInt(b))return NaN;const aa=Math.round(a),bb=Math.round(b);if(Math.abs(aa)>1e6||Math.abs(bb)>1e6)return NaN;return Math.abs(aa/gcdInt(aa,bb)*bb)}default:return NaN}}
-function unStr(op,a){switch(op){case"neg":return"(-"+a+")";case"abs":return"abs("+a+")";case"inv":return"(1/("+a+"))";case"sqrt":return"sqrt("+a+")";case"cbrt":return"cbrt("+a+")";case"square":return"("+a+")²";case"cube":return"("+a+")³";case"exp":return"exp("+a+")";case"expm1":return"expm1("+a+")";case"log":return"log("+a+")";case"log10":return"log10("+a+")";case"log1p":return"log1p("+a+")";case"sin":return"sin("+a+")";case"cos":return"cos("+a+")";case"tan":return"tan("+a+")";case"asin":return"asin("+a+")";case"acos":return"acos("+a+")";case"atan":return"atan("+a+")";case"sinh":return"sinh("+a+")";case"cosh":return"cosh("+a+")";case"tanh":return"tanh("+a+")";case"floor":return"floor("+a+")";case"ceil":return"ceil("+a+")";case"round":return"round("+a+")";case"frac":return"frac("+a+")";case"sign":return"sign("+a+")";case"fact":return"("+a+")!";case"gammafn":return"\\u0393("+a+")";case"erf":return"erf("+a+")";default:return op+"("+a+")"}}
-function binStr(op,a,b){if(op==="+"||op==="-"||op==="*"||op==="/"||op==="^")return"("+a+op+b+")";return op+"("+a+","+b+")"}
+// ===== reverse inverse =====
+function invUn(op,r){switch(op){
+  case"neg":return[{v:-r}];
+  case"abs":return r<0?[]:[{v:r},{v:-r}];
+  case"inv":return r===0?[]:[{v:1/r}];
+  case"sqrt":return[{v:r*r}];
+  case"cbrt":return[{v:r*r*r}];
+  case"square":return r<0?[]:[{v:Math.sqrt(r)},{v:-Math.sqrt(r)}];
+  case"cube":return[{v:Math.cbrt(r)}];
+  case"exp":return r<=0?[]:[{v:Math.log(r)}];
+  case"expm1":return r<=-1?[]:[{v:Math.log1p(r)}];
+  case"log":return[{v:Math.exp(r)}];
+  case"log10":return[{v:Math.pow(10,r)}];
+  case"log1p":return[{v:Math.expm1(r)}];
+  case"sin":return(r<-1||r>1)?[]:[{v:Math.asin(r)}];
+  case"cos":return(r<-1||r>1)?[]:[{v:Math.acos(r)}];
+  case"tan":return[{v:Math.atan(r)}];
+  case"asin":return[{v:Math.sin(r)}];
+  case"acos":return[{v:Math.cos(r)}];
+  case"atan":return[{v:Math.tan(r)}];
+  case"sinh":return[{v:Math.asinh(r)}];
+  case"cosh":return r<1?[]:[{v:Math.acosh(r)}];
+  case"tanh":return(r<=-1||r>=1)?[]:[{v:Math.atanh(r)}];
+  default:return[]
+}}
+function invBinR(op,r,a){switch(op){
+  case"+":return r-a;
+  case"-":return a-r;
+  case"*":return a===0?NaN:r/a;
+  case"/":return r===0?NaN:a/r;
+  case"^":return a<=0||r<=0?NaN:Math.log(r)/Math.log(a);
+  default:return NaN
+}}
+function invBinL(op,r,b){switch(op){
+  case"+":return r-b;
+  case"-":return r+b;
+  case"*":return b===0?NaN:r/b;
+  case"/":return r*b;
+  case"^":return b===0||r<=0?NaN:Math.pow(r,1/b);
+  default:return NaN
+}}
 
-function invUn(op,r){switch(op){case"neg":return[{v:-r,tag:TAG_NEG}];case"abs":return r<0?[]:[{v:r,tag:TAG_ABS},{v:-r,tag:TAG_ABS}];case"inv":return r===0?[]:[{v:1/r,tag:TAG_INV}];case"sqrt":return[{v:r*r,tag:TAG_SQRT}];case"cbrt":return[{v:r*r*r,tag:TAG_CBRT}];case"square":return r<0?[]:[{v:Math.sqrt(r),tag:TAG_SQ},{v:-Math.sqrt(r),tag:TAG_SQ}];case"cube":return[{v:Math.cbrt(r),tag:TAG_CUBE}];case"exp":return r<=0?[]:[{v:Math.log(r),tag:TAG_EXP}];case"expm1":return r<=-1?[]:[{v:Math.log1p(r),tag:TAG_EXP}];case"log":return[{v:Math.exp(r),tag:TAG_LOG}];case"log10":return[{v:Math.pow(10,r),tag:TAG_LOG}];case"log1p":return[{v:Math.expm1(r),tag:TAG_LOG}];case"sin":return(r<-1||r>1)?[]:[{v:Math.asin(r),tag:TAG_SIN}];case"cos":return(r<-1||r>1)?[]:[{v:Math.acos(r),tag:TAG_COS}];case"tan":return[{v:Math.atan(r),tag:TAG_TAN}];case"asin":return[{v:Math.sin(r),tag:TAG_ASIN}];case"acos":return[{v:Math.cos(r),tag:TAG_ACOS}];case"atan":return[{v:Math.tan(r),tag:TAG_ATAN}];case"sinh":return[{v:Math.asinh(r),tag:TAG_SINH}];case"cosh":return r<1?[]:[{v:Math.acosh(r),tag:TAG_COSH}];case"tanh":return(r<=-1||r>=1)?[]:[{v:Math.atanh(r),tag:TAG_TANH}];default:return[]}}
-function invBinR(op,r,a){switch(op){case"+":return r-a;case"-":return a-r;case"*":return a===0?NaN:r/a;case"/":return r===0?NaN:a/r;case"^":return a<=0||r<=0?NaN:Math.log(r)/Math.log(a);default:return NaN}}
-function invBinL(op,r,b){switch(op){case"+":return r-b;case"-":return r+b;case"*":return b===0?NaN:r/b;case"/":return r*b;case"^":return b===0||r<=0?NaN:Math.pow(r,1/b);default:return NaN}}
+// ===== building-block score =====
+function bbScore(v, D, magA){
+  if(!Number.isFinite(v)) return 1e9;
+  const a=Math.abs(v);
+  const mag = magA * Math.log1p(a);
+  if(a===0) return mag;
+  let best=Math.abs(v-Math.round(v));
+  const DD=D|0;
+  for(let d=2; d<=DD; d++){
+    const rd=Math.round(v*d);
+    const err=Math.abs(v*d-rd)/d;
+    if(err<best) best=err;
+    if(best<1e-15) break;
+  }
+  return best + mag;
+}
 
-// ============ MAIN ============
+// ===== bucket with multi-objective selection =====
+function mkBucket(beam){
+  const bucket=new Map();
+  return {
+    bucket,
+    put(key, pack){
+      const old=bucket.get(key);
+      if(old && pack.keep>=old.keep) return false;
+      pack.key=key;
+      bucket.set(key, pack);
+      return true;
+    }
+  };
+}
+
+// ===== selection from bucket values with quotas =====
+function selectTop(items, beam, divRatio, qGoal, qBB, qMeet, qDiv, revIdx){
+  // items each: {v, goal, bb, keep, ...; revHit computed optionally}
+  const out=[];
+  const used=new Set(); // by key
+  function takeFrom(sorted, limit){
+    for(let i=0;i<sorted.length && out.length<beam && limit>0;i++){
+      const it=sorted[i];
+      if(used.has(it.key)) continue;
+      used.add(it.key);
+      out.push(it);
+      limit--;
+    }
+  }
+
+  // compute revHit if revIdx provided
+  if(revIdx){
+    for(const it of items){
+      it.revHit = revIdx.has(meetPrimaryKey(it.v));
+    }
+  }else{
+    for(const it of items){ it.revHit=false; }
+  }
+
+  const byGoal = items.slice().sort((a,b)=>a.goal-b.goal);
+  const byBB   = items.slice().sort((a,b)=>a.bb-b.bb);
+  const meetList = items.filter(x=>x.revHit).sort((a,b)=>a.goal-b.goal);
+
+  const nGoal=Math.max(0, Math.floor(beam*qGoal));
+  const nBB  =Math.max(0, Math.floor(beam*qBB));
+  const nMeet=Math.max(0, Math.floor(beam*qMeet));
+  const nDiv =Math.max(0, Math.floor(beam*qDiv));
+
+  takeFrom(byGoal, nGoal);
+  takeFrom(meetList, nMeet);
+  takeFrom(byBB, nBB);
+
+  // diversity by magnitude bins (prefer low keep)
+  if(nDiv>0){
+    const bins=new Map();
+    for(const it of items){
+      if(used.has(it.key)) continue;
+      const b=Math.floor(Math.log(Math.abs(it.v)+1e-30)*3);
+      const old=bins.get(b);
+      if(!old || it.keep<old.keep) bins.set(b,it);
+    }
+    const divArr=Array.from(bins.values()).sort((a,b)=>a.keep-b.keep);
+    takeFrom(divArr, nDiv);
+  }
+
+  // fill rest by keep
+  if(out.length<beam){
+    const byKeep=items.slice().sort((a,b)=>a.keep-b.keep);
+    takeFrom(byKeep, beam-out.length);
+  }
+
+  return out;
+}
+
+// ================= MAIN =================
 onmessage=async(ev)=>{
-  const msg=ev.data;if(msg.type==="stop"){stopFlag=true;return}if(msg.type==="hint"){sharedBestDelta=Math.min(sharedBestDelta,msg.bestDelta||Infinity);return}if(msg.type!=="start")return;
+  const msg=ev.data;
+  if(msg.type==="stop"){stopFlag=true;return;}
+  if(msg.type!=="start")return;
+
   stopFlag=false;
-  let{T,maxC,beam,outN,timeLimit,infiniteTime,emitInterval,opsUn,opsBin,consts,showCounts,bidir,divRatio,pruneEquiv,shardIndex=0,shardCount=1,perfMode="balanced",beamPerWorker=0}=msg;
-  let sharedBestDelta=Infinity;
-  const effBeam=Math.max(50,beamPerWorker||beam);
+
+  let {
+    T, mode, maxC, beam, divRatio, outN, timeLimit, infiniteTime, emitInterval,
+    opsUn, opsBin, consts, showCounts, bidir, pruneEquiv, excludeExact,
+    mt, threads, subSrc
+  } = msg;
+
+  mode=mode||"balanced";
+  const mp=modeParams(mode);
+
+  KEYP=mp.keyPrec;
+  BESTP=mp.bestPrec;
+
+  MEET_STYLE=mp.meetStyle;
+  MEETP=mp.meetPrec;
+  MEET_Q=mp.meetQ|0;
+  MEET_R=mp.meetR|0;
+
   emitInterval=Math.max(50,Math.min(60000,emitInterval|0||500));
   const lim=infiniteTime?Infinity:Math.max(0,timeLimit);
   divRatio=Math.max(0,Math.min(1,divRatio||0));
 
+  excludeExact=!!excludeExact;
+  pruneEquiv=!!pruneEquiv;
+  bidir=!!bidir;
+  mt=!!mt;
+  threads=Math.max(1,Math.min(64,(threads|0)||1));
+
+  // internal beams
+  const beamF = Math.max(50, Math.floor(beam));
+  const beamR = Math.max(50, Math.floor(beam * (mp.revBeamMul||1)));
+
+  // constraints analysis
   const nC=consts.length;
   const constrainedIdx=[];
-  for(let i=0;i<nC;i++){const mn=consts[i].min??0,mx=consts[i].max??INF;if(mn>mx){postMessage({type:"error",payload:consts[i].s+" min>max"});return}if(mn>0||mx<INF)constrainedIdx.push(i)}
-  const hasHardConstraints=constrainedIdx.length>0;
+  for(let i=0;i<nC;i++){
+    const mn=consts[i].min??0, mx=consts[i].max??INF;
+    if(mn>mx){postMessage({type:"error",payload:consts[i].s+" min>max"});return}
+    if(mn>0||mx<INF) constrainedIdx.push(i);
+  }
+
+  // bitmask optimization: only for constrained count<=30 and each max<=1
   let useBitmask=true;
-  if(constrainedIdx.length>4)useBitmask=false;
-  for(const i of constrainedIdx)if((consts[i].min??0)>1||(consts[i].max??INF)>1){useBitmask=false;break}
+  if(constrainedIdx.length>30) useBitmask=false;
+  for(const i of constrainedIdx){
+    if((consts[i].min??0)>1||(consts[i].max??INF)>1){useBitmask=false;break}
+  }
+
   const k=constrainedIdx.length;
-  const idx2bit=new Int16Array(nC);idx2bit.fill(-1);
-  for(let p=0;p<k;p++)idx2bit[constrainedIdx[p]]=p;
-  const minBits=new Uint8Array(k),maxBits=new Uint8Array(k),symBits=new Array(k);
-  for(let p=0;p<k;p++){const i=constrainedIdx[p];minBits[p]=(consts[i].min??0)?1:0;maxBits[p]=(consts[i].max??INF)===0?0:1;symBits[p]=consts[i].s}
+  const idx2bit=new Int16Array(nC); idx2bit.fill(-1);
+  for(let p=0;p<k;p++) idx2bit[constrainedIdx[p]]=p;
+
+  const minBits=new Uint8Array(k), maxBits=new Uint8Array(k), symBits=new Array(k);
+  for(let p=0;p<k;p++){
+    const i=constrainedIdx[p];
+    minBits[p]=(consts[i].min??0)?1:0;
+    maxBits[p]=(consts[i].max??INF)===0?0:1;
+    symBits[p]=consts[i].s;
+  }
+
   const EMPTY=new Uint16Array(0);
-  let tCount=0,minT,maxT,symT;
-  if(!useBitmask){tCount=constrainedIdx.length;minT=new Uint16Array(tCount);maxT=new Uint16Array(tCount);symT=new Array(tCount);for(let p=0;p<tCount;p++){const i=constrainedIdx[p];minT[p]=Math.min(INF,Math.max(0,consts[i].min??0));maxT[p]=Math.min(INF,Math.max(0,consts[i].max??INF));symT[p]=consts[i].s}}
-  function maskOk(m){for(let p=0;p<k;p++)if(minBits[p]&&((m>>p)&1)===0)return false;return true}
-  function maskStr(m){if(!showCounts||k===0)return"";const p=[];for(let i=0;i<k;i++)p.push(symBits[i]+":"+((m>>i)&1));return"["+p.join(", ")+"]"}
-  function cntOk(c){for(let i=0;i<tCount;i++)if(c[i]<minT[i])return false;return true}
-  function cntStr(c){if(!showCounts||tCount===0)return"";const p=[];for(let i=0;i<tCount;i++)p.push(symT[i]+":"+c[i]);return"["+p.join(", ")+"]"}
-  function addCnt(a,b){if(tCount===0)return EMPTY;const o=new Uint16Array(tCount);for(let i=0;i<tCount;i++){const s=a[i]+b[i];if(s>maxT[i])return null;o[i]=s}return o}
-  function combMask(a,b){return(a&b)?-1:a|b}
+  let tCount=0, minT=null, maxT=null, symT=null;
+  if(!useBitmask){
+    tCount=constrainedIdx.length;
+    minT=new Uint16Array(tCount);
+    maxT=new Uint16Array(tCount);
+    symT=new Array(tCount);
+    for(let p=0;p<tCount;p++){
+      const i=constrainedIdx[p];
+      minT[p]=Math.min(INF,Math.max(0,consts[i].min??0));
+      maxT[p]=Math.min(INF,Math.max(0,consts[i].max??INF));
+      symT[p]=consts[i].s;
+    }
+  }
 
-  const t0=performance.now();let lastEmit=t0,visited=0,meetCount=0,pruned=0,reEvalFixed=0,dupesKilled=0;
+  function maskOk(m){ for(let p=0;p<k;p++) if(minBits[p] && ((m>>p)&1)===0) return false; return true; }
+  function maskStr(m){
+    if(!showCounts||k===0) return "";
+    const p=[]; for(let i=0;i<k;i++) p.push(symBits[i]+":"+((m>>i)&1));
+    return "["+p.join(", ")+"]";
+  }
+  function cntOk(c){ for(let i=0;i<tCount;i++) if(c[i]<minT[i]) return false; return true; }
+  function cntStr(c){
+    if(!showCounts||tCount===0) return "";
+    const p=[]; for(let i=0;i<tCount;i++) p.push(symT[i]+":"+c[i]);
+    return "["+p.join(", ")+"]";
+  }
+  function addCnt(a,b){
+    if(tCount===0) return EMPTY;
+    const o=new Uint16Array(tCount);
+    for(let i=0;i<tCount;i++){
+      const s=a[i]+b[i];
+      if(s>maxT[i]) return null;
+      o[i]=s;
+    }
+    return o;
+  }
+  function ckFromCnt(cnt){
+    let s="";
+    for(let i=0;i<tCount;i++) s += String.fromCharCode(cnt[i]);
+    return s;
+  }
+  function cntFromCk(ck){
+    const out=new Uint16Array(tCount);
+    for(let i=0;i<tCount;i++) out[i]=ck.charCodeAt(i)||0;
+    return out;
+  }
+  function combMask(a,b){ return (a&b)?-1:(a|b); }
+
+  // stats
+  const t0=performance.now();
+  let lastEmit=t0;
+  let visited=0, meetConfirmed=0, meetLookups=0, meetCandidates=0;
+  let pruned=0, reEvalFixed=0, dupesKilled=0;
+
   const best=[];
+  const bestSeen=new Map();
 
-  // ===== OUTPUT DEDUP: by rounded value =====
-  // When adding to best[], we dedup by rounding to ~10 significant digits
-  // so semantically identical expressions (different trees, same value) collapse
-  const bestSeenValues = new Map(); // roundedVal -> best entry index
-
-  function emit(c){const now=performance.now();if(now-lastEmit>=emitInterval){lastEmit=now;postMessage({type:"progress",payload:{elapsed:Math.round(now-t0),maxC,c,visited,meetCount,pruned,reEvalFixed,dupesKilled,mode:useBitmask?"bitmask":"counts",best:best.slice(0,outN)}})}}
+  function emit(c){
+    const now=performance.now();
+    if(now-lastEmit>=emitInterval){
+      lastEmit=now;
+      postMessage({type:"progress", payload:{
+        elapsed:Math.round(now-t0), maxC, c,
+        visited, pruned,
+        meetLookups, meetCandidates, meetConfirmed,
+        reEvalFixed, dupesKilled,
+        mode: useBitmask?"bitmask":"counts",
+        mt: (mt && threads>1) ? ("ON("+threads+")") : "OFF",
+        profile: mode,
+        beamF, beamR,
+        best: best.slice(0,outN)
+      }});
+    }
+  }
 
   function pushBest(obj){
-    let trueVal=obj.v;
+    let v=obj.v;
     if(obj.ast){
-      trueVal=evalA(obj.ast);
-      if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP)return;
-      if(Math.abs(trueVal-obj.v)>1e-12)reEvalFixed++;
-      obj.v=trueVal;
+      const tv=evalA(obj.ast);
+      if(!Number.isFinite(tv)||Math.abs(tv)>CAP) return;
+      if(Math.abs(tv-v)>1e-12) reEvalFixed++;
+      v=tv;
     }
-    const acc=relAcc(obj.v,T);if(acc==="exact")return;
-    const ci=useBitmask?maskStr(obj.mask??0):cntStr(obj.cnt??EMPTY);
-    if(useBitmask&&!maskOk(obj.mask??0))return;
-    if(!useBitmask&&obj.cnt&&!cntOk(obj.cnt))return;
+    const acc=relAcc(v,T);
+    if(excludeExact && acc==="exact") return;
+
+    if(useBitmask){
+      if(!maskOk(obj.mask||0)) return;
+    }else{
+      if(obj.cnt && !cntOk(obj.cnt)) return;
+    }
 
     const expr=obj.ast?strA(obj.ast):(obj.s||"?");
-    const delta=obj.v-T;
-    const absDelta=Math.abs(delta);
+    const delta=v-T;
+    const ci=useBitmask?maskStr(obj.mask||0):cntStr(obj.cnt||EMPTY);
 
-    if(!hasHardConstraints&&Number.isFinite(sharedBestDelta)&&best.length>=outN&&absDelta>sharedBestDelta*3.0)return;
+    const valKey=v.toPrecision(BESTP);
+    const type=obj.searchType||"fwd";
+    const key = mp.keepMeetDup ? (valKey+"|"+type) : valKey;
 
-    // ===== DEDUP by value: keep only the simplest expression for each ~same value =====
-    const valRound = obj.v.toPrecision(11);
-    const existing = bestSeenValues.get(valRound);
-    if(existing !== undefined){
-      const old = best[existing];
+    const idx=bestSeen.get(key);
+    if(idx!==undefined){
+      const old=best[idx];
       if(old && old.cost <= (obj.cost||999)){
         dupesKilled++;
-        return; // already have a simpler expression with same value
+        return;
       }
-      // replace with simpler one
-      best[existing] = {expr,v:obj.v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:obj.searchType||"fwd"};
+      best[idx]={expr,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type};
       best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
       return;
     }
 
-    const entry = {expr,v:obj.v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:obj.searchType||"fwd"};
-    best.push(entry);
+    best.push({expr,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type});
     best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
+    if(best.length>outN*4) best.length=outN*3;
 
-    // Rebuild index after sort
-    if(best.length>outN*3) best.length=outN*2;
-    bestSeenValues.clear();
-    for(let i=0;i<best.length;i++) bestSeenValues.set(best[i].v.toPrecision(11), i);
-  }
-
-  function mkBucket(){
-    const perfMap={speed:{sp:12,keep:4},balanced:{sp:18,keep:6},memory:{sp:10,keep:3},quality:{sp:24,keep:8}};
-    const perf=perfMap[perfMode]||perfMap.balanced;
-    const bucket=new Map();const spLim=Math.max(effBeam*perf.sp,7000),keepSp=Math.max(effBeam*perf.keep,2200);
-    function spill(){const v=Array.from(bucket.values());v.sort((a,b)=>a.score-b.score);bucket.clear();for(let i=0;i<Math.min(keepSp,v.length);i++){const it=v[i];bucket.set(it.key,it)}}
-    function put(key,score,pack){const old=bucket.get(key);if(old&&score>=old.score)return false;pack.score=score;pack.key=key;bucket.set(key,pack);if(bucket.size>spLim)spill();return true}
-    function fin(cost){
-      const vals=Array.from(bucket.values());const nT=Math.ceil(effBeam*(1-divRatio)),nD=effBeam-nT;
-      vals.sort((a,b)=>a.score-b.score);const out=[],usedBins=new Set();
-      for(let i=0;i<Math.min(nT,vals.length);i++){const it=vals[i];it.cost=cost;out.push(it);usedBins.add(Math.floor(Math.log(Math.abs(it.v)+1e-30)*3))}
-      if(nD>0&&vals.length>nT){const rem=vals.slice(nT);const bm=new Map();for(const it of rem){const b=Math.floor(Math.log(Math.abs(it.v)+1e-30)*3);if(!usedBins.has(b)&&(!bm.has(b)||it.score<bm.get(b).score))bm.set(b,it)}const di=Array.from(bm.values());di.sort((a,b)=>a.score-b.score);for(let i=0;i<Math.min(nD,di.length);i++){di[i].cost=cost;out.push(di[i])}if(out.length<effBeam){const ok=new Set(out.map(x=>x.key));for(const it of rem){if(out.length>=effBeam)break;if(!ok.has(it.key)){it.cost=cost;out.push(it)}}}}
-      return out;
+    bestSeen.clear();
+    for(let i=0;i<best.length;i++){
+      const vk=best[i].v.toPrecision(BESTP);
+      const kk = mp.keepMeetDup ? (vk+"|"+(best[i].searchType||"fwd")) : vk;
+      bestSeen.set(kk,i);
     }
-    return{bucket,put,fin};
   }
 
+  // forward layers
   const fwd=Array.from({length:maxC+1},()=>[]);
-  {
-    const{put,fin}=mkBucket();
-    for(let i=0;i<nC;i++){if(shardCount>1&&(i%shardCount)!==shardIndex)continue;
-      const v=consts[i].v;visited++;
-      if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-      const score=Math.abs(v-T);const flags=mkFlags(v,TAG_NONE,true);
-      const ast=mkC(consts[i].s,v);
-      if(useBitmask){const bit=idx2bit[i];let mask=0;if(bit>=0){if(!maxBits[bit])continue;mask=1<<bit}put(vKey(v)+"|"+mask,score,{v,ast,mask,flags})}
-      else{let cnt=EMPTY;const pos=idx2bit[i];if(pos>=0){cnt=new Uint16Array(tCount);cnt[pos]=1;if(cnt[pos]>maxT[pos])continue}const ck=tCount?Array.from(cnt).join(","):"";put(vKey(v)+"|"+ck,score,{v,ast,cnt,ck,flags})}
-    }
-    fwd[1]=fin(1);for(const e of fwd[1]){e.searchType="fwd";pushBest(e)}emit(1);
-  }
 
+  // reverse
   const rev=Array.from({length:maxC+1},()=>[]);
   const revIdx=new Map();
-  function addRevIdx(items){for(const it of items){const k2=vKey(it.v);if(!revIdx.has(k2))revIdx.set(k2,[]);revIdx.get(k2).push(it)}}
-  function tryMeet(f){
-    const k2=vKey(f.v);const rl=revIdx.get(k2);if(!rl)return;
-    for(const r of rl){
-      if(useBitmask){if((f.mask&r.mask)!==0)continue}
-      else{const c=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);if(!c)continue}
-      meetCount++;
-      const tc=f.cost+r.cost;
-      const combinedAST=r.wA?r.wA(f.ast):f.ast;
-      const trueVal=evalA(combinedAST);
-      if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP)continue;
-      const mask=useBitmask?(f.mask|r.mask):0;
-      const cnt=useBitmask?null:addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
-      pushBest({v:trueVal,ast:combinedAST,mask,cnt,cost:tc,searchType:"meet"});
+
+  function addRevIdx(items){
+    for(const it of items){
+      const k2=meetPrimaryKey(it.v);
+      let arr=revIdx.get(k2);
+      if(!arr){ arr=[]; revIdx.set(k2,arr); }
+      arr.push(it);
     }
   }
+
+  function keepScore(goal, bb, revHit){
+    // base keep
+    let keep = (mp.keepMode==="goal") ? goal : Math.min(goal, bb);
+    // meet-hit bonus: encourage values that can meet
+    if(revHit) keep *= (1.0 - (mp.meetHitBonus||0));
+    return keep;
+  }
+
+  // init layer c=1
+  {
+    const {bucket, put}=mkBucket(beamF);
+    for(let i=0;i<nC;i++){
+      const v=consts[i].v; visited++;
+      if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+
+      const goal=Math.abs(v-T);
+      const bb=bbScore(v, mp.bbD, mp.bbMagA);
+      const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
+      const keep=keepScore(goal, bb, revHit);
+
+      const flags=mkFlags(v,TAG_NONE,true);
+      const ast=mkC(consts[i].s,v);
+
+      if(useBitmask){
+        const bit=idx2bit[i];
+        let mask=0;
+        if(bit>=0){
+          if(!maxBits[bit]) continue;
+          mask = 1<<bit;
+        }
+        put(vKey(v)+"|"+mask,{v,goal,bb,keep,ast,mask,flags});
+      }else{
+        let cnt=EMPTY;
+        const pos=idx2bit[i];
+        if(pos>=0){
+          cnt=new Uint16Array(tCount);
+          cnt[pos]=1;
+          if(cnt[pos]>maxT[pos]) continue;
+        }
+        const ck=tCount?ckFromCnt(cnt):"";
+        put(vKey(v)+"|"+ck,{v,goal,bb,keep,ast,cnt,ck,flags});
+      }
+    }
+
+    const items=Array.from(bucket.values());
+    const picked = selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (bidir?revIdx:null));
+    for(const it of picked){ it.cost=1; }
+    fwd[1]=picked;
+
+    for(const e of fwd[1]){ e.searchType="fwd"; pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:1,searchType:"fwd"}); }
+    emit(1);
+  }
+
+  // seed reverse
   if(bidir){
-    const seedMask=0;const seedCnt=tCount?new Uint16Array(tCount):EMPTY;
-    const seedCk=tCount?Array(tCount).fill(0).join(","):"";
+    const seedMask=0;
+    const seedCnt=tCount?new Uint16Array(tCount):EMPTY;
+    const seedCk=tCount?ckFromCnt(seedCnt):"";
     rev[0]=[{v:T,wA:(a)=>a,mask:seedMask,cnt:seedCnt,ck:seedCk,flags:mkFlags(T,TAG_NONE,true),cost:0,score:0}];
     addRevIdx(rev[0]);
   }
 
   function buildRev(c){
-    if(!bidir)return;
-    const{put,fin}=mkBucket();
+    if(!bidir) return;
+    const {bucket, put}=mkBucket(beamR);
+
+    const revScore = (v)=>Math.log1p(Math.abs(v));
+
+    // unary inverse
     for(const op of opsUn){
-      const w=wUn(op);const sc=c-w;if(sc<0||!rev[sc])continue;
-      for(let i=0;i<Math.min(rev[sc].length,beam);i++){
-        const a=rev[sc][i];
-        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue}
+      const w=wUn(op), sc=c-w;
+      if(sc<0 || !rev[sc] || !rev[sc].length) continue;
+      const src=rev[sc];
+      const lim=Math.min(src.length, beamR);
+
+      for(let i=0;i<lim;i++){
+        const a=src[i];
+        if(pruneEquiv && pruneUn(op,a.flags,a.v)){ pruned++; continue; }
         const invs=invUn(op,a.v);
         for(const inv of invs){
-          visited++;const v=inv.v;
-          if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+          visited++;
+          const v=inv.v;
+          if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+
           const nf=mkFlags(v,opTag(op),false);
-          const pW=a.wA;const nW=pW?(fa=>mkU(op,pW(fa))):(fa=>mkU(op,fa));
-          if(useBitmask)put(vKey(v)+"|"+a.mask,Math.abs(v-T),{v,wA:nW,mask:a.mask,flags:nf});
-          else{const ck=a.ck||"";put(vKey(v)+"|"+ck,Math.abs(v-T),{v,wA:nW,cnt:a.cnt,ck,flags:nf})}
+          const pW=a.wA;
+          const nW=pW?(fa=>mkU(op,pW(fa))):(fa=>mkU(op,fa));
+          const score=revScore(v);
+
+          if(useBitmask){
+            put(vKey(v)+"|"+a.mask,{v,wA:nW,mask:a.mask,flags:nf,keep:score,goal:score,bb:score});
+          }else{
+            const ck=a.ck||"";
+            put(vKey(v)+"|"+ck,{v,wA:nW,cnt:a.cnt,ck,flags:nf,keep:score,goal:score,bb:score});
+          }
         }
       }
     }
+
+    // binary inverse with fwd assistance (same as之前思路，但 beamR 更大)
     const sBin=opsBin.filter(op=>["+","-","*","/","^"].includes(op));
     for(const op of sBin){
       const w=wBin(op);
-      for(let rc=0;rc<=c-w-1;rc++){
-        const fc=c-w-rc;const rs=rev[rc],fs=fwd[fc];
-        if(!rs||!fs||!rs.length||!fs.length)continue;
-        const cR=Math.min(rs.length,Math.floor(Math.sqrt(beam)));
-        const cF=Math.min(fs.length,Math.floor(Math.sqrt(beam)));
-        for(let ir=0;ir<cR;ir++){
+      for(let rc=0; rc<=c-w-1; rc++){
+        const fc=c-w-rc;
+        const rs=rev[rc], fs=fwd[fc];
+        if(!rs||!fs||!rs.length||!fs.length) continue;
+
+        const base=Math.floor(Math.sqrt(beamR));
+        const cR=Math.min(rs.length, Math.max(120, Math.floor(base*3.0)));
+        const cF=Math.min(fs.length, Math.max(120, Math.floor(base*3.0)));
+
+        for(let ir=0; ir<cR; ir++){
           const r=rs[ir];
-          for(let jf=0;jf<cF;jf++){
-            const f=fs[jf];visited++;
+          for(let jf=0; jf<cF; jf++){
+            const f=fs[jf]; visited++;
+
             const x1=invBinR(op,r.v,f.v);
             if(Number.isFinite(x1)&&Math.abs(x1)<=CAP){
-              if(useBitmask){const m=combMask(f.mask,r.mask);if(m>=0){const pW=r.wA;const fA=f.ast;const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));put(vKey(x1)+"|"+m,Math.abs(x1-T),{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false)})}}
-              else{const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);if(cnt){const ck=Array.from(cnt).join(",");const pW=r.wA;const fA=f.ast;const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));put(vKey(x1)+"|"+ck,Math.abs(x1-T),{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false)})}}
+              if(useBitmask){
+                const m=combMask(f.mask,r.mask);
+                if(m>=0){
+                  const pW=r.wA, fA=f.ast;
+                  const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));
+                  const score=revScore(x1);
+                  put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false),keep:score,goal:score,bb:score});
+                }
+              }else{
+                const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
+                if(cnt){
+                  const ck=ckFromCnt(cnt);
+                  const pW=r.wA, fA=f.ast;
+                  const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));
+                  const score=revScore(x1);
+                  put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false),keep:score,goal:score,bb:score});
+                }
+              }
             }
+
             if(!isComm(op)){
               const x2=invBinL(op,r.v,f.v);
               if(Number.isFinite(x2)&&Math.abs(x2)<=CAP){
-                if(useBitmask){const m=combMask(f.mask,r.mask);if(m>=0){const pW=r.wA;const fA=f.ast;const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));put(vKey(x2)+"|"+m,Math.abs(x2-T),{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false)})}}
-                else{const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);if(cnt){const ck=Array.from(cnt).join(",");const pW=r.wA;const fA=f.ast;const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));put(vKey(x2)+"|"+ck,Math.abs(x2-T),{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false)})}}
+                if(useBitmask){
+                  const m=combMask(f.mask,r.mask);
+                  if(m>=0){
+                    const pW=r.wA, fA=f.ast;
+                    const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));
+                    const score=revScore(x2);
+                    put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false),keep:score,goal:score,bb:score});
+                  }
+                }else{
+                  const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
+                  if(cnt){
+                    const ck=ckFromCnt(cnt);
+                    const pW=r.wA, fA=f.ast;
+                    const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));
+                    const score=revScore(x2);
+                    put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false),keep:score,goal:score,bb:score});
+                  }
+                }
               }
             }
-            if(stopFlag)break;
+            if(stopFlag) break;
           }
-          if(stopFlag)break;
+          if(stopFlag) break;
         }
       }
     }
-    rev[c]=fin(c);addRevIdx(rev[c]);
+
+    const items=Array.from(bucket.values());
+    const picked = selectTop(items, beamR, divRatio, 0.0, 0.0, 0.0, 1.0, null); // reverse只要覆盖+keep
+    for(const it of picked){ it.cost=c; }
+    rev[c]=picked;
+    addRevIdx(rev[c]);
   }
 
-  for(let c=2;c<=maxC;c++){
-    if(stopFlag)break;if(performance.now()-t0>lim)break;
-    if(bidir&&c<=Math.floor(maxC/2)+2)buildRev(c);
-    const{bucket,put,fin}=mkBucket();
-    const perfCap={speed:{u:9,b:16},balanced:{u:8,b:14},memory:{u:11,b:20},quality:{u:6,b:11}}[perfMode]||{u:8,b:14};
-    const capUn=Math.max(30,Math.floor(effBeam/perfCap.u));
-    const capBin=Math.max(24,Math.floor(effBeam/perfCap.b));
+  // ===== meet attempt =====
+  function tryMeet(f){
+    if(!bidir) return;
+    const keys=meetKeys(f.v);
 
+    meetLookups += keys.length;
+
+    // 去重 keys
+    let seen=null;
+    if(keys.length>1) seen=new Set();
+
+    for(const k2 of keys){
+      if(seen){
+        if(seen.has(k2)) continue;
+        seen.add(k2);
+      }
+      const rl=revIdx.get(k2);
+      if(!rl) continue;
+
+      for(const r of rl){
+        const tc=f.cost + r.cost;
+        if(tc>maxC) continue;
+
+        if(useBitmask){
+          if((f.mask & r.mask)!==0) continue;
+        }else{
+          const c=addCnt(f.cnt??EMPTY, r.cnt??EMPTY);
+          if(!c) continue;
+        }
+
+        // candidate eps
+        const epsCand = (2.5e-11 * mp.candEpsMul) * Math.max(1, Math.abs(f.v), Math.abs(r.v));
+        if(Math.abs(f.v - r.v) > epsCand) continue;
+        meetCandidates++;
+
+        // build full AST and confirm by recompute
+        const combinedAST = r.wA ? r.wA(f.ast) : f.ast;
+        const trueVal = evalA(combinedAST);
+        if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP) continue;
+
+        const epsConfirm = (5e-12 * mp.confirmEpsMul) * Math.max(1, Math.abs(T));
+        if(Math.abs(trueVal - T) > epsConfirm) continue;
+
+        meetConfirmed++;
+        if(useBitmask){
+          pushBest({v:trueVal, ast:combinedAST, mask:(f.mask|r.mask), cost:tc, searchType:"meet"});
+        }else{
+          const cnt=addCnt(f.cnt??EMPTY, r.cnt??EMPTY);
+          pushBest({v:trueVal, ast:combinedAST, cnt, cost:tc, searchType:"meet"});
+        }
+      }
+    }
+  }
+
+  // ===== MT pool =====
+  let subWorkers=[];
+  async function initSubWorkers(){
+    if(!(mt && threads>1)) return;
+    if(!subSrc) return;
+
+    const url=URL.createObjectURL(new Blob([subSrc],{type:"text/javascript"}));
+    subWorkers = Array.from({length:threads-1},()=>new Worker(url));
+
+    const initMsg = {
+      type:"init",
+      keyPrec:KEYP,
+      useBitmask,
+      tCount,
+      maxT: useBitmask?null:(maxT?Array.from(maxT):null),
+      opsUn, opsBin,
+      pruneEquiv
+    };
+    await Promise.all(subWorkers.map(w=>new Promise((resolve)=>{
+      const h=(ev)=>{ if(ev.data?.type==="inited"){ w.removeEventListener("message",h); resolve(); } };
+      w.addEventListener("message",h);
+      w.postMessage(initMsg);
+    })));
+    // send layer1
+    sendLayerToSubs(1, packLayer(1));
+  }
+  function termSubWorkers(){ for(const w of subWorkers) w.terminate(); subWorkers=[]; }
+
+  function packLayer(cost){
+    const src=fwd[cost];
+    const lim=src.length;
+    const v=new Float64Array(lim);
+    const flags=new Uint32Array(lim);
+    if(useBitmask){
+      const mask=new Int32Array(lim);
+      for(let i=0;i<lim;i++){ v[i]=src[i].v; flags[i]=src[i].flags; mask[i]=src[i].mask|0; }
+      return {len:lim, v, flags, mask};
+    }else{
+      const cnt=new Uint16Array(lim*tCount);
+      for(let i=0;i<lim;i++){
+        v[i]=src[i].v; flags[i]=src[i].flags;
+        const base=i*tCount;
+        const cvec=src[i].cnt;
+        for(let j=0;j<tCount;j++) cnt[base+j]=cvec[j];
+      }
+      return {len:lim, v, flags, cnt};
+    }
+  }
+  function sendLayerToSubs(cost, layer){
+    if(subWorkers.length===0) return;
+    for(const w of subWorkers) w.postMessage({type:"setLayer", cost, layer});
+  }
+
+  async function computeLayerMT(c, capUn, capBin){
+    const {bucket, put}=mkBucket(beamF);
+
+    const W=subWorkers.length+1;
+    const keepMode = mp.keepMode==="goal" ? "goal" : "min";
+
+    // coordinator chunk: i = 0, 0+W, ...
+    // unary
     for(const op of opsUn){
-      if(stopFlag)break;const w=wUn(op),sc=c-w;if(sc<1)continue;
-      const src=fwd[sc];if(!src.length)continue;
-      const cap=Math.min(src.length,capUn);
-      for(let i=0;i<cap;i++){
-        if(shardCount>1&&((i+sc*13+op.length)%shardCount)!==shardIndex)continue;
+      const w=wUn(op), sc=c-w;
+      if(sc<1) continue;
+      const src=fwd[sc]; if(!src||!src.length) continue;
+      const lim=Math.min(src.length, capUn);
+      for(let i=0;i<lim;i+=W){
         const a=src[i];
-        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue}
-        const v=applyUn(op,a.v);visited++;
-        if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-        const score=Math.abs(v-T);if(!hasHardConstraints&&Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const nf=mkFlags(v,opTag(op),false);
+        if(pruneEquiv && pruneUn(op,a.flags,a.v)){ pruned++; continue; }
+        const v=applyUn(op,a.v); visited++;
+        if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+
+        const goal=Math.abs(v-T);
+        const bb=bbScore(v, mp.bbD, mp.bbMagA);
+        const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
+        const keep=keepScore(goal, bb, revHit);
+
         const ast=mkU(op,a.ast);
-        if(useBitmask){const key=vKey(v)+"|"+a.mask;const old=bucket.get(key);if(old&&score>=old.score)continue;put(key,score,{v,ast,mask:a.mask,flags:nf})}
-        else{const ck=a.ck||"";const key=vKey(v)+"|"+ck;const old=bucket.get(key);if(old&&score>=old.score)continue;put(key,score,{v,ast,cnt:a.cnt,ck,flags:nf})}
-        if((visited&8191)===0)emit(c);if(stopFlag||performance.now()-t0>lim)break;
-      }
-    }
-
-    for(const op of opsBin){
-      if(stopFlag||performance.now()-t0>lim)break;
-      const w=wBin(op),rem=c-w;if(rem<2)continue;const comm=isComm(op);
-      for(let ic=1;ic<=rem-1;ic++){
-        const jc=rem-ic;const A=fwd[ic],B=fwd[jc];
-        if(!A.length||!B.length)continue;
-        const cA=Math.min(A.length,capBin),cB=Math.min(B.length,capBin);
-        for(let ia=0;ia<cA;ia++){
-          const a=A[ia];const stB=(comm&&ic===jc)?ia:0;
-          for(let ib=stB;ib<cB;ib++){
-            if(shardCount>1&&((ia*131+ib*17+ic*29+jc*7)%shardCount)!==shardIndex)continue;
-            const b=B[ib];visited++;
-            if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++;continue}
-            if(useBitmask){
-              if((a.mask&b.mask)!==0)continue;const mask=a.mask|b.mask;
-              const v=applyBin(op,a.v,b.v);
-              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-              const score=Math.abs(v-T);if(!hasHardConstraints&&Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const key=vKey(v)+"|"+mask;
-              const old=bucket.get(key);if(!old||score<old.score){const ast=mkB(op,a.ast,b.ast);put(key,score,{v,ast,mask,flags:mkFlags(v,opTag(op),false)})}
-            }else{
-              const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);if(!cnt)continue;
-              const v=applyBin(op,a.v,b.v);
-              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-              const score=Math.abs(v-T);if(!hasHardConstraints&&Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const ck=Array.from(cnt).join(",");const key=vKey(v)+"|"+ck;
-              const old=bucket.get(key);if(!old||score<old.score){const ast=mkB(op,a.ast,b.ast);put(key,score,{v,ast,cnt,ck,flags:mkFlags(v,opTag(op),false)})}
-            }
-            if((visited&8191)===0)emit(c);if(stopFlag||performance.now()-t0>lim)break;
-          }
-          if(stopFlag||performance.now()-t0>lim)break;
+        if(useBitmask){
+          put(vKey(v)+"|"+a.mask,{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false)});
+        }else{
+          put(vKey(v)+"|"+a.ck,{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false)});
         }
-        if(stopFlag||performance.now()-t0>lim)break;
       }
     }
 
-    fwd[c]=fin(c);
-    for(const e of fwd[c]){e.searchType="fwd";pushBest(e);if(bidir)tryMeet(e)}
-    emit(c);await new Promise(r=>setTimeout(r,0));
+    // binary coordinator stride by ia
+    for(const op of opsBin){
+      const w=wBin(op), rem=c-w;
+      if(rem<2) continue;
+      const comm=isComm(op);
+      for(let ic=1;ic<=rem-1;ic++){
+        const jc=rem-ic;
+        const A=fwd[ic], B=fwd[jc];
+        if(!A.length||!B.length) continue;
+        const cA=Math.min(A.length,capBin), cB=Math.min(B.length,capBin);
+        for(let ia=0; ia<cA; ia+=W){
+          const a=A[ia];
+          const stB=(comm&&ic===jc)?ia:0;
+          for(let ib=stB; ib<cB; ib++){
+            const b=B[ib]; visited++;
+            if(pruneEquiv && pruneBin(op,a.flags,b.flags,a.v,b.v)){ pruned++; continue; }
+
+            if(useBitmask){
+              if((a.mask&b.mask)!==0) continue;
+              const mask=a.mask|b.mask;
+              const v=applyBin(op,a.v,b.v);
+              if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+              const goal=Math.abs(v-T);
+              const bb=bbScore(v, mp.bbD, mp.bbMagA);
+              const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
+              const keep=keepScore(goal, bb, revHit);
+              const key=vKey(v)+"|"+mask;
+              put(key,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),mask,flags:mkFlags(v,opTag(op),false)});
+            }else{
+              const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
+              if(!cnt) continue;
+              const v=applyBin(op,a.v,b.v);
+              if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+              const goal=Math.abs(v-T);
+              const bb=bbScore(v, mp.bbD, mp.bbMagA);
+              const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
+              const keep=keepScore(goal, bb, revHit);
+              const ck=ckFromCnt(cnt);
+              const key=vKey(v)+"|"+ck;
+              put(key,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(op),false)});
+            }
+          }
+        }
+      }
+    }
+
+    // subworkers tasks
+    const tasks = subWorkers.map((w,idx)=>new Promise((resolve)=>{
+      const workerId=idx+1;
+      const h=(ev)=>{ if(ev.data?.type==="taskDone"){ w.removeEventListener("message",h); resolve(ev.data.payload); } };
+      w.addEventListener("message",h);
+      w.postMessage({
+        type:"task",
+        T, c, beam:beamF,
+        capUn, capBin,
+        workerId, workerCount:W,
+        bbD: mp.bbD, bbMagA: mp.bbMagA,
+        keepMode
+      });
+    }));
+    const results=await Promise.all(tasks);
+
+    // merge
+    for(const res of results){
+      visited += res.visited;
+      pruned += res.pruned;
+      for(const it of res.items){
+        // rebuild ast from refs to keep exact semantics; also apply meet-hit bonus in keep
+        const v=it.v;
+        const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
+        const keep=keepScore(it.goal, it.bb, revHit);
+
+        if(useBitmask){
+          const key=vKey(v)+"|"+(it.mask|0);
+          if(it.kind==="u"){
+            const a=fwd[it.ac][it.ai];
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkU(it.op,a.ast),mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false)});
+          }else{
+            const a=fwd[it.ac][it.ai], b=fwd[it.bc][it.bi];
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkB(it.op,a.ast,b.ast),mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false)});
+          }
+        }else{
+          const ck=it.ck;
+          const key=vKey(v)+"|"+ck;
+          const cnt=cntFromCk(ck);
+          if(it.kind==="u"){
+            const a=fwd[it.ac][it.ai];
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkU(it.op,a.ast),cnt,ck,flags:mkFlags(v,opTag(it.op),false)});
+          }else{
+            const a=fwd[it.ac][it.ai], b=fwd[it.bc][it.bi];
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkB(it.op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(it.op),false)});
+          }
+        }
+      }
+    }
+
+    const items=Array.from(bucket.values());
+    const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (bidir?revIdx:null));
+    for(const it of picked){ it.cost=c; }
+    return picked;
   }
 
-  postMessage({type:"done",payload:{elapsed:Math.round(performance.now()-t0),maxC,c:maxC,visited,meetCount,pruned,reEvalFixed,dupesKilled,mode:useBitmask?"bitmask":"counts",best:best.slice(0,outN)}});
+  await initSubWorkers();
+
+  // main loop
+  for(let c=2;c<=maxC;c++){
+    if(stopFlag) break;
+    if(performance.now()-t0>lim) break;
+
+    if(bidir) buildRev(c);
+
+    let capUn=Math.max(80, Math.floor(beamF/8));
+    let capBin=Math.max(60, Math.floor(beamF/14));
+    capUn=Math.max(20, Math.floor(capUn*mp.capMul));
+    capBin=Math.max(20, Math.floor(capBin*mp.capMul));
+
+    if(subWorkers.length>0){
+      fwd[c]=await computeLayerMT(c,capUn,capBin);
+    }else{
+      const {bucket, put}=mkBucket(beamF);
+
+      // unary
+      for(const op of opsUn){
+        const w=wUn(op), sc=c-w;
+        if(sc<1) continue;
+        const src=fwd[sc]; if(!src||!src.length) continue;
+        const lim=Math.min(src.length, capUn);
+        for(let i=0;i<lim;i++){
+          const a=src[i];
+          if(pruneEquiv && pruneUn(op,a.flags,a.v)){ pruned++; continue; }
+          const v=applyUn(op,a.v); visited++;
+          if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+
+          const goal=Math.abs(v-T);
+          const bb=bbScore(v, mp.bbD, mp.bbMagA);
+          const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
+          const keep=keepScore(goal, bb, revHit);
+
+          const ast=mkU(op,a.ast);
+          if(useBitmask){
+            put(vKey(v)+"|"+a.mask,{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false)});
+          }else{
+            put(vKey(v)+"|"+a.ck,{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false)});
+          }
+          if((visited&8191)===0) emit(c);
+          if(stopFlag||performance.now()-t0>lim) break;
+        }
+      }
+
+      // binary
+      for(const op of opsBin){
+        const w=wBin(op), rem=c-w;
+        if(rem<2) continue;
+        const comm=isComm(op);
+        for(let ic=1;ic<=rem-1;ic++){
+          const jc=rem-ic;
+          const A=fwd[ic], B=fwd[jc];
+          if(!A.length||!B.length) continue;
+          const cA=Math.min(A.length,capBin), cB=Math.min(B.length,capBin);
+          for(let ia=0; ia<cA; ia++){
+            const a=A[ia];
+            const stB=(comm&&ic===jc)?ia:0;
+            for(let ib=stB; ib<cB; ib++){
+              const b=B[ib]; visited++;
+              if(pruneEquiv && pruneBin(op,a.flags,b.flags,a.v,b.v)){ pruned++; continue; }
+
+              if(useBitmask){
+                if((a.mask&b.mask)!==0) continue;
+                const mask=a.mask|b.mask;
+                const v=applyBin(op,a.v,b.v);
+                if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+                const goal=Math.abs(v-T);
+                const bb=bbScore(v, mp.bbD, mp.bbMagA);
+                const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
+                const keep=keepScore(goal, bb, revHit);
+                put(vKey(v)+"|"+mask,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),mask,flags:mkFlags(v,opTag(op),false)});
+              }else{
+                const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
+                if(!cnt) continue;
+                const v=applyBin(op,a.v,b.v);
+                if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+                const goal=Math.abs(v-T);
+                const bb=bbScore(v, mp.bbD, mp.bbMagA);
+                const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
+                const keep=keepScore(goal, bb, revHit);
+                const ck=ckFromCnt(cnt);
+                put(vKey(v)+"|"+ck,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(op),false)});
+              }
+
+              if((visited&8191)===0) emit(c);
+              if(stopFlag||performance.now()-t0>lim) break;
+            }
+            if(stopFlag||performance.now()-t0>lim) break;
+          }
+          if(stopFlag||performance.now()-t0>lim) break;
+        }
+      }
+
+      const items=Array.from(bucket.values());
+      const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (bidir?revIdx:null));
+      for(const it of picked){ it.cost=c; }
+      fwd[c]=picked;
+    }
+
+    // publish layer to subs
+    sendLayerToSubs(c, packLayer(c));
+
+    // update best + meet
+    for(const e of fwd[c]){
+      pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
+      if(bidir) tryMeet(e);
+    }
+
+    emit(c);
+    await new Promise(r=>setTimeout(r,0));
+  }
+
+  termSubWorkers();
+
+  postMessage({type:"done", payload:{
+    elapsed:Math.round(performance.now()-t0), maxC, c:maxC,
+    visited, pruned,
+    meetLookups, meetCandidates, meetConfirmed,
+    reEvalFixed, dupesKilled,
+    mode:useBitmask?"bitmask":"counts",
+    mt:(mt && threads>1)?("ON("+threads+")"):"OFF",
+    profile:mode,
+    beamF, beamR,
+    best:best.slice(0,outN)
+  }});
 };
 `;
-  return new Worker(URL.createObjectURL(new Blob([src],{type:"text/javascript"})));
+  return new Worker(URL.createObjectURL(new Blob([workerSrc],{type:"text/javascript"})));
 }
 
-let worker=null;let workers=[];let lastRows=[];
-const STORE_KEY="ries_config_v1";
-function saveConfig(){const cfg={target:$("target").value,maxC:$("maxC").value,beam:$("beam").value,divRatio:$("divRatio").value,outN:$("outN").value,threads:$("threads").value,emitInterval:$("emitInterval").value,timeLimit:$("timeLimit").value,infiniteTime:$("infiniteTime").checked,bidir:$("bidir").checked,showCounts:$("showCounts").checked,pruneEquiv:$("pruneEquiv").checked,perfMode:$("perfMode").value,crossHint:$("crossHint").checked,ops:[...document.querySelectorAll(".opOn")].map(x=>[x.dataset.key,x.checked]),consts:[...document.querySelectorAll(".cstOn")].map(x=>[x.dataset.key,x.checked]),mins:[...document.querySelectorAll(".cstMin")].map(x=>[x.dataset.key,x.value]),maxs:[...document.querySelectorAll(".cstMax")].map(x=>[x.dataset.key,x.value])};localStorage.setItem(STORE_KEY,JSON.stringify(cfg))}
-function loadConfig(){try{const raw=localStorage.getItem(STORE_KEY);if(!raw)return;const cfg=JSON.parse(raw);for(const id of ["target","maxC","beam","divRatio","outN","threads","emitInterval","timeLimit"])if(cfg[id]!=null)$(id).value=cfg[id];for(const id of ["infiniteTime","bidir","showCounts","pruneEquiv","crossHint"])if(cfg[id]!=null)$(id).checked=!!cfg[id];if(cfg.perfMode)$("perfMode").value=cfg.perfMode;const om=new Map(cfg.ops||[]),cm=new Map(cfg.consts||[]),mn=new Map(cfg.mins||[]),mx=new Map(cfg.maxs||[]);document.querySelectorAll(".opOn").forEach(x=>{if(om.has(x.dataset.key))x.checked=!!om.get(x.dataset.key)});document.querySelectorAll(".cstOn").forEach(x=>{if(cm.has(x.dataset.key))x.checked=!!cm.get(x.dataset.key)});document.querySelectorAll(".cstMin").forEach(x=>{if(mn.has(x.dataset.key))x.value=mn.get(x.dataset.key)});document.querySelectorAll(".cstMax").forEach(x=>{if(mx.has(x.dataset.key))x.value=mx.get(x.dataset.key)});}catch{}
-  $("timeLimit").disabled=$("infiniteTime").checked;
-}
-$("infiniteTime").addEventListener("change",()=>{$("timeLimit").disabled=$("infiniteTime").checked;saveConfig()});
-$("copyAll").onclick=async()=>{if(!lastRows.length)return;await copyText(lastRows.map(rowToCopyText).join("\n"))};
+// ---------- run ----------
+let worker=null;
+let lastT=24;
+
 $("btnStart").onclick=()=>{
-  const T=parseTarget($("target").value);if(!Number.isFinite(T)){alert("无效");return}
-  const maxC=Math.max(1,Math.min(200,Number($("maxC").value||24)));
-  const beam=Math.max(50,Math.min(50000,Number($("beam").value||1500)));
+  const T=parseTarget($("target").value);
+  if(!Number.isFinite(T)){alert("目标值无效");return}
+  lastT=T;
+
+  const mode=$("mode").value;
+  let bidir=$("bidir").checked;
+  if(mode==="meet") bidir=true; // meet优先模式强制开启双向
+
+  const maxC=Math.max(1,Math.min(200,Number($("maxC").value||30)));
+  const beam=Math.max(50,Math.min(50000,Number($("beam").value||4000)));
+  const divRatio=Math.max(0,Math.min(1,Number($("divRatio").value||.25)));
   const outN=Math.max(1,Math.min(200,Number($("outN").value||30)));
   const infiniteTime=$("infiniteTime").checked;
   const timeLimit=infiniteTime?0:Math.max(0,Number($("timeLimit").value||0));
   const emitInterval=Math.max(50,Math.min(60000,Number($("emitInterval").value||500)));
-  const threads=Math.max(1,Math.min(16,Number($("threads").value||1)));
-  const showCounts=$("showCounts").checked;const bidir=$("bidir").checked;
-  const divRatio=Math.max(0,Math.min(1,Number($("divRatio").value||.25)));
+  const showCounts=$("showCounts").checked;
   const pruneEquiv=$("pruneEquiv").checked;
-  const perfMode=$("perfMode").value;
-  const crossHint=$("crossHint").checked;
-  const beamPerWorker=beam;
-  const{opsUn,opsBin}=getOps();
+  const excludeExact=$("excludeExact").checked;
+  const mt=$("mt").checked;
+  const threads=Math.max(1,Math.min(64,Number($("threads").value||1)));
+
+  const {opsUn,opsBin}=getOps();
   if(!opsUn.length&&!opsBin.length){alert("请至少选择一个运算");return}
-  let consts;try{consts=getConsts()}catch(e){alert(e.message);return}
-  const hasHardConstraints=consts.some(c=>(c.min??0)>0||(c.max??65535)<65535);
-  const effectiveThreads=hasHardConstraints?1:threads;
-  if(worker)worker.terminate();for(const w of workers)w.terminate();workers=[];worker=null;
-  saveConfig();
-  $("btnStart").disabled=true;$("btnStop").disabled=false;$("pruneStats").style.display="none";
-  statusPills({T:fmt(T),status:"running",bidir:bidir?"ON":"OFF",prune:pruneEquiv?"ON":"OFF",perf:perfMode,coop:crossHint?"ON":"OFF",divRatio,maxC,beam,beam_per_worker:beamPerWorker,outN,threads:effectiveThreads,constraints:hasHardConstraints?"safe-single-thread":"none"});
-  const shardBest=Array.from({length:effectiveThreads},()=>[]);const shardDone=Array.from({length:effectiveThreads},()=>false);const shardMeta=Array.from({length:effectiveThreads},()=>({}));
-  const mergeRows=()=>{const all=shardBest.flat();all.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));const uniq=[];const seen=new Set();for(const r of all){const k=Number(r.v).toPrecision(11);if(seen.has(k))continue;seen.add(k);uniq.push(r);if(uniq.length>=outN)break}lastRows=uniq;return uniq};
-  const updateView=(type,payload)=>{const rows=mergeRows();const ba=rows.length?Math.abs(rows[0].delta):NaN;const sum=(k)=>shardMeta.reduce((a,m)=>a+(Number(m?.[k])||0),0);statusPills({T:fmt(T),status:type,mode:payload.mode,c:(payload.c??0)+"/"+payload.maxC,elapsed_ms:payload.elapsed,visited:sum("visited"),meets:sum("meetCount"),pruned:sum("pruned"),reEval_fixed:sum("reEvalFixed"),dupes_killed:sum("dupesKilled"),best_delta:Number.isFinite(ba)?fmt(ba):"n/a",threads,perf:perfMode,coop:crossHint?"ON":"OFF"});if(Number.isFinite(ba)&&crossHint){for(const w of workers)w.postMessage({type:"hint",bestDelta:ba})}if(sum("pruned")>0||sum("dupesKilled")>0){const ps=$("pruneStats");ps.style.display="block";ps.innerHTML="<b>恒等式剪枝：</b>"+sum("pruned").toLocaleString()+" 个冗余跳过 &nbsp;|&nbsp; <b>AST重求值修正：</b>"+sum("reEvalFixed").toLocaleString()+" &nbsp;|&nbsp; <b>输出去重：</b>"+sum("dupesKilled").toLocaleString()+" 个同值表达式合并"}renderResults(rows,showCounts)};
-  for(let i=0;i<effectiveThreads;i++){const w=buildWorker();workers.push(w);w.onmessage=(ev)=>{const{type,payload}=ev.data;if(type==="error"){alert(payload);$("btnStart").disabled=false;$("btnStop").disabled=true;return}if(type==="progress"||type==="done"){shardBest[i]=payload.best||[];shardMeta[i]=payload||{};if(type==="done")shardDone[i]=true;updateView(type,payload);if(shardDone.every(Boolean)){$("btnStart").disabled=false;$("btnStop").disabled=true}}};w.postMessage({type:"start",T,maxC,beam,outN,timeLimit,infiniteTime,emitInterval,opsUn,opsBin,consts,showCounts,bidir,divRatio,pruneEquiv,shardIndex:i,shardCount:effectiveThreads,perfMode,beamPerWorker})}
+
+  let consts;
+  try{consts=getConsts()}catch(e){alert(e.message);return}
+
+  try{localStorage.setItem(LS_KEY, JSON.stringify(collectUIState()));}catch(e){}
+
+  if(worker)worker.terminate();
+  worker=buildWorker();
+
+  $("btnStart").disabled=true;
+  $("btnStop").disabled=false;
+  $("pruneStats").style.display="none";
+  $("copyMsg").textContent="";
+
+  statusPills({
+    T:fmt(T),
+    status:"running",
+    profile:mode,
+    bidir:bidir?"ON":"OFF",
+    mt:mt?("ON("+threads+")"):"OFF",
+    maxC,beam,outN
+  });
+
+  worker.onmessage=(ev)=>{
+    const {type,payload}=ev.data;
+    if(type==="error"){
+      alert(payload);
+      $("btnStart").disabled=false;
+      $("btnStop").disabled=true;
+      return;
+    }
+    if(type==="progress"||type==="done"){
+      const rows=payload.best||[];
+      const ba=rows.length?Math.abs(rows[0].delta):NaN;
+
+      statusPills({
+        T:fmt(lastT),
+        status:type,
+        profile:payload.profile||mode,
+        mode:payload.mode,
+        mt:payload.mt||"OFF",
+        c:(payload.c??0)+"/"+payload.maxC,
+        elapsed_ms:payload.elapsed,
+        visited:payload.visited,
+        pruned:payload.pruned||0,
+        meetLookups:payload.meetLookups||0,
+        meetCand:payload.meetCandidates||0,
+        meetOK:payload.meetConfirmed||0,
+        best_delta:Number.isFinite(ba)?fmt(ba):"n/a"
+      });
+
+      const ps=$("pruneStats");
+      ps.style.display="block";
+      ps.innerHTML =
+        "<b>AST重求值修正：</b>"+(payload.reEvalFixed||0).toLocaleString()+
+        " &nbsp;|&nbsp; <b>输出同值合并：</b>"+(payload.dupesKilled||0).toLocaleString();
+
+      renderResults(rows,showCounts);
+      if(type==="done"){
+        $("btnStart").disabled=false;
+        $("btnStop").disabled=true;
+      }
+    }
+  };
+
+  worker.postMessage({
+    type:"start",
+    T, mode, maxC, beam, divRatio, outN,
+    timeLimit, infiniteTime, emitInterval,
+    opsUn, opsBin, consts,
+    showCounts, bidir,
+    pruneEquiv, excludeExact,
+    mt, threads,
+    subSrc: SUBWORKER_CODE
+  });
 };
-$("btnStop").onclick=()=>{if(worker)worker.postMessage({type:"stop"});for(const w of workers)w.postMessage({type:"stop"});$("btnStop").disabled=true};
-mountConsts();mountOps();loadConfig();document.querySelectorAll("input,select").forEach(el=>el.addEventListener("change",saveConfig));statusPills({ready:"ok"});
+
+$("btnStop").onclick=()=>{
+  if(worker)worker.postMessage({type:"stop"});
+  $("btnStop").disabled=true;
+};
+
+// init
+mountConsts();
+mountOps();
+try{applyUIState(JSON.parse(localStorage.getItem(LS_KEY)||"null"));}catch(e){}
+$("timeLimit").disabled=$("infiniteTime").checked;
+updateMtHint();
+hookAutoSave();
+statusPills({status:"idle"});
 })();
 </script>
 </body>
