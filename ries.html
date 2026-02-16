@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>RIES-like v5 — 深度去重 + 子树签名 + AST精确重求值</title>
+  <title>RIES 公式搜索器</title>
   <style>
     :root{color-scheme:light dark}
     body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","PingFang SC","Hiragino Sans GB","Microsoft Yahei",sans-serif;margin:18px}
     h1{font-size:17px;margin:0 0 12px}
     .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:end}
-    .box{border:1px solid rgba(127,127,127,.35);padding:12px;border-radius:10px}
+    .box{border:1px solid rgba(127,127,127,.35);padding:12px;border-radius:10px;min-width:0}
     label{display:block;font-size:12px;opacity:.85;margin-bottom:4px}
     input[type="number"],input[type="text"]{padding:6px 8px;min-width:150px}
     input[type="checkbox"]{transform:translateY(1px)}
@@ -17,14 +17,15 @@
     .muted{opacity:.8;font-size:12px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
     .status{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:10px}
     .pill{padding:4px 8px;border:1px solid rgba(127,127,127,.35);border-radius:999px;font-size:12px}
-    table{width:100%;border-collapse:collapse;margin-top:12px}
+    table{width:100%;border-collapse:collapse;margin-top:12px;table-layout:fixed}
+    .tableWrap{width:100%;overflow:auto;-webkit-overflow-scrolling:touch}
     th,td{border-bottom:1px solid rgba(127,127,127,.25);padding:8px 6px;vertical-align:top}
     th{text-align:left;font-size:12px;opacity:.85}td{font-size:13px}.right{text-align:right}
-    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .warn{color:#b45309}
-    .split{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-width:0}
+    .warn{color:#b45309;overflow-wrap:anywhere}
+    .split{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;min-width:0}
     @media(max-width:1100px){.split{grid-template-columns:1fr}}
-    .constWrap{max-height:360px;overflow:auto;border:1px solid rgba(127,127,127,.25);border-radius:10px}
+    .constWrap{max-height:360px;max-width:100%;overflow:auto;border:1px solid rgba(127,127,127,.25);border-radius:10px}
     .constTable{width:100%;border-collapse:collapse}
     .constTable th,.constTable td{border-bottom:1px solid rgba(127,127,127,.15);padding:6px;font-size:12px}
     .constTable th{position:sticky;top:0;background:color-mix(in srgb,Canvas 92%,transparent);z-index:2}
@@ -36,10 +37,12 @@
     .tag-fwd{background:#dbeafe;color:#1e40af}.tag-meet{background:#d1fae5;color:#065f46}
     @media(prefers-color-scheme:dark){.tag-fwd{background:#1e3a5f;color:#93c5fd}.tag-meet{background:#064e3b;color:#6ee7b7}}
     .pruneStats{margin-top:8px;padding:8px 12px;background:rgba(127,127,127,.08);border-radius:8px;font-size:12px}
+    .cellExpr{word-break:break-word}
+    @media(max-width:760px){body{margin:10px}.box{padding:10px}.row{gap:8px}.split{gap:8px}input[type="number"],input[type="text"]{min-width:120px;width:100%}.opsGrid{grid-template-columns:repeat(2,minmax(0,1fr))}th,td{padding:6px 4px;font-size:12px}}
   </style>
 </head>
 <body>
-<h1>RIES-like v5 — 深度去重(子表达式签名) + AST精确重求值 + 恒等式剪枝 + 双向搜索</h1>
+<h1>RIES 公式搜索器</h1>
 <div class="box">
   <div class="row">
     <div><label>目标值 T</label><input id="target" type="text" value="24" class="mono"/></div>
@@ -47,6 +50,7 @@
     <div><label>Beam</label><input id="beam" type="number" value="1500" min="50" max="50000"/></div>
     <div><label>Diversity比例</label><input id="divRatio" type="number" value="0.25" min="0" max="1" step="0.05"/></div>
     <div><label>输出条数</label><input id="outN" type="number" value="30" min="1" max="200"/></div>
+    <div><label>线程数</label><input id="threads" type="number" value="1" min="1" max="16"/></div>
     <div><label>更新间隔ms</label><input id="emitInterval" type="number" value="500" min="50" max="60000"/></div>
     <div>
       <label>时间上限ms</label><input id="timeLimit" type="number" value="10000" min="0" max="600000"/>
@@ -57,6 +61,8 @@
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="bidir" type="checkbox" checked/><span class="muted">双向搜索</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="showCounts" type="checkbox" checked/><span class="muted">显示常数计数</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="pruneEquiv" type="checkbox" checked/><span class="muted">恒等式剪枝</span></label>
+      <label style="margin:6px 0 0">性能模式<select id="perfMode" style="padding:6px 8px;min-width:140px"><option value="balanced" selected>平衡</option><option value="speed">速度优先</option><option value="memory">内存优先</option><option value="quality">结果优先</option></select></label>
+      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="crossHint" type="checkbox" checked/><span class="muted">多线程协作提示</span></label>
     </div>
     <div class="toolbar"><button id="btnStart">搜索</button><button id="btnStop" disabled>停止</button></div>
   </div>
@@ -74,7 +80,8 @@
   <div class="status" id="status"></div>
   <div class="pruneStats" id="pruneStats" style="display:none"></div>
 </div>
-<table><thead><tr><th style="width:6%">type</th><th style="width:42%">expression</th><th style="width:15%">value</th><th style="width:13%">distance</th><th style="width:14%">accuracy</th><th class="right" style="width:10%">complexity</th></tr></thead><tbody id="tbody"></tbody></table>
+<div class="toolbar" style="margin-top:12px"><button id="copyAll" disabled>复制全部结果</button></div>
+<div class="tableWrap"><table><thead><tr><th style="width:7%">type</th><th style="width:35%">expression</th><th style="width:14%">value</th><th style="width:12%">distance</th><th style="width:12%">accuracy</th><th class="right" style="width:9%">complexity</th><th class="right" style="width:11%">copy</th></tr></thead><tbody id="tbody"></tbody></table></div>
 
 <script>
 (()=>{
@@ -113,9 +120,9 @@ const OP_LIST=[
   {key:"round",label:"round",kind:"un",on:false},{key:"frac",label:"frac",kind:"un",on:false},{key:"sign",label:"sign",kind:"un",on:false},
   {key:"fact",label:"fact(!)",kind:"un",on:false},{key:"gammafn",label:"Γ(x)",kind:"un",on:false},{key:"erf",label:"erf",kind:"un",on:false},
 ];
-function mountConsts(){const tb=$("constBody");tb.innerHTML="";for(const c of CONST_LIST){const tr=document.createElement("tr");const t1=document.createElement("td"),ch=document.createElement("input");ch.type="checkbox";ch.className="cstOn";ch.dataset.key=c.key;ch.checked=!!c.on;t1.appendChild(ch);const t2=document.createElement("td");t2.className="mono";t2.textContent=c.sym;const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(c.val);const t4=document.createElement("td"),i1=document.createElement("input");i1.type="text";i1.placeholder="0";i1.className="miniInp cstMin mono";i1.dataset.key=c.key;t4.appendChild(i1);const t5=document.createElement("td"),i2=document.createElement("input");i2.type="text";i2.placeholder="∞";i2.className="miniInp cstMax mono";i2.dataset.key=c.key;t5.appendChild(i2);tr.append(t1,t2,t3,t4,t5);tb.appendChild(tr)}}
+function mountConsts(){const tb=$("constBody");tb.innerHTML="";for(const c of CONST_LIST){const tr=document.createElement("tr");const t1=document.createElement("td"),ch=document.createElement("input");ch.type="checkbox";ch.className="cstOn";ch.dataset.key=c.key;ch.checked=!!c.on;t1.appendChild(ch);const t2=document.createElement("td");t2.className="mono cellExpr";t2.textContent=c.sym;const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(c.val);const t4=document.createElement("td"),i1=document.createElement("input");i1.type="text";i1.placeholder="0";i1.className="miniInp cstMin mono";i1.dataset.key=c.key;t4.appendChild(i1);const t5=document.createElement("td"),i2=document.createElement("input");i2.type="text";i2.placeholder="∞";i2.className="miniInp cstMax mono";i2.dataset.key=c.key;t5.appendChild(i2);tr.append(t1,t2,t3,t4,t5);tb.appendChild(tr)}}
 function mountOps(){const b=$("opsBox");b.innerHTML="";for(const o of OP_LIST){const l=document.createElement("label"),ch=document.createElement("input");ch.type="checkbox";ch.className="opOn";ch.dataset.key=o.key;ch.checked=!!o.on;const s=document.createElement("span");s.textContent=o.label;l.append(ch,s);b.appendChild(l)}}
-function setAll(c,v){document.querySelectorAll("."+c).forEach(x=>x.checked=v)}
+function setAll(c,v){document.querySelectorAll("."+c).forEach(x=>x.checked=v);if(typeof saveConfig==="function")saveConfig()}
 $("cAll").onclick=()=>setAll("cstOn",true);$("cNone").onclick=()=>setAll("cstOn",false);
 $("oAll").onclick=()=>setAll("opOn",true);$("oNone").onclick=()=>setAll("opOn",false);
 function statusPills(o){const el=$("status");el.innerHTML="";for(const[k,v]of Object.entries(o)){const d=document.createElement("div");d.className="pill mono";d.textContent=`${k}: ${v}`;el.appendChild(d)}}
@@ -123,7 +130,25 @@ function parseTarget(s){s=String(s).trim();if(s==="pi"||s==="π")return Math.PI;
 function parseNNI(r,ie=false){const t=String(r??"").trim();if(t==="")return{ok:true,val:ie?Infinity:0};if(!/^[0-9]+$/.test(t))return{ok:false,err:t};return{ok:true,val:Number(t)}}
 function getOps(){const en=new Set([...document.querySelectorAll(".opOn")].filter(x=>x.checked).map(x=>x.dataset.key));return{opsUn:OP_LIST.filter(o=>o.kind==="un"&&en.has(o.key)).map(o=>o.key),opsBin:OP_LIST.filter(o=>o.kind==="bin"&&en.has(o.key)).map(o=>o.key)}}
 function getConsts(){const en=new Set([...document.querySelectorAll(".cstOn")].filter(x=>x.checked).map(x=>x.dataset.key));const mnM=new Map([...document.querySelectorAll(".cstMin")].map(x=>[x.dataset.key,x.value]));const mxM=new Map([...document.querySelectorAll(".cstMax")].map(x=>[x.dataset.key,x.value]));const out=[];for(const c of CONST_LIST){if(!en.has(c.key))continue;const mnP=parseNNI(mnM.get(c.key),false);if(!mnP.ok)throw new Error(c.sym+" min");const mxP=parseNNI(mxM.get(c.key),true);if(!mxP.ok)throw new Error(c.sym+" max");const mn=Math.floor(mnP.val),mx=mxP.val===Infinity?65535:Math.floor(mxP.val);if(mn>mx)throw new Error(c.sym+" min>max");out.push({key:c.key,s:c.sym,v:c.val,min:mn,max:mx})}if(!out.length)throw new Error("请至少启用一个常数");return out}
-function renderResults(rows,sc){const tb=$("tbody");tb.innerHTML="";for(const r of rows){const tr=document.createElement("tr");const t1=document.createElement("td"),tg=document.createElement("span"),tp=r.searchType||"fwd";tg.className="tag tag-"+tp;tg.textContent=tp==="fwd"?"正向":"相遇";t1.appendChild(tg);const t2=document.createElement("td");t2.className="mono";t2.textContent=r.expr;if(sc&&r.countsInfo){const d=document.createElement("div");d.className="mono countsLine";d.textContent=r.countsInfo;t2.appendChild(d)}const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(r.v);const t4=document.createElement("td");t4.className="mono";t4.textContent=(r.delta>=0?"+":"")+fmt(r.delta);const t5=document.createElement("td");t5.className="mono";t5.textContent=r.acc;const t6=document.createElement("td");t6.className="mono right";t6.textContent=String(r.cost);tr.append(t1,t2,t3,t4,t5,t6);tb.appendChild(tr)}}
+function stripOuterParen(s){let x=String(s||"").trim();while(x.startsWith("(")&&x.endsWith(")")){let d=0,ok=true;for(let i=0;i<x.length;i++){const c=x[i];if(c==="(")d++;else if(c===")")d--;if(d===0&&i<x.length-1){ok=false;break}}if(!ok)break;x=x.slice(1,-1).trim()}return x}
+function extractBalanced(src,start){if(src[start]!=="(")return null;let d=0;for(let i=start;i<src.length;i++){const c=src[i];if(c==="(")d++;else if(c===")")d--;if(d===0)return{inside:src.slice(start+1,i),end:i}}return null}
+function splitTopLevelArgs(text){const out=[];let d=0,last=0;for(let i=0;i<text.length;i++){const c=text[i];if(c==="(")d++;else if(c===")")d--;else if(c===","&&d===0){out.push(text.slice(last,i).trim());last=i+1}}out.push(text.slice(last).trim());return out}
+function findTopLevelOp(s){let d=0,pm=-1,md=-1,pw=-1;for(let i=0;i<s.length;i++){const c=s[i];if(c==="(")d++;else if(c===")")d--;else if(d===0){if((c==="+"||c==="-")&&i!==0)pm=i;else if(c==="*"||c==="/")md=i;else if(c==="^")pw=i}}if(pm>=0)return{i:pm,op:s[pm]};if(md>=0)return{i:md,op:s[md]};if(pw>=0)return{i:pw,op:s[pw]};return null}
+function rewriteExpr(expr){let t=stripOuterParen(expr);const fn=t.match(/^([A-Za-zΓ][\w]*)\((.*)\)$/);if(fn){const b=extractBalanced(t,fn[1].length);if(b&&b.end===t.length-1){const args=splitTopLevelArgs(b.inside).map(rewriteExpr);return `${fn[1]}(${args.join(",")})`}}
+  const top=findTopLevelOp(t);if(!top)return t;let L=rewriteExpr(t.slice(0,top.i)),R=rewriteExpr(t.slice(top.i+1)),op=top.op;
+  if(op==="+"){if(L==="0")return R;if(R==="0")return L;if(R.startsWith("-")&&R.length>1)return rewriteExpr(`(${L}-${R.slice(1)})`);if(L.startsWith("-")&&L.length>1)return rewriteExpr(`(${R}-${L.slice(1)})`)}
+  if(op==="-"){if(R==="0")return L;if(L===R)return"0";if(L==="0")return `-${R}`;const rs=R.match(/^\((.+)-(.+)\)$/);if(rs)return rewriteExpr(`((${L}-${rs[1]})+${rs[2]})`)}
+  if(op==="*"){if(L==="1")return R;if(R==="1")return L;if(L==="0"||R==="0")return"0"}
+  if(op==="/"){if(R==="1")return L}
+  return `(${L}${op}${R})`}
+function prettifyExpr(expr){let out=stripOuterParen(rewriteExpr(expr));out=out.replace(/\bpi\b/g,"π").replace(/\bphi\b/g,"φ");
+  let changed=true;while(changed){changed=false;const idx=out.indexOf("pow(");if(idx!==-1){const b=extractBalanced(out,idx+3);if(b){const args=splitTopLevelArgs(b.inside);if(args.length===2){const a=stripOuterParen(args[0]),bb=stripOuterParen(args[1]);out=out.slice(0,idx)+a+"^"+bb+out.slice(b.end+1);changed=true}}}}
+  changed=true;while(changed){changed=false;const idx=out.indexOf("sqrt(");if(idx!==-1){const b=extractBalanced(out,idx+4);if(b){const inner=stripOuterParen(prettifyExpr(b.inside));const atom=/^[\wπφ.-]+$/.test(inner);out=out.slice(0,idx)+"√"+(atom?inner:"("+inner+")")+out.slice(b.end+1);changed=true}}}
+  out=out.replace(/\(\(([^()]+)\)\)/g,"($1)");
+  return out}
+async function copyText(text){if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(text);return true}const ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);ta.select();const ok=document.execCommand("copy");ta.remove();return ok}
+function rowToCopyText(r){const pretty=prettifyExpr(r.expr);return `${pretty} = ${fmt(r.v)}  (Δ=${r.delta>=0?"+":""}${fmt(r.delta)}, complexity=${r.cost})`}
+function renderResults(rows,sc){const tb=$("tbody");tb.innerHTML="";$("copyAll").disabled=!rows.length;for(const r of rows){const tr=document.createElement("tr");const t1=document.createElement("td"),tg=document.createElement("span"),tp=r.searchType||"fwd";tg.className="tag tag-"+tp;tg.textContent=tp==="fwd"?"正向":"相遇";t1.appendChild(tg);const t2=document.createElement("td");t2.className="mono cellExpr";t2.textContent=prettifyExpr(r.expr);if(sc&&r.countsInfo){const d=document.createElement("div");d.className="mono countsLine";d.textContent=r.countsInfo;t2.appendChild(d)}const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(r.v);const t4=document.createElement("td");t4.className="mono";t4.textContent=(r.delta>=0?"+":"")+fmt(r.delta);const t5=document.createElement("td");t5.className="mono";t5.textContent=r.acc;const t6=document.createElement("td");t6.className="mono right";t6.textContent=String(r.cost);const t7=document.createElement("td");t7.className="right";const b=document.createElement("button");b.textContent="复制";b.onclick=async()=>{await copyText(rowToCopyText(r))};t7.appendChild(b);tr.append(t1,t2,t3,t4,t5,t6,t7);tb.appendChild(tr)}}
 
 function buildWorker(){
 const src = `
@@ -245,9 +270,11 @@ function invBinL(op,r,b){switch(op){case"+":return r-b;case"-":return r+b;case"*
 
 // ============ MAIN ============
 onmessage=async(ev)=>{
-  const msg=ev.data;if(msg.type==="stop"){stopFlag=true;return}if(msg.type!=="start")return;
+  const msg=ev.data;if(msg.type==="stop"){stopFlag=true;return}if(msg.type==="hint"){sharedBestDelta=Math.min(sharedBestDelta,msg.bestDelta||Infinity);return}if(msg.type!=="start")return;
   stopFlag=false;
-  let{T,maxC,beam,outN,timeLimit,infiniteTime,emitInterval,opsUn,opsBin,consts,showCounts,bidir,divRatio,pruneEquiv}=msg;
+  let{T,maxC,beam,outN,timeLimit,infiniteTime,emitInterval,opsUn,opsBin,consts,showCounts,bidir,divRatio,pruneEquiv,shardIndex=0,shardCount=1,perfMode="balanced",beamPerWorker=0}=msg;
+  let sharedBestDelta=Infinity;
+  const effBeam=Math.max(50,beamPerWorker||beam);
   emitInterval=Math.max(50,Math.min(60000,emitInterval|0||500));
   const lim=infiniteTime?Infinity:Math.max(0,timeLimit);
   divRatio=Math.max(0,Math.min(1,divRatio||0));
@@ -300,6 +327,8 @@ onmessage=async(ev)=>{
     const delta=obj.v-T;
     const absDelta=Math.abs(delta);
 
+    if(Number.isFinite(sharedBestDelta)&&best.length>=outN&&absDelta>sharedBestDelta*3.0)return;
+
     // ===== DEDUP by value: keep only the simplest expression for each ~same value =====
     const valRound = obj.v.toPrecision(11);
     const existing = bestSeenValues.get(valRound);
@@ -326,14 +355,16 @@ onmessage=async(ev)=>{
   }
 
   function mkBucket(){
-    const bucket=new Map();const spLim=Math.max(beam*18,12000),keepSp=Math.max(beam*6,4000);
+    const perfMap={speed:{sp:12,keep:4},balanced:{sp:18,keep:6},memory:{sp:10,keep:3},quality:{sp:24,keep:8}};
+    const perf=perfMap[perfMode]||perfMap.balanced;
+    const bucket=new Map();const spLim=Math.max(effBeam*perf.sp,7000),keepSp=Math.max(effBeam*perf.keep,2200);
     function spill(){const v=Array.from(bucket.values());v.sort((a,b)=>a.score-b.score);bucket.clear();for(let i=0;i<Math.min(keepSp,v.length);i++){const it=v[i];bucket.set(it.key,it)}}
     function put(key,score,pack){const old=bucket.get(key);if(old&&score>=old.score)return false;pack.score=score;pack.key=key;bucket.set(key,pack);if(bucket.size>spLim)spill();return true}
     function fin(cost){
-      const vals=Array.from(bucket.values());const nT=Math.ceil(beam*(1-divRatio)),nD=beam-nT;
+      const vals=Array.from(bucket.values());const nT=Math.ceil(effBeam*(1-divRatio)),nD=effBeam-nT;
       vals.sort((a,b)=>a.score-b.score);const out=[],usedBins=new Set();
       for(let i=0;i<Math.min(nT,vals.length);i++){const it=vals[i];it.cost=cost;out.push(it);usedBins.add(Math.floor(Math.log(Math.abs(it.v)+1e-30)*3))}
-      if(nD>0&&vals.length>nT){const rem=vals.slice(nT);const bm=new Map();for(const it of rem){const b=Math.floor(Math.log(Math.abs(it.v)+1e-30)*3);if(!usedBins.has(b)&&(!bm.has(b)||it.score<bm.get(b).score))bm.set(b,it)}const di=Array.from(bm.values());di.sort((a,b)=>a.score-b.score);for(let i=0;i<Math.min(nD,di.length);i++){di[i].cost=cost;out.push(di[i])}if(out.length<beam){const ok=new Set(out.map(x=>x.key));for(const it of rem){if(out.length>=beam)break;if(!ok.has(it.key)){it.cost=cost;out.push(it)}}}}
+      if(nD>0&&vals.length>nT){const rem=vals.slice(nT);const bm=new Map();for(const it of rem){const b=Math.floor(Math.log(Math.abs(it.v)+1e-30)*3);if(!usedBins.has(b)&&(!bm.has(b)||it.score<bm.get(b).score))bm.set(b,it)}const di=Array.from(bm.values());di.sort((a,b)=>a.score-b.score);for(let i=0;i<Math.min(nD,di.length);i++){di[i].cost=cost;out.push(di[i])}if(out.length<effBeam){const ok=new Set(out.map(x=>x.key));for(const it of rem){if(out.length>=effBeam)break;if(!ok.has(it.key)){it.cost=cost;out.push(it)}}}}
       return out;
     }
     return{bucket,put,fin};
@@ -342,7 +373,7 @@ onmessage=async(ev)=>{
   const fwd=Array.from({length:maxC+1},()=>[]);
   {
     const{put,fin}=mkBucket();
-    for(let i=0;i<nC;i++){
+    for(let i=0;i<nC;i++){if(shardCount>1&&(i%shardCount)!==shardIndex)continue;
       const v=consts[i].v;visited++;
       if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
       const score=Math.abs(v-T);const flags=mkFlags(v,TAG_NONE,true);
@@ -434,8 +465,9 @@ onmessage=async(ev)=>{
     if(stopFlag)break;if(performance.now()-t0>lim)break;
     if(bidir&&c<=Math.floor(maxC/2)+2)buildRev(c);
     const{bucket,put,fin}=mkBucket();
-    const capUn=Math.max(80,Math.floor(beam/8));
-    const capBin=Math.max(60,Math.floor(beam/14));
+    const perfCap={speed:{u:9,b:16},balanced:{u:8,b:14},memory:{u:11,b:20},quality:{u:6,b:11}}[perfMode]||{u:8,b:14};
+    const capUn=Math.max(30,Math.floor(effBeam/perfCap.u));
+    const capBin=Math.max(24,Math.floor(effBeam/perfCap.b));
 
     for(const op of opsUn){
       if(stopFlag)break;const w=wUn(op),sc=c-w;if(sc<1)continue;
@@ -446,7 +478,7 @@ onmessage=async(ev)=>{
         if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue}
         const v=applyUn(op,a.v);visited++;
         if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-        const score=Math.abs(v-T);const nf=mkFlags(v,opTag(op),false);
+        const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const nf=mkFlags(v,opTag(op),false);
         const ast=mkU(op,a.ast);
         if(useBitmask){const key=vKey(v)+"|"+a.mask;const old=bucket.get(key);if(old&&score>=old.score)continue;put(key,score,{v,ast,mask:a.mask,flags:nf})}
         else{const ck=a.ck||"";const key=vKey(v)+"|"+ck;const old=bucket.get(key);if(old&&score>=old.score)continue;put(key,score,{v,ast,cnt:a.cnt,ck,flags:nf})}
@@ -470,13 +502,13 @@ onmessage=async(ev)=>{
               if((a.mask&b.mask)!==0)continue;const mask=a.mask|b.mask;
               const v=applyBin(op,a.v,b.v);
               if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-              const score=Math.abs(v-T);const key=vKey(v)+"|"+mask;
+              const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const key=vKey(v)+"|"+mask;
               const old=bucket.get(key);if(!old||score<old.score){const ast=mkB(op,a.ast,b.ast);put(key,score,{v,ast,mask,flags:mkFlags(v,opTag(op),false)})}
             }else{
               const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);if(!cnt)continue;
               const v=applyBin(op,a.v,b.v);
               if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-              const score=Math.abs(v-T);const ck=Array.from(cnt).join(",");const key=vKey(v)+"|"+ck;
+              const score=Math.abs(v-T);if(Number.isFinite(sharedBestDelta)&&score>sharedBestDelta*4.0)continue;const ck=Array.from(cnt).join(",");const key=vKey(v)+"|"+ck;
               const old=bucket.get(key);if(!old||score<old.score){const ast=mkB(op,a.ast,b.ast);put(key,score,{v,ast,cnt,ck,flags:mkFlags(v,opTag(op),false)})}
             }
             if((visited&8191)===0)emit(c);if(stopFlag||performance.now()-t0>lim)break;
@@ -498,8 +530,14 @@ onmessage=async(ev)=>{
   return new Worker(URL.createObjectURL(new Blob([src],{type:"text/javascript"})));
 }
 
-let worker=null;
-$("infiniteTime").addEventListener("change",()=>{$("timeLimit").disabled=$("infiniteTime").checked});
+let worker=null;let workers=[];let lastRows=[];
+const STORE_KEY="ries_config_v1";
+function saveConfig(){const cfg={target:$("target").value,maxC:$("maxC").value,beam:$("beam").value,divRatio:$("divRatio").value,outN:$("outN").value,threads:$("threads").value,emitInterval:$("emitInterval").value,timeLimit:$("timeLimit").value,infiniteTime:$("infiniteTime").checked,bidir:$("bidir").checked,showCounts:$("showCounts").checked,pruneEquiv:$("pruneEquiv").checked,perfMode:$("perfMode").value,crossHint:$("crossHint").checked,ops:[...document.querySelectorAll(".opOn")].map(x=>[x.dataset.key,x.checked]),consts:[...document.querySelectorAll(".cstOn")].map(x=>[x.dataset.key,x.checked]),mins:[...document.querySelectorAll(".cstMin")].map(x=>[x.dataset.key,x.value]),maxs:[...document.querySelectorAll(".cstMax")].map(x=>[x.dataset.key,x.value])};localStorage.setItem(STORE_KEY,JSON.stringify(cfg))}
+function loadConfig(){try{const raw=localStorage.getItem(STORE_KEY);if(!raw)return;const cfg=JSON.parse(raw);for(const id of ["target","maxC","beam","divRatio","outN","threads","emitInterval","timeLimit"])if(cfg[id]!=null)$(id).value=cfg[id];for(const id of ["infiniteTime","bidir","showCounts","pruneEquiv","crossHint"])if(cfg[id]!=null)$(id).checked=!!cfg[id];if(cfg.perfMode)$("perfMode").value=cfg.perfMode;const om=new Map(cfg.ops||[]),cm=new Map(cfg.consts||[]),mn=new Map(cfg.mins||[]),mx=new Map(cfg.maxs||[]);document.querySelectorAll(".opOn").forEach(x=>{if(om.has(x.dataset.key))x.checked=!!om.get(x.dataset.key)});document.querySelectorAll(".cstOn").forEach(x=>{if(cm.has(x.dataset.key))x.checked=!!cm.get(x.dataset.key)});document.querySelectorAll(".cstMin").forEach(x=>{if(mn.has(x.dataset.key))x.value=mn.get(x.dataset.key)});document.querySelectorAll(".cstMax").forEach(x=>{if(mx.has(x.dataset.key))x.value=mx.get(x.dataset.key)});}catch{}
+  $("timeLimit").disabled=$("infiniteTime").checked;
+}
+$("infiniteTime").addEventListener("change",()=>{$("timeLimit").disabled=$("infiniteTime").checked;saveConfig()});
+$("copyAll").onclick=async()=>{if(!lastRows.length)return;await copyText(lastRows.map(rowToCopyText).join("\n"))};
 $("btnStart").onclick=()=>{
   const T=parseTarget($("target").value);if(!Number.isFinite(T)){alert("无效");return}
   const maxC=Math.max(1,Math.min(200,Number($("maxC").value||24)));
@@ -508,30 +546,27 @@ $("btnStart").onclick=()=>{
   const infiniteTime=$("infiniteTime").checked;
   const timeLimit=infiniteTime?0:Math.max(0,Number($("timeLimit").value||0));
   const emitInterval=Math.max(50,Math.min(60000,Number($("emitInterval").value||500)));
+  const threads=Math.max(1,Math.min(16,Number($("threads").value||1)));
   const showCounts=$("showCounts").checked;const bidir=$("bidir").checked;
   const divRatio=Math.max(0,Math.min(1,Number($("divRatio").value||.25)));
   const pruneEquiv=$("pruneEquiv").checked;
+  const perfMode=$("perfMode").value;
+  const crossHint=$("crossHint").checked;
+  const beamPerWorker=beam;
   const{opsUn,opsBin}=getOps();
   if(!opsUn.length&&!opsBin.length){alert("请至少选择一个运算");return}
   let consts;try{consts=getConsts()}catch(e){alert(e.message);return}
-  if(worker)worker.terminate();worker=buildWorker();
+  if(worker)worker.terminate();for(const w of workers)w.terminate();workers=[];worker=null;
+  saveConfig();
   $("btnStart").disabled=true;$("btnStop").disabled=false;$("pruneStats").style.display="none";
-  statusPills({T:fmt(T),status:"running",bidir:bidir?"ON":"OFF",prune:pruneEquiv?"ON":"OFF",divRatio,maxC,beam,outN});
-  worker.onmessage=(ev)=>{
-    const{type,payload}=ev.data;
-    if(type==="error"){alert(payload);$("btnStart").disabled=false;$("btnStop").disabled=true;return}
-    if(type==="progress"||type==="done"){
-      const rows=payload.best||[];const ba=rows.length?Math.abs(rows[0].delta):NaN;
-      statusPills({T:fmt(T),status:type,mode:payload.mode,c:(payload.c??0)+"/"+payload.maxC,elapsed_ms:payload.elapsed,visited:payload.visited,meets:payload.meetCount||0,pruned:payload.pruned||0,reEval_fixed:payload.reEvalFixed||0,dupes_killed:payload.dupesKilled||0,best_delta:Number.isFinite(ba)?fmt(ba):"n/a"});
-      if((payload.pruned||0)>0||(payload.dupesKilled||0)>0){const ps=$("pruneStats");ps.style.display="block";ps.innerHTML="<b>恒等式剪枝：</b>"+((payload.pruned||0).toLocaleString())+" 个冗余跳过 &nbsp;|&nbsp; <b>AST重求值修正：</b>"+(payload.reEvalFixed||0).toLocaleString()+" &nbsp;|&nbsp; <b>输出去重：</b>"+(payload.dupesKilled||0).toLocaleString()+" 个同值表达式合并"}
-      renderResults(rows,showCounts);
-      if(type==="done"){$("btnStart").disabled=false;$("btnStop").disabled=true}
-    }
-  };
-  worker.postMessage({type:"start",T,maxC,beam,outN,timeLimit,infiniteTime,emitInterval,opsUn,opsBin,consts,showCounts,bidir,divRatio,pruneEquiv});
+  statusPills({T:fmt(T),status:"running",bidir:bidir?"ON":"OFF",prune:pruneEquiv?"ON":"OFF",perf:perfMode,coop:crossHint?"ON":"OFF",divRatio,maxC,beam,beam_per_worker:beamPerWorker,outN,threads});
+  const shardBest=Array.from({length:threads},()=>[]);const shardDone=Array.from({length:threads},()=>false);const shardMeta=Array.from({length:threads},()=>({}));
+  const mergeRows=()=>{const all=shardBest.flat();all.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));const uniq=[];const seen=new Set();for(const r of all){const k=Number(r.v).toPrecision(11);if(seen.has(k))continue;seen.add(k);uniq.push(r);if(uniq.length>=outN)break}lastRows=uniq;return uniq};
+  const updateView=(type,payload)=>{const rows=mergeRows();const ba=rows.length?Math.abs(rows[0].delta):NaN;const sum=(k)=>shardMeta.reduce((a,m)=>a+(Number(m?.[k])||0),0);statusPills({T:fmt(T),status:type,mode:payload.mode,c:(payload.c??0)+"/"+payload.maxC,elapsed_ms:payload.elapsed,visited:sum("visited"),meets:sum("meetCount"),pruned:sum("pruned"),reEval_fixed:sum("reEvalFixed"),dupes_killed:sum("dupesKilled"),best_delta:Number.isFinite(ba)?fmt(ba):"n/a",threads,perf:perfMode,coop:crossHint?"ON":"OFF"});if(Number.isFinite(ba)&&crossHint){for(const w of workers)w.postMessage({type:"hint",bestDelta:ba})}if(sum("pruned")>0||sum("dupesKilled")>0){const ps=$("pruneStats");ps.style.display="block";ps.innerHTML="<b>恒等式剪枝：</b>"+sum("pruned").toLocaleString()+" 个冗余跳过 &nbsp;|&nbsp; <b>AST重求值修正：</b>"+sum("reEvalFixed").toLocaleString()+" &nbsp;|&nbsp; <b>输出去重：</b>"+sum("dupesKilled").toLocaleString()+" 个同值表达式合并"}renderResults(rows,showCounts)};
+  for(let i=0;i<threads;i++){const w=buildWorker();workers.push(w);w.onmessage=(ev)=>{const{type,payload}=ev.data;if(type==="error"){alert(payload);$("btnStart").disabled=false;$("btnStop").disabled=true;return}if(type==="progress"||type==="done"){shardBest[i]=payload.best||[];shardMeta[i]=payload||{};if(type==="done")shardDone[i]=true;updateView(type,payload);if(shardDone.every(Boolean)){$("btnStart").disabled=false;$("btnStop").disabled=true}}};w.postMessage({type:"start",T,maxC,beam,outN,timeLimit,infiniteTime,emitInterval,opsUn,opsBin,consts,showCounts,bidir,divRatio,pruneEquiv,shardIndex:i,shardCount:threads,perfMode,beamPerWorker})}
 };
-$("btnStop").onclick=()=>{if(worker)worker.postMessage({type:"stop"});$("btnStop").disabled=true};
-mountConsts();mountOps();statusPills({tip:"v5: AST精确重求值 + 恒等式剪枝 + 输出值去重 + 双向搜索"});
+$("btnStop").onclick=()=>{if(worker)worker.postMessage({type:"stop"});for(const w of workers)w.postMessage({type:"stop"});$("btnStop").disabled=true};
+mountConsts();mountOps();loadConfig();document.querySelectorAll("input,select").forEach(el=>el.addEventListener("change",saveConfig));statusPills({ready:"ok"});
 })();
 </script>
 </body>
