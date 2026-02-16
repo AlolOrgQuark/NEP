@@ -1752,7 +1752,7 @@ onmessage=async(ev)=>{
 
           const nf=mkFlags(v,opTag(op),false);
           const pW=a.wA;
-          const nW=pW?(fa=>mkU(op,pW(fa))):(fa=>mkU(op,fa));
+          const nW=pW?(fa=>pW(mkU(op,fa))):(fa=>mkU(op,fa));
           const score=revScore(v);
 
           if(useBitmask){
@@ -1793,7 +1793,7 @@ onmessage=async(ev)=>{
                 const m=combMask(f.mask,r.mask);
                 if(m>=0){
                   const pW=r.wA, fA=f.ast;
-                  const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));
+                  const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
                   put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false),keep:score,goal:score,bb:score});
                 }
@@ -1802,7 +1802,7 @@ onmessage=async(ev)=>{
                 if(cnt){
                   const ck=ckFromCnt(cnt);
                   const pW=r.wA, fA=f.ast;
-                  const nW=pW?(fa=>mkB(op,fA,pW(fa))):(fa=>mkB(op,fA,fa));
+                  const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
                   put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false),keep:score,goal:score,bb:score});
                 }
@@ -1820,7 +1820,7 @@ onmessage=async(ev)=>{
                   const m=combMask(f.mask,r.mask);
                   if(m>=0){
                     const pW=r.wA, fA=f.ast;
-                    const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));
+                    const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
                     put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false),keep:score,goal:score,bb:score});
                   }
@@ -1829,7 +1829,7 @@ onmessage=async(ev)=>{
                   if(cnt){
                     const ck=ckFromCnt(cnt);
                     const pW=r.wA, fA=f.ast;
-                    const nW=pW?(fa=>mkB(op,pW(fa),fA)):(fa=>mkB(op,fa,fA));
+                    const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
                     put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false),keep:score,goal:score,bb:score});
                   }
