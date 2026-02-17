@@ -101,9 +101,9 @@
     <div>
       <label>模式</label>
       <select id="mode">
-        <option value="normal" selected>普通模式（高效Meet整合）</option>
-        <option value="speed">速度模式（Free+Meet快速整合）</option>
-        <option value="accuracy">精度模式（RIES整合）</option>
+        <option value="normal" selected>普通模式</option>
+        <option value="speed">速度模式</option>
+        <option value="accuracy">精度模式</option>
       </select>
       <div class="muted" style="margin-top:6px;line-height:1.25">
         普通模式：默认推荐，整合高效 Meet。速度模式：激进吞吐，优先性能。精度模式：整合 RIES 的构件保留，优先覆盖质量。
@@ -130,6 +130,7 @@
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="pruneEquiv" type="checkbox" checked/><span class="muted">恒等式剪枝</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="excludeExact" type="checkbox"/><span class="muted">排除 exact</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="debugMode" type="checkbox"/><span class="muted">Debug 显示详细统计</span></label>
+      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="latexMode" type="checkbox"/><span class="muted">LaTeX 模式（在线渲染）</span></label>
     </div>
 
     <div>
@@ -139,9 +140,6 @@
         <input id="threads" type="number" value="6" min="1" max="64" style="max-width:140px"/>
         <span class="muted">线程</span>
         <span class="muted warn" id="mtHint"></span>
-      </div>
-      <div class="muted" style="margin-top:6px;line-height:1.25">
-        提示：无约束或少约束更快。counts(大约束)也能并行但更重。
       </div>
     </div>
 
@@ -172,6 +170,16 @@
       <div class="toolbar"><div class="muted">运算/函数</div><button id="oAll">全选</button><button id="oNone">全不选</button></div>
       <div class="opsGrid" id="opsBox" style="margin-top:8px"></div>
     </div>
+  </div>
+
+
+  <div style="height:10px"></div>
+  <div class="box">
+    <label style="display:flex;gap:8px;align-items:center;margin:0 0 6px 0">
+      <input id="customEnable" type="checkbox"/>
+      <span class="muted">自定义约束 / 扩展（JS）</span>
+    </label>
+    <textarea id="customBox" class="mono" style="min-height:110px"></textarea>
   </div>
 
   <div class="runtimePanel" id="runtimePanel">
@@ -321,6 +329,22 @@ function updateRuntimePanel(payload){
   $("rtBar").style.width=`${pct.toFixed(1)}%`;
 }
 
+let latexScriptLoading=null;
+async function ensureLatexRenderer(){
+  if(!navigator.onLine) return false;
+  if(window.MathJax?.typesetPromise) return true;
+  if(latexScriptLoading) return latexScriptLoading;
+  latexScriptLoading = new Promise((resolve)=>{
+    const sc=document.createElement('script');
+    sc.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
+    sc.async=true;
+    sc.onload=()=>resolve(!!window.MathJax?.typesetPromise);
+    sc.onerror=()=>resolve(false);
+    document.head.appendChild(sc);
+  });
+  return latexScriptLoading;
+}
+
 function parseTarget(s){
   s=String(s).trim();
   if(s==="pi"||s==="π")return Math.PI;
@@ -423,9 +447,11 @@ $("btnCopyAllTable").onclick=()=>{
   copyText(lines.join("\n"));
 };
 
-function renderResults(rows,showCounts,debugOn=false){
+async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
   lastRows=rows||[];
   const tb=$("tbody");tb.innerHTML="";
+  const frag=document.createDocumentFragment();
+  const useLatex = latexMode && navigator.onLine && await ensureLatexRenderer();
   for(const r of rows){
     const tr=document.createElement("tr");
 
@@ -441,6 +467,12 @@ function renderResults(rows,showCounts,debugOn=false){
     const t2=document.createElement("td");
     t2.className="mono expr";
     t2.textContent=r.expr;
+    if(useLatex && r.latex){
+      const lx=document.createElement("div");
+      lx.className="countsLine";
+      lx.textContent=`\(${r.latex}\)`;
+      t2.appendChild(lx);
+    }
     if(showCounts && r.countsInfo){
       const d=document.createElement("div");
       d.className="mono countsLine";
@@ -461,7 +493,11 @@ function renderResults(rows,showCounts,debugOn=false){
     t7.appendChild(b);
 
     tr.append(t1,t2,t3,t4,t5,t6,t7);
-    tb.appendChild(tr);
+    frag.appendChild(tr);
+  }
+  tb.appendChild(frag);
+  if(useLatex && window.MathJax?.typesetPromise){
+    try{ await window.MathJax.typesetPromise([tb]); }catch(e){}
   }
 }
 
@@ -492,6 +528,9 @@ function collectUIState(){
     pruneEquiv:$("pruneEquiv").checked,
     excludeExact:$("excludeExact").checked,
     debugMode:$("debugMode").checked,
+    latexMode:$("latexMode").checked,
+    customEnable:$("customEnable").checked,
+    customBox:$("customBox").value,
     mt:$("mt").checked,
     threads:$("threads").value,
     ops,consts
@@ -513,6 +552,9 @@ function applyUIState(st){
   if(st.pruneEquiv!=null)$("pruneEquiv").checked=!!st.pruneEquiv;
   if(st.excludeExact!=null)$("excludeExact").checked=!!st.excludeExact;
   if(st.debugMode!=null)$("debugMode").checked=!!st.debugMode;
+  if(st.latexMode!=null)$("latexMode").checked=!!st.latexMode;
+  if(st.customEnable!=null)$("customEnable").checked=!!st.customEnable;
+  if(st.customBox!=null)$("customBox").value=String(st.customBox);
   if(st.mt!=null)$("mt").checked=!!st.mt;
   if(st.threads!=null)$("threads").value=st.threads;
 
@@ -544,7 +586,7 @@ function scheduleSave(){
   },250);
 }
 function hookAutoSave(){
-  const ids=["target","mode","maxC","beam","divRatio","outN","emitInterval","timeLimit","infiniteTime","bidir","showCounts","pruneEquiv","excludeExact","debugMode","mt","threads"];
+  const ids=["target","mode","maxC","beam","divRatio","outN","emitInterval","timeLimit","infiniteTime","bidir","showCounts","pruneEquiv","excludeExact","debugMode","latexMode","customEnable","customBox","mt","threads"];
   ids.forEach(id=>{
     const el=$(id);
     el.addEventListener("input",scheduleSave);
@@ -590,6 +632,7 @@ let TCOUNT=0;
 let MAXT=null; // Uint16Array
 let OPS_UN=[], OPS_BIN=[];
 let PRUNE=true;
+let NEED_ZERO=false, NEED_ONE=false;
 
 // ---- keys ----
 function vKey(v){ if(!Number.isFinite(v))return "NaN"; if(Object.is(v,-0))v=0; return v.toPrecision(KEYP); }
@@ -720,13 +763,14 @@ const TAG_SIN=8,TAG_ASIN=9,TAG_COS=10,TAG_ACOS=11,TAG_TAN=12,TAG_ATAN=13;
 const TAG_SINH=14,TAG_COSH=15,TAG_TANH=16;
 const TAG_ADD=17,TAG_SUB=18,TAG_MUL=19,TAG_DIV=20,TAG_POW=21;
 const TAG_CBRT=22,TAG_CUBE=23,TAG_SIGN=24;
-const F_ZERO=1<<8,F_ONE=1<<9,F_NEGONE=1<<10,F_INT=1<<11,F_NONNEG=1<<12,F_CONST=1<<13;
+const F_ZERO=1<<8,F_ONE=1<<9,F_NEGONE=1<<10,F_INT=1<<11,F_NONNEG=1<<12,F_CONST=1<<13,F_HAS_ABS=1<<14;
 function getTag(f){return f&0xFF;}
 function has(f,b){return (f&b)!==0;}
 function pruneUn(op,cf,cv){
   const ct=getTag(cf);
   if(op==="neg"&&ct===TAG_NEG)return true;
   if(op==="abs"&&(ct===TAG_ABS||ct===TAG_NEG))return true;
+  if(op==="abs"&&has(cf,F_HAS_ABS))return true;
   if(op==="abs"&&has(cf,F_NONNEG))return true;
   if(op==="inv"&&ct===TAG_INV)return true;
   if(op==="exp"&&ct===TAG_LOG)return true;
@@ -748,20 +792,20 @@ function pruneUn(op,cf,cv){
   return false;
 }
 function pruneBin(op,af,bf,av,bv){
-  if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
+  if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO))&&!NEED_ZERO)return true;
   if(op==="-"&&has(bf,F_ZERO))return true;
   if(op==="-"&&Math.abs(av-bv)<1e-15)return true;
   if(op==="-"&&has(af,F_ZERO))return true;
   if(op==="*"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
-  if(op==="*"&&(has(af,F_ONE)||has(bf,F_ONE)))return true;
+  if(op==="*"&&(has(af,F_ONE)||has(bf,F_ONE))&&!NEED_ONE)return true;
   if(op==="*"&&(has(af,F_NEGONE)||has(bf,F_NEGONE)))return true;
   if(op==="/"&&has(af,F_ZERO))return true;
-  if(op==="/"&&(has(bf,F_ONE)||has(bf,F_NEGONE)))return true;
+  if(op==="/"&&(has(bf,F_ONE)||has(bf,F_NEGONE))&&!NEED_ONE)return true;
   if(op==="/"&&Math.abs(av-bv)<1e-15&&Math.abs(av)>1e-15)return true;
-  if(op==="^"&&has(bf,F_ZERO))return true;
-  if(op==="^"&&has(bf,F_ONE))return true;
-  if(op==="^"&&has(af,F_ZERO))return true;
-  if(op==="^"&&has(af,F_ONE))return true;
+  if(op==="^"&&has(bf,F_ZERO)&&!NEED_ZERO)return true;
+  if(op==="^"&&has(bf,F_ONE)&&!NEED_ONE)return true;
+  if(op==="^"&&has(af,F_ZERO)&&!NEED_ZERO)return true;
+  if(op==="^"&&has(af,F_ONE)&&!NEED_ONE)return true;
   if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
   return false;
 }
@@ -835,6 +879,8 @@ onmessage=(ev)=>{
     OPS_UN = msg.opsUn||[];
     OPS_BIN = msg.opsBin||[];
     PRUNE = !!msg.pruneEquiv;
+    NEED_ZERO = !!msg.needZero;
+    NEED_ONE = !!msg.needOne;
     layers = new Map();
     postMessage({type:"inited"});
     return;
@@ -975,19 +1021,19 @@ function modeParams(mode){
   if(mode==="speed") return {
     keyPrec:10, bestPrec:10, keepMode:"goal",
     bbD:20, bbMagA:0.032,
-    qGoal:0.78,qBB:0.06,qMeet:0.10,qDiv:0.06,
+    qGoal:0.76,qBB:0.08,qMeet:0.08,qDiv:0.04,qPow:0.04,
     meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:5,
-    revBeamMul:2.1, meetHitBonus:0.18,
+    revBeamMul:1.8, meetHitBonus:0.14,
     candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.16, confirmAbsFloor:2e-6,
-    spillMul:0.5, capMul:0.6, keepMeetDup:false,
-    meetSweepMul:0.22,
-    beamMul:0.78, subLayerCapMul:0.72,
+    spillMul:0.4, capMul:0.5, keepMeetDup:false,
+    meetSweepMul:0.14,
+    beamMul:0.7, subLayerCapMul:0.62,
     revIdxKeyCap:112, meetKeyProbeCap:100, meetSweepRevCap:132
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"min",
     bbD:64, bbMagA:0.02,
-    qGoal:0.55,qBB:0.28,qMeet:0.05,qDiv:0.12,
+    qGoal:0.48,qBB:0.28,qMeet:0.05,qDiv:0.09,qPow:0.10,
     meetStyle:"prec", meetPrec:12, meetQ:8192, meetR:2,
     revBeamMul:1.6, meetHitBonus:0.10,
     candEpsMul:1.1, confirmEpsMul:0.75, binSlackMul:0.30, confirmAbsFloor:0.0,
@@ -999,7 +1045,7 @@ function modeParams(mode){
   if(mode==="normal") return {
     keyPrec:12, bestPrec:11, keepMode:"min",
     bbD:48, bbMagA:0.02,
-    qGoal:0.44,qBB:0.14,qMeet:0.32,qDiv:0.10,
+    qGoal:0.40,qBB:0.16,qMeet:0.28,qDiv:0.08,qPow:0.08,
     meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
     revBeamMul:2.8, meetHitBonus:0.22,
     candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:0.0,
@@ -1012,7 +1058,7 @@ function modeParams(mode){
   return {
     keyPrec:12, bestPrec:11, keepMode:"min",
     bbD:48, bbMagA:0.02,
-    qGoal:0.44,qBB:0.14,qMeet:0.32,qDiv:0.10,
+    qGoal:0.40,qBB:0.16,qMeet:0.28,qDiv:0.08,qPow:0.08,
     meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
     revBeamMul:2.8, meetHitBonus:0.22,
     candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:0.0,
@@ -1024,6 +1070,7 @@ function modeParams(mode){
 }
 
 let KEYP=12, BESTP=11;
+let ALLOW_ADD=true, NEED_ZERO=false, NEED_ONE=false;
 function vKey(v){if(!Number.isFinite(v))return"NaN";if(Object.is(v,-0))v=0;return v.toPrecision(KEYP)}
 
 // ===== meet indexing =====
@@ -1150,7 +1197,12 @@ function isComm(op){return op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd
 // ===== AST =====
 function mkC(sym,val){return{t:0,sym,val}}
 function mkU(op,ch){return{t:1,op,ch}}
-function mkB(op,l,r){return{t:2,op,l,r}}
+function mkB(op,l,r){
+  if(op==="-" && ALLOW_ADD && r && r.t===1 && r.op==="neg"){
+    return {t:2,op:"+",l,r:r.ch};
+  }
+  return{t:2,op,l,r};
+}
 
 function applyUn(op,v){switch(op){
   case"neg":return-v;case"abs":return Math.abs(v);case"inv":return v===0?NaN:1/v;
@@ -1304,11 +1356,47 @@ function pretty(n,parentOp=null,side=null){
   }
   const L=n.l,R=n.r;
   const ls=pretty(L,op,"left"), rs=pretty(R,op,"right");
+  if(op==="+" && R && R.t===1 && R.op==="neg") {
+    const rs2=pretty(R.ch,op,"right");
+    const rout2=needParen(R.ch,op,"right")?"("+rs2+")":rs2;
+    const lout2=needParen(L,op,"left")?"("+ls+")":ls;
+    return lout2+"-"+rout2;
+  }
+  if(op==="-" && ALLOW_ADD && R && R.t===1 && R.op==="neg"){
+    const rs2=pretty(R.ch,"+","right");
+    const rout2=needParen(R.ch,"+","right")?"("+rs2+")":rs2;
+    const lout2=needParen(L,"+","left")?"("+ls+")":ls;
+    return lout2+"+"+rout2;
+  }
   const lout=needParen(L,op,"left")?"("+ls+")":ls;
   const rout=needParen(R,op,"right")?"("+rs+")":rs;
   return lout+op+rout;
 }
 function strA(n){return pretty(n,null,null);}
+function latexA(n,parentOp=null,side=null){
+  if(!n) return "";
+  if(n.t===0) return String(n.sym||n.val||"0");
+  if(n.t===1){
+    const ch=latexA(n.ch,null,null);
+    switch(n.op){
+      case "neg": return "-"+ch;
+      case "sqrt": return "\\sqrt{"+ch+"}";
+      case "cbrt": return "\\sqrt[3]{"+ch+"}";
+      case "inv": return "\\frac{1}{"+ch+"}";
+      case "square": return "{"+ch+"}^{2}";
+      case "cube": return "{"+ch+"}^{3}";
+      default: return "\\mathrm{"+n.op+"}\\left("+ch+"\\right)";
+    }
+  }
+  const l=latexA(n.l,n.op,"left");
+  const r=latexA(n.r,n.op,"right");
+  if(n.op==="/") return "\\frac{"+l+"}{"+r+"}";
+  if(n.op==="^") return "{"+l+"}^{"+r+"}";
+  if(n.op==="*") return l+"\\cdot "+r;
+  if(n.op==="+") return l+"+"+r;
+  if(n.op==="-") return l+"-"+r;
+  return "\\mathrm{"+n.op+"}\\left("+l+","+r+"\\right)";
+}
 
 // ===== pruning flags =====
 const TAG_NONE=0,TAG_NEG=1,TAG_EXP=2,TAG_LOG=3,TAG_SQRT=4,TAG_SQ=5,TAG_INV=6,TAG_ABS=7;
@@ -1316,10 +1404,10 @@ const TAG_SIN=8,TAG_ASIN=9,TAG_COS=10,TAG_ACOS=11,TAG_TAN=12,TAG_ATAN=13;
 const TAG_SINH=14,TAG_COSH=15,TAG_TANH=16;
 const TAG_ADD=17,TAG_SUB=18,TAG_MUL=19,TAG_DIV=20,TAG_POW=21;
 const TAG_CBRT=22,TAG_CUBE=23,TAG_SIGN=24;
-const F_ZERO=1<<8,F_ONE=1<<9,F_NEGONE=1<<10,F_INT=1<<11,F_NONNEG=1<<12,F_CONST=1<<13;
+const F_ZERO=1<<8,F_ONE=1<<9,F_NEGONE=1<<10,F_INT=1<<11,F_NONNEG=1<<12,F_CONST=1<<13,F_HAS_ABS=1<<14;
 
-function mkFlags(v,tag,isLeaf){
-  let f=tag&0xFF;const e=1e-15;
+function mkFlags(v,tag,isLeaf,extra=0){
+  let f=(tag&0xFF)|extra;const e=1e-15;
   if(Math.abs(v)<e)f|=F_ZERO;
   if(Math.abs(v-1)<e)f|=F_ONE;
   if(Math.abs(v+1)<e)f|=F_NEGONE;
@@ -1327,6 +1415,12 @@ function mkFlags(v,tag,isLeaf){
   if(v>=0)f|=F_NONNEG;
   if(isLeaf)f|=F_CONST;
   return f
+}
+function extraUnFlags(op, cf){
+  return ((op==="abs") || has(cf,F_HAS_ABS)) ? F_HAS_ABS : 0;
+}
+function extraBinFlags(af,bf){
+  return (af|bf)&F_HAS_ABS;
 }
 function getTag(f){return f&0xFF}
 function has(f,b){return(f&b)!==0}
@@ -1348,6 +1442,7 @@ function pruneUn(op,cf,cv){
   const ct=getTag(cf);
   if(op==="neg"&&ct===TAG_NEG)return true;
   if(op==="abs"&&(ct===TAG_ABS||ct===TAG_NEG))return true;
+  if(op==="abs"&&has(cf,F_HAS_ABS))return true;
   if(op==="abs"&&has(cf,F_NONNEG))return true;
   if(op==="inv"&&ct===TAG_INV)return true;
   if(op==="exp"&&ct===TAG_LOG)return true;
@@ -1373,20 +1468,20 @@ function pruneUn(op,cf,cv){
   return false
 }
 function pruneBin(op,af,bf,av,bv){
-  if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
+  if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO))&&!NEED_ZERO)return true;
   if(op==="-"&&has(bf,F_ZERO))return true;
   if(op==="-"&&Math.abs(av-bv)<1e-15)return true;
   if(op==="-"&&has(af,F_ZERO))return true;
   if(op==="*"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
-  if(op==="*"&&(has(af,F_ONE)||has(bf,F_ONE)))return true;
+  if(op==="*"&&(has(af,F_ONE)||has(bf,F_ONE))&&!NEED_ONE)return true;
   if(op==="*"&&(has(af,F_NEGONE)||has(bf,F_NEGONE)))return true;
   if(op==="/"&&has(af,F_ZERO))return true;
-  if(op==="/"&&(has(bf,F_ONE)||has(bf,F_NEGONE)))return true;
+  if(op==="/"&&(has(bf,F_ONE)||has(bf,F_NEGONE))&&!NEED_ONE)return true;
   if(op==="/"&&Math.abs(av-bv)<1e-15&&Math.abs(av)>1e-15)return true;
-  if(op==="^"&&has(bf,F_ZERO))return true;
-  if(op==="^"&&has(bf,F_ONE))return true;
-  if(op==="^"&&has(af,F_ZERO))return true;
-  if(op==="^"&&has(af,F_ONE))return true;
+  if(op==="^"&&has(bf,F_ZERO)&&!NEED_ZERO)return true;
+  if(op==="^"&&has(bf,F_ONE)&&!NEED_ONE)return true;
+  if(op==="^"&&has(af,F_ZERO)&&!NEED_ZERO)return true;
+  if(op==="^"&&has(af,F_ONE)&&!NEED_ONE)return true;
   if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
 
   if(op==="+"&&getTag(bf)===TAG_NEG)return true;
@@ -1472,7 +1567,7 @@ function mkBucket(beam){
 }
 
 // ===== selection from bucket values with quotas =====
-function selectTop(items, beam, divRatio, qGoal, qBB, qMeet, qDiv, revIdx){
+function selectTop(items, beam, divRatio, qGoal, qBB, qMeet, qDiv, qPow, revIdx, allowPow){
   // items each: {v, goal, bb, keep, ...; revHit computed optionally}
   const out=[];
   const used=new Set(); // by key
@@ -1498,14 +1593,17 @@ function selectTop(items, beam, divRatio, qGoal, qBB, qMeet, qDiv, revIdx){
   const byGoal = items.slice().sort((a,b)=>a.goal-b.goal);
   const byBB   = items.slice().sort((a,b)=>a.bb-b.bb);
   const meetList = items.filter(x=>x.revHit).sort((a,b)=>a.goal-b.goal);
+  const powList = allowPow ? items.filter(x=>x.hasPow).sort((a,b)=>((a.goal+0.20*a.bb)-(b.goal+0.20*b.bb))) : [];
 
   const nGoal=Math.max(0, Math.floor(beam*qGoal));
   const nBB  =Math.max(0, Math.floor(beam*qBB));
   const nMeet=Math.max(0, Math.floor(beam*qMeet));
   const nDiv =Math.max(0, Math.floor(beam*qDiv));
+  const nPow =Math.max(0, Math.floor(beam*(qPow||0)));
 
   takeFrom(byGoal, nGoal);
   takeFrom(meetList, nMeet);
+  takeFrom(powList, nPow);
   takeFrom(byBB, nBB);
 
   // diversity by magnitude bins (prefer low keep)
@@ -1550,6 +1648,21 @@ onmessage=async(ev)=>{
   if(mode==="ries") mode="accuracy";
   const mp=modeParams(mode);
 
+  let customAllow=null, customScoreAdjust=null;
+
+  const customOn = !!msg.customEnable;
+  const customCode = String(msg.customCode||"");
+  if(customOn && customCode.trim()){
+    try{
+      const scope = new Function('\"use strict\";\\n' + customCode + '\\n; return {allowCandidate: (typeof allowCandidate===\"function\")?allowCandidate:null, scoreAdjust:(typeof scoreAdjust===\"function\")?scoreAdjust:null};')();
+      customAllow = scope.allowCandidate;
+      customScoreAdjust = scope.scoreAdjust;
+    }catch(err){
+      postMessage({type:"error", payload:"自定义约束脚本错误: "+err.message});
+      return;
+    }
+  }
+
   KEYP=mp.keyPrec;
   BESTP=mp.bestPrec;
 
@@ -1582,6 +1695,10 @@ onmessage=async(ev)=>{
     if(mn>mx){postMessage({type:"error",payload:consts[i].s+" min>max"});return}
     if(mn>0||mx<INF) constrainedIdx.push(i);
   }
+
+  ALLOW_ADD = Array.isArray(opsBin) && opsBin.includes("+");
+  NEED_ZERO = consts.some((x)=> (x.key==="0"||x.s==="0") && (x.min|0)>0);
+  NEED_ONE  = consts.some((x)=> (x.key==="1"||x.s==="1") && (x.min|0)>0);
 
   const noConstraintFast = constrainedIdx.length===0;
 
@@ -1714,9 +1831,18 @@ onmessage=async(ev)=>{
     }
 
     const expr=obj.ast?strA(obj.ast):(obj.s||"?");
+    const latex=obj.ast?latexA(obj.ast):expr;
     const delta=v-T;
     const ci=useBitmask?maskStr(obj.mask||0):cntStr(obj.cnt||EMPTY);
 
+    if(customAllow){
+      try{
+        const ok=customAllow({expr,latex,v,delta,cost:obj.cost,searchType:(obj.searchType||"fwd"),hasPow:expr.includes("^"),countsInfo:ci});
+        if(ok===false) return;
+      }catch(_e){ return; }
+    }
+
+    const scoreAdj = customScoreAdjust ? Number(customScoreAdjust({expr,latex,v,delta,cost:obj.cost,searchType:(obj.searchType||"fwd"),hasPow:expr.includes("^"),countsInfo:ci})||0) : 0;
     const valKey=v.toPrecision(BESTP);
     const type=obj.searchType||"fwd";
     const hasPow=(typeof expr==="string" && expr.includes("^"));
@@ -1728,7 +1854,7 @@ onmessage=async(ev)=>{
       const old=best[idx];
       const newCost=(obj.cost||999);
       const oldDelta=Math.abs(old?.delta??INF);
-      const newDelta=Math.abs(delta);
+      const newDelta=Math.abs(delta)-scoreAdj;
       const oldPow=old ? (typeof old.expr==="string" && old.expr.includes("^")) : false;
       const newPow=hasPow;
       const powPrefer = (!oldPow && newPow && newDelta <= oldDelta*1.000002 && newCost <= (old?.cost??INF)+4);
@@ -1736,12 +1862,12 @@ onmessage=async(ev)=>{
         dupesKilled++;
         return;
       }
-      best[idx]={expr,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type};
+      best[idx]={expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type};
       best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
       return;
     }
 
-    best.push({expr,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type});
+    best.push({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type});
     best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
     if(best.length>outN*4) best.length=outN*3;
 
@@ -1829,7 +1955,8 @@ onmessage=async(ev)=>{
     }
 
     const items=Array.from(bucket.values());
-    const picked = selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (bidir?revIdx:null));
+    for(const it of items){ it.hasPow = !!(it.ast && astPowStats(it.ast).cnt>0); }
+    const picked = selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
     for(const it of picked){ it.cost=1; }
     fwd[1]=picked;
 
@@ -1920,7 +2047,7 @@ onmessage=async(ev)=>{
                   const pW=r.wA, fA=f.ast;
                   const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
-                  put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false),keep:score,goal:score,bb:score});
+                  put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
                 }
               }else{
                 const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
@@ -1929,7 +2056,7 @@ onmessage=async(ev)=>{
                   const pW=r.wA, fA=f.ast;
                   const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
-                  put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false),keep:score,goal:score,bb:score});
+                  put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
                 }
               }
             }
@@ -1947,7 +2074,7 @@ onmessage=async(ev)=>{
                     const pW=r.wA, fA=f.ast;
                     const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
-                    put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false),keep:score,goal:score,bb:score});
+                    put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
                   }
                 }else{
                   const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
@@ -1956,7 +2083,7 @@ onmessage=async(ev)=>{
                     const pW=r.wA, fA=f.ast;
                     const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
-                    put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false),keep:score,goal:score,bb:score});
+                    put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
                   }
                 }
               }
@@ -1969,7 +2096,7 @@ onmessage=async(ev)=>{
     }
 
     const items=Array.from(bucket.values());
-    const picked = selectTop(items, beamR, divRatio, 0.0, 0.0, 0.0, 1.0, null); // reverse只要覆盖+keep
+    const picked = selectTop(items, beamR, divRatio, 0.0, 0.0, 0.0, 1.0, 0.0, null, false); // reverse只要覆盖+keep
     for(const it of picked){ it.cost=c; }
     rev[c]=picked;
     addRevIdx(rev[c]);
@@ -2160,7 +2287,9 @@ onmessage=async(ev)=>{
       tCount,
       maxT: useBitmask?null:(maxT?Array.from(maxT):null),
       opsUn, opsBin,
-      pruneEquiv
+      pruneEquiv,
+      needZero: NEED_ZERO,
+      needOne: NEED_ONE
     };
     await Promise.all(subWorkers.map(w=>new Promise((resolve)=>{
       const h=(ev)=>{ if(ev.data?.type==="inited"){ w.removeEventListener("message",h); resolve(); } };
@@ -2176,23 +2305,25 @@ onmessage=async(ev)=>{
     const src=fwd[cost];
     const lim=Math.min(src.length, subLayerCap);
     const v=new Float64Array(lim);
+    const flags=new Int32Array(lim);
     if(useBitmask){
       const mask=new Int32Array(lim);
-      for(let i=0;i<lim;i++){ v[i]=src[i].v; mask[i]=src[i].mask|0; }
-      return {len:lim, v, mask};
+      for(let i=0;i<lim;i++){ v[i]=src[i].v; mask[i]=src[i].mask|0; flags[i]=src[i].flags|0; }
+      return {len:lim, v, mask, flags};
     }else{
       if(noConstraintFast){
-        for(let i=0;i<lim;i++) v[i]=src[i].v;
-        return {len:lim, v};
+        for(let i=0;i<lim;i++){ v[i]=src[i].v; flags[i]=src[i].flags|0; }
+        return {len:lim, v, flags};
       }
       const cnt=new Uint16Array(lim*tCount);
       for(let i=0;i<lim;i++){
         v[i]=src[i].v;
+        flags[i]=src[i].flags|0;
         const base=i*tCount;
         const cvec=src[i].cnt;
         for(let j=0;j<tCount;j++) cnt[base+j]=cvec[j];
       }
-      return {len:lim, v, cnt};
+      return {len:lim, v, cnt, flags};
     }
   }
   function sendLayerToSubs(cost){
@@ -2229,9 +2360,9 @@ onmessage=async(ev)=>{
 
         const ast=mkU(op,a.ast);
         if(useBitmask){
-          put(vKey(v)+"|"+a.mask,{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false)});
+          put(vKey(v)+"|"+a.mask,{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags))});
         }else{
-          put(vKey(v)+"|"+a.ck,{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false)});
+          put(vKey(v)+"|"+a.ck,{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags))});
         }
       }
     }
@@ -2263,7 +2394,7 @@ onmessage=async(ev)=>{
               const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
               const keep=keepScore(goal, bb, revHit);
               const key=vKey(v)+"|"+mask;
-              put(key,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),mask,flags:mkFlags(v,opTag(op),false)});
+              put(key,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),mask,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags))});
             }else{
               const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
               if(!cnt) continue;
@@ -2275,7 +2406,7 @@ onmessage=async(ev)=>{
               const keep=keepScore(goal, bb, revHit);
               const ck=ckFromCnt(cnt);
               const key=vKey(v)+"|"+ck;
-              put(key,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(op),false)});
+              put(key,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags))});
             }
           }
         }
@@ -2312,10 +2443,10 @@ onmessage=async(ev)=>{
           const key=vKey(v)+"|"+(it.mask|0);
           if(it.kind==="u"){
             const a=fwd[it.ac][it.ai];
-            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkU(it.op,a.ast),mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false)});
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkU(it.op,a.ast),mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false,extraUnFlags(it.op,a.flags))});
           }else{
             const a=fwd[it.ac][it.ai], b=fwd[it.bc][it.bi];
-            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkB(it.op,a.ast,b.ast),mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false)});
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkB(it.op,a.ast,b.ast),mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false,extraBinFlags(a.flags,b.flags))});
           }
         }else{
           const ck=it.ck;
@@ -2323,17 +2454,18 @@ onmessage=async(ev)=>{
           const cnt=cntFromCk(ck);
           if(it.kind==="u"){
             const a=fwd[it.ac][it.ai];
-            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkU(it.op,a.ast),cnt,ck,flags:mkFlags(v,opTag(it.op),false)});
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkU(it.op,a.ast),cnt,ck,flags:mkFlags(v,opTag(it.op),false,extraUnFlags(it.op,a.flags))});
           }else{
             const a=fwd[it.ac][it.ai], b=fwd[it.bc][it.bi];
-            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkB(it.op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(it.op),false)});
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkB(it.op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(it.op),false,extraBinFlags(a.flags,b.flags))});
           }
         }
       }
     }
 
     const items=Array.from(bucket.values());
-    const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (bidir?revIdx:null));
+    for(const it of items){ it.hasPow = !!(it.ast && astPowStats(it.ast).cnt>0); }
+    const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
     for(const it of picked){ it.cost=c; }
     return picked;
   }
@@ -2379,9 +2511,9 @@ onmessage=async(ev)=>{
 
           const ast=mkU(op,a.ast);
           if(useBitmask){
-            put(vKey(v)+"|"+a.mask,{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false)});
+            put(vKey(v)+"|"+a.mask,{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags))});
           }else{
-            put(vKey(v)+"|"+a.ck,{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false)});
+            put(vKey(v)+"|"+a.ck,{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags))});
           }
           if((visited&8191)===0) emit(c);
           if(stopFlag||performance.now()-t0>lim) break;
@@ -2414,7 +2546,7 @@ onmessage=async(ev)=>{
                 const bb=bbScore(v, mp.bbD, mp.bbMagA);
                 const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
                 const keep=keepScore(goal, bb, revHit);
-                put(vKey(v)+"|"+mask,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),mask,flags:mkFlags(v,opTag(op),false)});
+                put(vKey(v)+"|"+mask,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),mask,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags))});
               }else{
                 const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
                 if(!cnt) continue;
@@ -2425,7 +2557,7 @@ onmessage=async(ev)=>{
                 const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
                 const keep=keepScore(goal, bb, revHit);
                 const ck=ckFromCnt(cnt);
-                put(vKey(v)+"|"+ck,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(op),false)});
+                put(vKey(v)+"|"+ck,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags))});
               }
 
               if((visited&8191)===0) emit(c);
@@ -2438,7 +2570,8 @@ onmessage=async(ev)=>{
       }
 
       const items=Array.from(bucket.values());
-      const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (bidir?revIdx:null));
+      for(const it of items){ it.hasPow = !!(it.ast && astPowStats(it.ast).cnt>0); }
+      const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
       for(const it of picked){ it.cost=c; }
       fwd[c]=picked;
     }
@@ -2499,8 +2632,12 @@ $("btnStart").onclick=()=>{
   const showCounts=$("showCounts").checked;
   const pruneEquiv=$("pruneEquiv").checked;
   const excludeExact=$("excludeExact").checked;
-  const mt=$("mt").checked;
+  let mt=$("mt").checked;
   const threads=Math.max(1,Math.min(64,Number($("threads").value||1)));
+  const latexMode=$("latexMode").checked;
+  const customEnable=$("customEnable").checked;
+  const customCode=$("customBox").value||"";
+  if(customEnable) mt=false;
 
   tuneOpsByMode(mode);
   const {opsUn,opsBin}=getOps();
@@ -2521,7 +2658,7 @@ $("btnStart").onclick=()=>{
   updateRuntimePanel({c:0,maxC,elapsed:0,visited:0});
   $("status").style.display="none";
 
-  worker.onmessage=(ev)=>{
+  worker.onmessage=async(ev)=>{
     const {type,payload}=ev.data;
     if(type==="error"){
       alert(payload);
@@ -2574,7 +2711,7 @@ $("btnStart").onclick=()=>{
         $("pruneStats").style.display="none";
       }
 
-      renderResults(rows,showCounts,debugOn);
+      await renderResults(rows,showCounts,debugOn,latexMode);
       if(type==="done"){
         $("btnStart").disabled=false;
         $("btnStop").disabled=true;
@@ -2590,6 +2727,7 @@ $("btnStart").onclick=()=>{
     showCounts, bidir,
     pruneEquiv, excludeExact,
     mt, threads,
+    customEnable, customCode,
     subSrc: SUBWORKER_CODE
   });
 };
