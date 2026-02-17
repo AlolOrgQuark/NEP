@@ -331,8 +331,8 @@ function updateRuntimePanel(payload){
 
 let latexScriptLoading=null;
 async function ensureLatexRenderer(){
-  if(!navigator.onLine) return false;
   if(window.MathJax?.typesetPromise) return true;
+  if(!navigator.onLine) return false;
   if(latexScriptLoading) return latexScriptLoading;
   latexScriptLoading = new Promise((resolve)=>{
     const sc=document.createElement('script');
@@ -451,7 +451,7 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
   lastRows=rows||[];
   const tb=$("tbody");tb.innerHTML="";
   const frag=document.createDocumentFragment();
-  const useLatex = latexMode && navigator.onLine && await ensureLatexRenderer();
+  const useLatex = latexMode && await ensureLatexRenderer();
   for(const r of rows){
     const tr=document.createElement("tr");
 
@@ -470,7 +470,7 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
     if(useLatex && r.latex){
       const lx=document.createElement("div");
       lx.className="countsLine";
-      lx.textContent=`\(${r.latex}\)`;
+      lx.textContent=`\\(${r.latex}\\)`;
       t2.appendChild(lx);
     }
     if(showCounts && r.countsInfo){
@@ -1195,13 +1195,14 @@ function wBin(op){switch(op){
 function isComm(op){return op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd"||op==="lcm"}
 
 // ===== AST =====
-function mkC(sym,val){return{t:0,sym,val}}
-function mkU(op,ch){return{t:1,op,ch}}
+function mkC(sym,val){return{t:0,sym,val,p:0}}
+function mkU(op,ch){return{t:1,op,ch,p:(ch&&ch.p)?1:0}}
 function mkB(op,l,r){
   if(op==="-" && ALLOW_ADD && r && r.t===1 && r.op==="neg"){
-    return {t:2,op:"+",l,r:r.ch};
+    const rr=r.ch;
+    return {t:2,op:"+",l,r:rr,p:((l&&l.p)||(rr&&rr.p))?1:0};
   }
-  return{t:2,op,l,r};
+  return{t:2,op,l,r,p:(op==="^"||(l&&l.p)||(r&&r.p))?1:0};
 }
 
 function applyUn(op,v){switch(op){
@@ -1303,7 +1304,11 @@ function needParen(child,parentOp,side){
   if(cp<pp)return true;
   if(parentOp==="-"&&side==="right")return true;
   if(parentOp==="/"&&side==="right")return true;
-  if(parentOp==="^"){ if(side==="left")return true; return false; }
+  if(parentOp==="^"){
+    if(side==="left") return true;
+    if(side==="right") return child.t===2 && child.op!=="^";
+    return false;
+  }
   return false;
 }
 function pretty(n,parentOp=null,side=null){
@@ -1375,9 +1380,18 @@ function pretty(n,parentOp=null,side=null){
 function strA(n){return pretty(n,null,null);}
 function latexA(n,parentOp=null,side=null){
   if(!n) return "";
-  if(n.t===0) return String(n.sym||n.val||"0");
+  if(n.t===0){
+    const s=String(n.sym||n.val||"0");
+    if(s==="π") return "\\pi";
+    if(s==="φ") return "\\varphi";
+    if(s==="√2") return "\\sqrt{2}";
+    if(s==="√3") return "\\sqrt{3}";
+    if(s==="√5") return "\\sqrt{5}";
+    return s;
+  }
   if(n.t===1){
-    const ch=latexA(n.ch,null,null);
+    const ch0=latexA(n.ch,null,null);
+    const ch=(n.ch && n.ch.t===2) ? ("("+ch0+")") : ch0;
     switch(n.op){
       case "neg": return "-"+ch;
       case "sqrt": return "\\sqrt{"+ch+"}";
@@ -1388,15 +1402,30 @@ function latexA(n,parentOp=null,side=null){
       default: return "\\mathrm{"+n.op+"}\\left("+ch+"\\right)";
     }
   }
-  const l=latexA(n.l,n.op,"left");
-  const r=latexA(n.r,n.op,"right");
-  if(n.op==="/") return "\\frac{"+l+"}{"+r+"}";
+  const L=n.l,R=n.r;
+  let l=latexA(L,n.op,"left");
+  let r=latexA(R,n.op,"right");
+  if(needParen(L,n.op,"left")) l="("+l+")";
+  if(needParen(R,n.op,"right")) r="("+r+")";
+
+  if(n.op==="+" && R && R.t===1 && R.op==="neg"){
+    const rn=latexA(R.ch,"+","right");
+    return l+"-"+(needParen(R.ch,"+","right")?("("+rn+")"):rn);
+  }
+  if(n.op==="-"){
+    if(R && R.t===1 && R.op==="neg"){
+      const rn=latexA(R.ch,"+","right");
+      return l+"+"+(needParen(R.ch,"+","right")?("("+rn+")"):rn);
+    }
+    return l+"-"+r;
+  }
+  if(n.op==="/") return "\\frac{"+latexA(L,null,null)+"}{"+latexA(R,null,null)+"}";
   if(n.op==="^") return "{"+l+"}^{"+r+"}";
   if(n.op==="*") return l+"\\cdot "+r;
   if(n.op==="+") return l+"+"+r;
-  if(n.op==="-") return l+"-"+r;
-  return "\\mathrm{"+n.op+"}\\left("+l+","+r+"\\right)";
+  return "\\mathrm{"+n.op+"}\\left("+latexA(L,null,null)+","+latexA(R,null,null)+"\\right)";
 }
+
 
 // ===== pruning flags =====
 const TAG_NONE=0,TAG_NEG=1,TAG_EXP=2,TAG_LOG=3,TAG_SQRT=4,TAG_SQ=5,TAG_INV=6,TAG_ABS=7;
@@ -1837,15 +1866,15 @@ onmessage=async(ev)=>{
 
     if(customAllow){
       try{
-        const ok=customAllow({expr,latex,v,delta,cost:obj.cost,searchType:(obj.searchType||"fwd"),hasPow:expr.includes("^"),countsInfo:ci});
+        const ok=customAllow({expr,latex,v,delta,cost:obj.cost,searchType:(obj.searchType||"fwd"),hasPow:!!(obj.ast && obj.ast.p),countsInfo:ci});
         if(ok===false) return;
       }catch(_e){ return; }
     }
 
-    const scoreAdj = customScoreAdjust ? Number(customScoreAdjust({expr,latex,v,delta,cost:obj.cost,searchType:(obj.searchType||"fwd"),hasPow:expr.includes("^"),countsInfo:ci})||0) : 0;
+    const scoreAdj = customScoreAdjust ? Number(customScoreAdjust({expr,latex,v,delta,cost:obj.cost,searchType:(obj.searchType||"fwd"),hasPow:!!(obj.ast && obj.ast.p),countsInfo:ci})||0) : 0;
     const valKey=v.toPrecision(BESTP);
     const type=obj.searchType||"fwd";
-    const hasPow=(typeof expr==="string" && expr.includes("^"));
+    const hasPow=!!(obj.ast && obj.ast.p);
     const keyBase = mp.keepMeetDup ? (valKey+"|"+type) : valKey;
     const key = hasPow ? (keyBase+"|pow") : keyBase;
 
@@ -1855,26 +1884,26 @@ onmessage=async(ev)=>{
       const newCost=(obj.cost||999);
       const oldDelta=Math.abs(old?.delta??INF);
       const newDelta=Math.abs(delta)-scoreAdj;
-      const oldPow=old ? (typeof old.expr==="string" && old.expr.includes("^")) : false;
+      const oldPow=old ? !!old.hasPow : false;
       const newPow=hasPow;
       const powPrefer = (!oldPow && newPow && newDelta <= oldDelta*1.000002 && newCost <= (old?.cost??INF)+4);
       if(old && !powPrefer && (oldDelta < newDelta || (oldDelta===newDelta && old.cost <= newCost))){
         dupesKilled++;
         return;
       }
-      best[idx]={expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type};
+      best[idx]={expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow};
       best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
       return;
     }
 
-    best.push({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type});
+    best.push({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
     best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
     if(best.length>outN*4) best.length=outN*3;
 
     bestSeen.clear();
     for(let i=0;i<best.length;i++){
       const vk=best[i].v.toPrecision(BESTP);
-      const hasPowBest=(typeof best[i].expr==="string" && best[i].expr.includes("^"));
+      const hasPowBest=!!best[i].hasPow;
       const kkBase = mp.keepMeetDup ? (vk+"|"+(best[i].searchType||"fwd")) : vk;
       const kk = hasPowBest ? (kkBase+"|pow") : kkBase;
       bestSeen.set(kk,i);
@@ -1955,7 +1984,7 @@ onmessage=async(ev)=>{
     }
 
     const items=Array.from(bucket.values());
-    for(const it of items){ it.hasPow = !!(it.ast && astPowStats(it.ast).cnt>0); }
+    for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); }
     const picked = selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
     for(const it of picked){ it.cost=1; }
     fwd[1]=picked;
@@ -2018,7 +2047,7 @@ onmessage=async(ev)=>{
     }
 
     // binary inverse with fwd assistance (same as之前思路，但 beamR 更大)
-    const sBin=opsBin.filter(op=>["+","-","*","/"].includes(op));
+    const sBin=opsBin.filter(op=>["+","-","*","/","^"].includes(op));
     for(const op of sBin){
       const w=wBin(op);
       for(let rc=0; rc<=c-w-1; rc++){
@@ -2027,8 +2056,10 @@ onmessage=async(ev)=>{
         if(!rs||!fs||!rs.length||!fs.length) continue;
 
         const base=Math.floor(Math.sqrt(beamR));
-        const cR=Math.min(rs.length, Math.max(120, Math.floor(base*3.0)));
-        const cF=Math.min(fs.length, Math.max(120, Math.floor(base*3.0)));
+        const laneMul = (op==="^") ? 1.35 : 3.0;
+        const laneMin = (op==="^") ? 48 : 120;
+        const cR=Math.min(rs.length, Math.max(laneMin, Math.floor(base*laneMul)));
+        const cF=Math.min(fs.length, Math.max(laneMin, Math.floor(base*laneMul)));
 
         for(let ir=0; ir<cR; ir++){
           const r=rs[ir];
@@ -2047,7 +2078,7 @@ onmessage=async(ev)=>{
                   const pW=r.wA, fA=f.ast;
                   const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
-                  put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
+                  put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
                 }
               }else{
                 const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
@@ -2056,7 +2087,7 @@ onmessage=async(ev)=>{
                   const pW=r.wA, fA=f.ast;
                   const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
-                  put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
+                  put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
                 }
               }
             }
@@ -2074,7 +2105,7 @@ onmessage=async(ev)=>{
                     const pW=r.wA, fA=f.ast;
                     const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
-                    put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
+                    put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
                   }
                 }else{
                   const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
@@ -2083,7 +2114,7 @@ onmessage=async(ev)=>{
                     const pW=r.wA, fA=f.ast;
                     const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
-                    put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
+                    put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
                   }
                 }
               }
@@ -2464,7 +2495,7 @@ onmessage=async(ev)=>{
     }
 
     const items=Array.from(bucket.values());
-    for(const it of items){ it.hasPow = !!(it.ast && astPowStats(it.ast).cnt>0); }
+    for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); }
     const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
     for(const it of picked){ it.cost=c; }
     return picked;
@@ -2570,7 +2601,7 @@ onmessage=async(ev)=>{
       }
 
       const items=Array.from(bucket.values());
-      for(const it of items){ it.hasPow = !!(it.ast && astPowStats(it.ast).cnt>0); }
+      for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); }
       const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
       for(const it of picked){ it.cost=c; }
       fwd[c]=picked;
