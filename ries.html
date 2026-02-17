@@ -1692,7 +1692,10 @@ onmessage=async(ev)=>{
       const newCost=(obj.cost||999);
       const oldDelta=Math.abs(old?.delta??INF);
       const newDelta=Math.abs(delta);
-      if(old && (oldDelta < newDelta || (oldDelta===newDelta && old.cost <= newCost))){
+      const oldPow=old ? (typeof old.expr==="string" && old.expr.includes("^")) : false;
+      const newPow=(typeof expr==="string" && expr.includes("^"));
+      const powPrefer = (!oldPow && newPow && newDelta <= oldDelta*1.0000005 && newCost <= (old?.cost??INF)+2);
+      if(old && !powPrefer && (oldDelta < newDelta || (oldDelta===newDelta && old.cost <= newCost))){
         dupesKilled++;
         return;
       }
@@ -2007,7 +2010,7 @@ onmessage=async(ev)=>{
       }
 
       const relErr=err/Math.max(1,Math.abs(T));
-      const relCap=(1.0e-8)/(1 + 0.45*powRisk);
+      const relCap=(5.0e-8)/(1 + 0.35*powRisk);
       if(relErr>relCap){
         meetDbg.rejConfirm++;
         if(err > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = err;
