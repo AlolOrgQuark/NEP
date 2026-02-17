@@ -2047,7 +2047,7 @@ onmessage=async(ev)=>{
                   const pW=r.wA, fA=f.ast;
                   const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
-                  put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
+                  put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
                 }
               }else{
                 const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
@@ -2056,7 +2056,7 @@ onmessage=async(ev)=>{
                   const pW=r.wA, fA=f.ast;
                   const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
                   const score=revScore(x1);
-                  put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
+                  put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
                 }
               }
             }
@@ -2074,7 +2074,7 @@ onmessage=async(ev)=>{
                     const pW=r.wA, fA=f.ast;
                     const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
-                    put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
+                    put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
                   }
                 }else{
                   const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
@@ -2083,7 +2083,7 @@ onmessage=async(ev)=>{
                     const pW=r.wA, fA=f.ast;
                     const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
                     const score=revScore(x2);
-                    put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(rx.flags, ff.flags)),keep:score,goal:score,bb:score});
+                    put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
                   }
                 }
               }
