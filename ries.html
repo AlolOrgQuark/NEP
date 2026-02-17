@@ -1021,7 +1021,7 @@ function modeParams(mode){
   if(mode==="speed") return {
     keyPrec:10, bestPrec:10, keepMode:"goal",
     bbD:20, bbMagA:0.032,
-    qGoal:0.76,qBB:0.08,qMeet:0.08,qDiv:0.04,qPow:0.04,
+    qGoal:0.74,qBB:0.08,qMeet:0.08,qDiv:0.04,qPow:0.04,qFunc:0.02,
     meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:5,
     revBeamMul:1.8, meetHitBonus:0.14,
     candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.16, confirmAbsFloor:2e-6,
@@ -1033,7 +1033,7 @@ function modeParams(mode){
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"min",
     bbD:64, bbMagA:0.02,
-    qGoal:0.48,qBB:0.28,qMeet:0.05,qDiv:0.09,qPow:0.10,
+    qGoal:0.44,qBB:0.28,qMeet:0.05,qDiv:0.09,qPow:0.10,qFunc:0.04,
     meetStyle:"prec", meetPrec:12, meetQ:8192, meetR:2,
     revBeamMul:1.6, meetHitBonus:0.10,
     candEpsMul:1.1, confirmEpsMul:0.75, binSlackMul:0.30, confirmAbsFloor:0.0,
@@ -1045,7 +1045,7 @@ function modeParams(mode){
   if(mode==="normal") return {
     keyPrec:12, bestPrec:11, keepMode:"min",
     bbD:48, bbMagA:0.02,
-    qGoal:0.40,qBB:0.16,qMeet:0.28,qDiv:0.08,qPow:0.08,
+    qGoal:0.36,qBB:0.16,qMeet:0.28,qDiv:0.08,qPow:0.08,qFunc:0.04,
     meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
     revBeamMul:2.8, meetHitBonus:0.22,
     candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:0.0,
@@ -1058,7 +1058,7 @@ function modeParams(mode){
   return {
     keyPrec:12, bestPrec:11, keepMode:"min",
     bbD:48, bbMagA:0.02,
-    qGoal:0.40,qBB:0.16,qMeet:0.28,qDiv:0.08,qPow:0.08,
+    qGoal:0.36,qBB:0.16,qMeet:0.28,qDiv:0.08,qPow:0.08,qFunc:0.04,
     meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
     revBeamMul:2.8, meetHitBonus:0.22,
     candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:0.0,
@@ -1195,14 +1195,17 @@ function wBin(op){switch(op){
 function isComm(op){return op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd"||op==="lcm"}
 
 // ===== AST =====
-function mkC(sym,val){return{t:0,sym,val,p:0}}
-function mkU(op,ch){return{t:1,op,ch,p:(ch&&ch.p)?1:0}}
+function mkC(sym,val){return{t:0,sym,val,p:0,f:0}}
+function mkU(op,ch){
+  const isFunc = op!=="neg" && op!=="abs";
+  return{t:1,op,ch,p:(ch&&ch.p)?1:0,f:(isFunc||((ch&&ch.f)?1:0))?1:0}
+}
 function mkB(op,l,r){
   if(op==="-" && ALLOW_ADD && r && r.t===1 && r.op==="neg"){
     const rr=r.ch;
-    return {t:2,op:"+",l,r:rr,p:((l&&l.p)||(rr&&rr.p))?1:0};
+    return {t:2,op:"+",l,r:rr,p:((l&&l.p)||(rr&&rr.p))?1:0,f:((l&&l.f)||(rr&&rr.f))?1:0};
   }
-  return{t:2,op,l,r,p:(op==="^"||(l&&l.p)||(r&&r.p))?1:0};
+  return{t:2,op,l,r,p:(op==="^"||(l&&l.p)||(r&&r.p))?1:0,f:((l&&l.f)||(r&&r.f))?1:0};
 }
 
 function applyUn(op,v){switch(op){
@@ -1596,7 +1599,7 @@ function mkBucket(beam){
 }
 
 // ===== selection from bucket values with quotas =====
-function selectTop(items, beam, divRatio, qGoal, qBB, qMeet, qDiv, qPow, revIdx, allowPow){
+function selectTop(items, beam, divRatio, qGoal, qBB, qMeet, qDiv, qPow, qFunc, revIdx, allowPow){
   // items each: {v, goal, bb, keep, ...; revHit computed optionally}
   const out=[];
   const used=new Set(); // by key
@@ -1623,16 +1626,19 @@ function selectTop(items, beam, divRatio, qGoal, qBB, qMeet, qDiv, qPow, revIdx,
   const byBB   = items.slice().sort((a,b)=>a.bb-b.bb);
   const meetList = items.filter(x=>x.revHit).sort((a,b)=>a.goal-b.goal);
   const powList = allowPow ? items.filter(x=>x.hasPow).sort((a,b)=>((a.goal+0.20*a.bb)-(b.goal+0.20*b.bb))) : [];
+  const funcList = items.filter(x=>x.hasFunc).sort((a,b)=>((a.goal+0.16*a.bb)-(b.goal+0.16*b.bb)));
 
   const nGoal=Math.max(0, Math.floor(beam*qGoal));
   const nBB  =Math.max(0, Math.floor(beam*qBB));
   const nMeet=Math.max(0, Math.floor(beam*qMeet));
   const nDiv =Math.max(0, Math.floor(beam*qDiv));
   const nPow =Math.max(0, Math.floor(beam*(qPow||0)));
+  const nFunc=Math.max(0, Math.floor(beam*(qFunc||0)));
 
   takeFrom(byGoal, nGoal);
   takeFrom(meetList, nMeet);
   takeFrom(powList, nPow);
+  takeFrom(funcList, nFunc);
   takeFrom(byBB, nBB);
 
   // diversity by magnitude bins (prefer low keep)
@@ -1984,8 +1990,8 @@ onmessage=async(ev)=>{
     }
 
     const items=Array.from(bucket.values());
-    for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); }
-    const picked = selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
+    for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); it.hasFunc = !!(it.ast && it.ast.f); }
+    const picked = selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (mp.qFunc||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
     for(const it of picked){ it.cost=1; }
     fwd[1]=picked;
 
@@ -2056,8 +2062,8 @@ onmessage=async(ev)=>{
         if(!rs||!fs||!rs.length||!fs.length) continue;
 
         const base=Math.floor(Math.sqrt(beamR));
-        const laneMul = (op==="^") ? 1.35 : 3.0;
-        const laneMin = (op==="^") ? 48 : 120;
+        const laneMul = (op==="^") ? 1.7 : 3.0;
+        const laneMin = (op==="^") ? 72 : 120;
         const cR=Math.min(rs.length, Math.max(laneMin, Math.floor(base*laneMul)));
         const cF=Math.min(fs.length, Math.max(laneMin, Math.floor(base*laneMul)));
 
@@ -2127,7 +2133,7 @@ onmessage=async(ev)=>{
     }
 
     const items=Array.from(bucket.values());
-    const picked = selectTop(items, beamR, divRatio, 0.0, 0.0, 0.0, 1.0, 0.0, null, false); // reverse只要覆盖+keep
+    const picked = selectTop(items, beamR, divRatio, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, null, false); // reverse只要覆盖+keep
     for(const it of picked){ it.cost=c; }
     rev[c]=picked;
     addRevIdx(rev[c]);
@@ -2157,10 +2163,11 @@ onmessage=async(ev)=>{
     if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){ meetDbg.rejEvalNaN++; return; }
 
     const combinedAST = r.wA ? r.wA(f.ast) : f.ast;
+    const hasFunc = !!(combinedAST && combinedAST.f);
     const powStat = astPowStats(combinedAST);
     const powCnt = powStat.cnt;
     const powRisk = powStat.risk;
-    const powTighten = 1/(1 + 0.28*powCnt + 0.10*powRisk);
+    const powTighten = Math.min(1.0, (1/(1 + 0.18*powCnt + 0.06*powRisk)) * (hasFunc ? 1.12 : 1.0));
 
     // 探测阶段使用 gap 自适应阈值；含幂且风险高的表达式额外收紧，减少指数放大误收
     const epsProbeBase = (8e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(probeVal)) * (1 + tc*0.03);
@@ -2495,8 +2502,8 @@ onmessage=async(ev)=>{
     }
 
     const items=Array.from(bucket.values());
-    for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); }
-    const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
+    for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); it.hasFunc = !!(it.ast && it.ast.f); }
+    const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (mp.qFunc||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
     for(const it of picked){ it.cost=c; }
     return picked;
   }
@@ -2601,8 +2608,8 @@ onmessage=async(ev)=>{
       }
 
       const items=Array.from(bucket.values());
-      for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); }
-      const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
+      for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); it.hasFunc = !!(it.ast && it.ast.f); }
+      const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (mp.qFunc||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
       for(const it of picked){ it.cost=c; }
       fwd[c]=picked;
     }
