@@ -423,7 +423,7 @@ $("btnCopyAllTable").onclick=()=>{
   copyText(lines.join("\n"));
 };
 
-function renderResults(rows,showCounts){
+function renderResults(rows,showCounts,debugOn=false){
   lastRows=rows||[];
   const tb=$("tbody");tb.innerHTML="";
   for(const r of rows){
@@ -432,9 +432,11 @@ function renderResults(rows,showCounts){
     const t1=document.createElement("td");
     const tg=document.createElement("span");
     const tp=r.searchType||"fwd";
-    tg.className="tag "+(tp==="meet"?"tag-meet":"tag-fwd");
-    tg.textContent=tp;
-    t1.appendChild(tg);
+    if(debugOn){
+      tg.className="tag "+(tp==="meet"?"tag-meet":"tag-fwd");
+      tg.textContent=tp;
+      t1.appendChild(tg);
+    }
 
     const t2=document.createElement("td");
     t2.className="mono expr";
@@ -601,6 +603,32 @@ function safePow(a,b){
   const r=Math.pow(a,b);
   return (!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r;
 }
+function safePowStable(a,b){
+  if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
+  if(a<0){
+    const rb=Math.round(b);
+    if(Math.abs(b-rb)>1e-12)return NaN;
+    b=rb;
+  }
+  if(Math.abs(b)>60)return NaN;
+  const r1=Math.pow(a,b);
+  if(!Number.isFinite(r1)||Math.abs(r1)>CAP)return NaN;
+  const bp=Math.round(b);
+  if(Math.abs(b-bp)<1e-10 && Math.abs(bp)<=24){
+    let r=1;
+    let base=a;
+    let e=Math.abs(bp);
+    while(e>0){
+      if(e&1) r*=base;
+      base*=base;
+      if(!Number.isFinite(r)||!Number.isFinite(base)||Math.abs(r)>CAP||Math.abs(base)>CAP) return NaN;
+      e>>=1;
+    }
+    if(bp<0) r=1/r;
+    return (!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r;
+  }
+  return r1;
+}
 function gcdInt(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ const t=a%b; a=b; b=t; } return a; }
 
 function applyUn(op,v){
@@ -640,7 +668,7 @@ function applyBin(op,a,b){
     case "-": return a-b;
     case "*": return a*b;
     case "/": return b===0?NaN:a/b;
-    case "^": return safePow(a,b);
+    case "^": return safePowStable(a,b);
     case "min": return Math.min(a,b);
     case "max": return Math.max(a,b);
     case "atan2": return Math.atan2(a,b);
@@ -1142,7 +1170,7 @@ function applyUn(op,v){switch(op){
   default:return NaN
 }}
 function applyBin(op,a,b){switch(op){
-  case"+":return a+b;case"-":return a-b;case"*":return a*b;case"/":return b===0?NaN:a/b;case"^":return safePow(a,b);
+  case"+":return a+b;case"-":return a-b;case"*":return a*b;case"/":return b===0?NaN:a/b;case"^":return safePowStable(a,b);
   case"min":return Math.min(a,b);case"max":return Math.max(a,b);
   case"atan2":return Math.atan2(a,b);case"hypot":return Math.hypot(a,b);
   case"mod":{if(!nearInt(a)||!nearInt(b))return NaN;const bb=Math.round(b);return bb===0?NaN:((Math.round(a)%bb)+bb)%bb}
@@ -1691,7 +1719,9 @@ onmessage=async(ev)=>{
 
     const valKey=v.toPrecision(BESTP);
     const type=obj.searchType||"fwd";
-    const key = mp.keepMeetDup ? (valKey+"|"+type) : valKey;
+    const hasPow=(typeof expr==="string" && expr.includes("^"));
+    const keyBase = mp.keepMeetDup ? (valKey+"|"+type) : valKey;
+    const key = hasPow ? (keyBase+"|pow") : keyBase;
 
     const idx=bestSeen.get(key);
     if(idx!==undefined){
@@ -1700,8 +1730,8 @@ onmessage=async(ev)=>{
       const oldDelta=Math.abs(old?.delta??INF);
       const newDelta=Math.abs(delta);
       const oldPow=old ? (typeof old.expr==="string" && old.expr.includes("^")) : false;
-      const newPow=(typeof expr==="string" && expr.includes("^"));
-      const powPrefer = (!oldPow && newPow && newDelta <= oldDelta*1.0000005 && newCost <= (old?.cost??INF)+2);
+      const newPow=hasPow;
+      const powPrefer = (!oldPow && newPow && newDelta <= oldDelta*1.000002 && newCost <= (old?.cost??INF)+4);
       if(old && !powPrefer && (oldDelta < newDelta || (oldDelta===newDelta && old.cost <= newCost))){
         dupesKilled++;
         return;
@@ -1718,7 +1748,9 @@ onmessage=async(ev)=>{
     bestSeen.clear();
     for(let i=0;i<best.length;i++){
       const vk=best[i].v.toPrecision(BESTP);
-      const kk = mp.keepMeetDup ? (vk+"|"+(best[i].searchType||"fwd")) : vk;
+      const hasPowBest=(typeof best[i].expr==="string" && best[i].expr.includes("^"));
+      const kkBase = mp.keepMeetDup ? (vk+"|"+(best[i].searchType||"fwd")) : vk;
+      const kk = hasPowBest ? (kkBase+"|pow") : kkBase;
       bestSeen.set(kk,i);
     }
   }
@@ -2542,7 +2574,7 @@ $("btnStart").onclick=()=>{
         $("pruneStats").style.display="none";
       }
 
-      renderResults(rows,showCounts);
+      renderResults(rows,showCounts,debugOn);
       if(type==="done"){
         $("btnStart").disabled=false;
         $("btnStop").disabled=true;
