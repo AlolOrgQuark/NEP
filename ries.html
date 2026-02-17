@@ -59,6 +59,10 @@
     .warn{color:#b45309}
 
     .pruneStats{margin-top:8px;padding:8px 12px;background:rgba(127,127,127,.08);border-radius:8px;font-size:12px}
+    .runtimePanel{margin-top:10px;padding:10px;border:1px solid rgba(127,127,127,.25);border-radius:10px}
+    .runtimeMeta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px}
+    .runtimeBar{height:10px;background:rgba(127,127,127,.2);border-radius:999px;overflow:hidden}
+    .runtimeBarFill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e,#16a34a);transition:width .2s ease}
 
     .tableWrap{
       margin-top:12px;border:1px solid rgba(127,127,127,.25);
@@ -97,16 +101,12 @@
     <div>
       <label>模式</label>
       <select id="mode">
-        <option value="balanced" selected>均衡</option>
-        <option value="speed">速度优先</option>
-        <option value="accuracy">精度(覆盖)优先</option>
-        <option value="ries">RIES(构件)优先</option>
-        <option value="meet">双向Meet优先</option>
-        <option value="meetfast">Meet快速模式</option>
-        <option value="free">Free(多线程内存/速度优先)</option>
+        <option value="normal" selected>普通模式（高效Meet整合）</option>
+        <option value="speed">速度模式（Free+Meet快速整合）</option>
+        <option value="accuracy">精度模式（RIES整合）</option>
       </select>
       <div class="muted" style="margin-top:6px;line-height:1.25">
-        RIES：保留“构件值”(整数/简单分数)以避免卡在差解。Meet：提高相遇覆盖与保留相遇可用值。Meet快速：降低反向开销优先速度。Free：为多线程降低层传输和索引内存，优先吞吐。
+        普通模式：默认推荐，整合高效 Meet。速度模式：激进吞吐，优先性能。精度模式：整合 RIES 的构件保留，优先覆盖质量。
       </div>
     </div>
 
@@ -129,6 +129,7 @@
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="showCounts" type="checkbox" checked/><span class="muted">显示常数计数</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="pruneEquiv" type="checkbox" checked/><span class="muted">恒等式剪枝</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="excludeExact" type="checkbox"/><span class="muted">排除 exact</span></label>
+      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="debugMode" type="checkbox"/><span class="muted">Debug 显示详细统计</span></label>
     </div>
 
     <div>
@@ -173,7 +174,15 @@
     </div>
   </div>
 
-  <div class="status" id="status"></div>
+  <div class="runtimePanel" id="runtimePanel">
+    <div class="runtimeMeta">
+      <span id="rtComplexity">复杂度：0/0</span>
+      <span id="rtElapsed">时间：0 ms</span>
+      <span id="rtVisited">visited：0</span>
+    </div>
+    <div class="runtimeBar"><div class="runtimeBarFill" id="rtBar"></div></div>
+  </div>
+  <div class="status" id="status" style="display:none"></div>
   <div class="pruneStats" id="pruneStats" style="display:none"></div>
 </div>
 
@@ -300,6 +309,18 @@ function statusPills(o){
   }
 }
 
+function updateRuntimePanel(payload){
+  const c=Math.max(0, Number(payload?.c||0));
+  const maxC=Math.max(1, Number(payload?.maxC||1));
+  const elapsed=Math.max(0, Number(payload?.elapsed||0));
+  const visited=Math.max(0, Number(payload?.visited||0));
+  const pct=Math.max(0, Math.min(100, (c/maxC)*100));
+  $("rtComplexity").textContent=`复杂度：${c}/${maxC}`;
+  $("rtElapsed").textContent=`时间：${Math.round(elapsed)} ms`;
+  $("rtVisited").textContent=`visited：${visited.toLocaleString()}`;
+  $("rtBar").style.width=`${pct.toFixed(1)}%`;
+}
+
 function parseTarget(s){
   s=String(s).trim();
   if(s==="pi"||s==="π")return Math.PI;
@@ -322,6 +343,19 @@ function getOps(){
     opsUn:OP_LIST.filter(o=>o.kind==="un"&&en.has(o.key)).map(o=>o.key),
     opsBin:OP_LIST.filter(o=>o.kind==="bin"&&en.has(o.key)).map(o=>o.key),
   };
+}
+
+
+function normalizeMode(mode){
+  if(mode==="balanced"||mode==="meet") return "normal";
+  if(mode==="free"||mode==="meetfast") return "speed";
+  if(mode==="ries") return "accuracy";
+  if(mode==="normal"||mode==="speed"||mode==="accuracy") return mode;
+  return "normal";
+}
+function tuneOpsByMode(mode){
+  // 保留 ^，避免损失解空间；仅做模式归一化占位。
+  normalizeMode(mode);
 }
 function getConsts(){
   const en=new Set([...document.querySelectorAll(".cstOn")].filter(x=>x.checked).map(x=>x.dataset.key));
@@ -389,7 +423,7 @@ $("btnCopyAllTable").onclick=()=>{
   copyText(lines.join("\n"));
 };
 
-function renderResults(rows,showCounts){
+function renderResults(rows,showCounts,debugOn=false){
   lastRows=rows||[];
   const tb=$("tbody");tb.innerHTML="";
   for(const r of rows){
@@ -398,9 +432,11 @@ function renderResults(rows,showCounts){
     const t1=document.createElement("td");
     const tg=document.createElement("span");
     const tp=r.searchType||"fwd";
-    tg.className="tag "+(tp==="meet"?"tag-meet":"tag-fwd");
-    tg.textContent=tp;
-    t1.appendChild(tg);
+    if(debugOn){
+      tg.className="tag "+(tp==="meet"?"tag-meet":"tag-fwd");
+      tg.textContent=tp;
+      t1.appendChild(tg);
+    }
 
     const t2=document.createElement("td");
     t2.className="mono expr";
@@ -455,6 +491,7 @@ function collectUIState(){
     showCounts:$("showCounts").checked,
     pruneEquiv:$("pruneEquiv").checked,
     excludeExact:$("excludeExact").checked,
+    debugMode:$("debugMode").checked,
     mt:$("mt").checked,
     threads:$("threads").value,
     ops,consts
@@ -463,7 +500,7 @@ function collectUIState(){
 function applyUIState(st){
   if(!st||typeof st!=="object")return;
   if(st.target!=null)$("target").value=st.target;
-  if(st.mode!=null)$("mode").value=st.mode;
+  if(st.mode!=null)$("mode").value=normalizeMode(st.mode);
   if(st.maxC!=null)$("maxC").value=st.maxC;
   if(st.beam!=null)$("beam").value=st.beam;
   if(st.divRatio!=null)$("divRatio").value=st.divRatio;
@@ -475,6 +512,7 @@ function applyUIState(st){
   if(st.showCounts!=null)$("showCounts").checked=!!st.showCounts;
   if(st.pruneEquiv!=null)$("pruneEquiv").checked=!!st.pruneEquiv;
   if(st.excludeExact!=null)$("excludeExact").checked=!!st.excludeExact;
+  if(st.debugMode!=null)$("debugMode").checked=!!st.debugMode;
   if(st.mt!=null)$("mt").checked=!!st.mt;
   if(st.threads!=null)$("threads").value=st.threads;
 
@@ -496,6 +534,7 @@ function applyUIState(st){
       }
     });
   }
+  tuneOpsByMode($("mode").value);
 }
 let saveTimer=null;
 function scheduleSave(){
@@ -505,7 +544,7 @@ function scheduleSave(){
   },250);
 }
 function hookAutoSave(){
-  const ids=["target","mode","maxC","beam","divRatio","outN","emitInterval","timeLimit","infiniteTime","bidir","showCounts","pruneEquiv","excludeExact","mt","threads"];
+  const ids=["target","mode","maxC","beam","divRatio","outN","emitInterval","timeLimit","infiniteTime","bidir","showCounts","pruneEquiv","excludeExact","debugMode","mt","threads"];
   ids.forEach(id=>{
     const el=$(id);
     el.addEventListener("input",scheduleSave);
@@ -527,8 +566,11 @@ function updateMtHint(){
 $("mt").addEventListener("change",()=>{updateMtHint();scheduleSave();});
 $("threads").addEventListener("input",()=>{updateMtHint();scheduleSave();});
 $("mode").addEventListener("change",()=>{
-  // meet 模式强制建议开启 bidir
-  if(["meet","meetfast"].includes($("mode").value)){
+  const mode=normalizeMode($("mode").value);
+  $("mode").value=mode;
+  tuneOpsByMode(mode);
+  // 普通/速度模式强制建议开启 bidir
+  if(["normal","speed"].includes(mode)){
     $("bidir").checked=true;
   }
   scheduleSave();
@@ -560,6 +602,32 @@ function safePow(a,b){
   if(Math.abs(b)>60)return NaN;
   const r=Math.pow(a,b);
   return (!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r;
+}
+function safePowStable(a,b){
+  if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
+  if(a<0){
+    const rb=Math.round(b);
+    if(Math.abs(b-rb)>1e-12)return NaN;
+    b=rb;
+  }
+  if(Math.abs(b)>60)return NaN;
+  const r1=Math.pow(a,b);
+  if(!Number.isFinite(r1)||Math.abs(r1)>CAP)return NaN;
+  const bp=Math.round(b);
+  if(Math.abs(b-bp)<1e-10 && Math.abs(bp)<=24){
+    let r=1;
+    let base=a;
+    let e=Math.abs(bp);
+    while(e>0){
+      if(e&1) r*=base;
+      base*=base;
+      if(!Number.isFinite(r)||!Number.isFinite(base)||Math.abs(r)>CAP||Math.abs(base)>CAP) return NaN;
+      e>>=1;
+    }
+    if(bp<0) r=1/r;
+    return (!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r;
+  }
+  return r1;
 }
 function gcdInt(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ const t=a%b; a=b; b=t; } return a; }
 
@@ -600,7 +668,7 @@ function applyBin(op,a,b){
     case "-": return a-b;
     case "*": return a*b;
     case "/": return b===0?NaN:a/b;
-    case "^": return safePow(a,b);
+    case "^": return safePowStable(a,b);
     case "min": return Math.min(a,b);
     case "max": return Math.max(a,b);
     case "atan2": return Math.atan2(a,b);
@@ -906,15 +974,15 @@ function modeParams(mode){
   // keepMeetDup: output shows meet separately (debug)
   if(mode==="speed") return {
     keyPrec:10, bestPrec:10, keepMode:"goal",
-    bbD:24, bbMagA:0.03,
-    qGoal:0.82,qBB:0.08,qMeet:0.02,qDiv:0.08,
-    meetStyle:"prec", meetPrec:10, meetQ:8192, meetR:2,
-    revBeamMul:1.0, meetHitBonus:0.0,
-    candEpsMul:1.6, confirmEpsMul:1.0, binSlackMul:0.35, confirmAbsFloor:0.0,
-    spillMul:0.75, capMul:0.75, keepMeetDup:false,
-    meetSweepMul:0.05,
-    beamMul:1.0, subLayerCapMul:1.0,
-    revIdxKeyCap:64, meetKeyProbeCap:64, meetSweepRevCap:80
+    bbD:20, bbMagA:0.032,
+    qGoal:0.78,qBB:0.06,qMeet:0.10,qDiv:0.06,
+    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:5,
+    revBeamMul:2.1, meetHitBonus:0.18,
+    candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.16, confirmAbsFloor:2e-6,
+    spillMul:0.5, capMul:0.6, keepMeetDup:false,
+    meetSweepMul:0.22,
+    beamMul:0.78, subLayerCapMul:0.72,
+    revIdxKeyCap:112, meetKeyProbeCap:100, meetSweepRevCap:132
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"min",
@@ -928,66 +996,30 @@ function modeParams(mode){
     beamMul:1.0, subLayerCapMul:1.0,
     revIdxKeyCap:120, meetKeyProbeCap:120, meetSweepRevCap:140
   };
-  if(mode==="ries") return {
-    keyPrec:12, bestPrec:11, keepMode:"min",
-    bbD:64, bbMagA:0.015,
-    qGoal:0.40,qBB:0.42,qMeet:0.06,qDiv:0.12,
-    meetStyle:"prec", meetPrec:11, meetQ:8192, meetR:2,
-    revBeamMul:1.4, meetHitBonus:0.08,
-    candEpsMul:1.2, confirmEpsMul:0.9, binSlackMul:0.30, confirmAbsFloor:0.0,
-    spillMul:2.1, capMul:1.5, keepMeetDup:false,
-    meetSweepMul:0.18,
-    beamMul:1.0, subLayerCapMul:1.0,
-    revIdxKeyCap:96, meetKeyProbeCap:64, meetSweepRevCap:120
-  };
-  if(mode==="meet") return {
+  if(mode==="normal") return {
     keyPrec:12, bestPrec:11, keepMode:"min",
     bbD:48, bbMagA:0.02,
-    qGoal:0.40,qBB:0.12,qMeet:0.38,qDiv:0.10,
+    qGoal:0.44,qBB:0.14,qMeet:0.32,qDiv:0.10,
     meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
-    revBeamMul:3.0, meetHitBonus:0.25,
-    candEpsMul:4.0, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:0.0,
-    spillMul:2.2, capMul:1.7, keepMeetDup:true,
-    meetSweepMul:0.35,
+    revBeamMul:2.8, meetHitBonus:0.22,
+    candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:0.0,
+    spillMul:1.9, capMul:1.45, keepMeetDup:false,
+    meetSweepMul:0.30,
     beamMul:1.0, subLayerCapMul:1.0,
-    revIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:320
+    revIdxKeyCap:208, meetKeyProbeCap:236, meetSweepRevCap:280
   };
-  if(mode==="meetfast") return {
-    keyPrec:11, bestPrec:10, keepMode:"min",
-    bbD:36, bbMagA:0.02,
-    qGoal:0.45,qBB:0.10,qMeet:0.35,qDiv:0.10,
-    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:6,
-    revBeamMul:1.8, meetHitBonus:0.18,
-    candEpsMul:3.0, confirmEpsMul:0.9, binSlackMul:0.12, confirmAbsFloor:0.0,
-    spillMul:1.2, capMul:1.0, keepMeetDup:false,
-    meetSweepMul:0.16,
-    beamMul:0.85, subLayerCapMul:0.75,
-    revIdxKeyCap:120, meetKeyProbeCap:120, meetSweepRevCap:140
-  };
-  if(mode==="free") return {
-    keyPrec:11, bestPrec:10, keepMode:"goal",
-    bbD:20, bbMagA:0.03,
-    qGoal:0.74,qBB:0.06,qMeet:0.14,qDiv:0.06,
-    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:6,
-    revBeamMul:2.2, meetHitBonus:0.20,
-    candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.16, confirmAbsFloor:2e-6,
-    spillMul:0.55, capMul:0.6, keepMeetDup:false,
-    meetSweepMul:0.28,
-    beamMul:0.78, subLayerCapMul:0.72,
-    revIdxKeyCap:96, meetKeyProbeCap:88, meetSweepRevCap:120
-  };
-  // balanced
+  // fallback normal
   return {
     keyPrec:12, bestPrec:11, keepMode:"min",
     bbD:48, bbMagA:0.02,
-    qGoal:0.62,qBB:0.18,qMeet:0.05,qDiv:0.15,
-    meetStyle:"prec", meetPrec:10, meetQ:8192, meetR:2,
-    revBeamMul:1.2, meetHitBonus:0.05,
-    candEpsMul:1.5, confirmEpsMul:1.0, binSlackMul:0.30, confirmAbsFloor:0.0,
-    spillMul:1.0, capMul:1.0, keepMeetDup:false,
-    meetSweepMul:0.12,
+    qGoal:0.44,qBB:0.14,qMeet:0.32,qDiv:0.10,
+    meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
+    revBeamMul:2.8, meetHitBonus:0.22,
+    candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:0.0,
+    spillMul:1.9, capMul:1.45, keepMeetDup:false,
+    meetSweepMul:0.30,
     beamMul:1.0, subLayerCapMul:1.0,
-    revIdxKeyCap:96, meetKeyProbeCap:96, meetSweepRevCap:120
+    revIdxKeyCap:208, meetKeyProbeCap:236, meetSweepRevCap:280
   };
 }
 
@@ -1138,7 +1170,7 @@ function applyUn(op,v){switch(op){
   default:return NaN
 }}
 function applyBin(op,a,b){switch(op){
-  case"+":return a+b;case"-":return a-b;case"*":return a*b;case"/":return b===0?NaN:a/b;case"^":return safePow(a,b);
+  case"+":return a+b;case"-":return a-b;case"*":return a*b;case"/":return b===0?NaN:a/b;case"^":return safePowStable(a,b);
   case"min":return Math.min(a,b);case"max":return Math.max(a,b);
   case"atan2":return Math.atan2(a,b);case"hypot":return Math.hypot(a,b);
   case"mod":{if(!nearInt(a)||!nearInt(b))return NaN;const bb=Math.round(b);return bb===0?NaN:((Math.round(a)%bb)+bb)%bb}
@@ -1512,7 +1544,10 @@ onmessage=async(ev)=>{
     mt, threads, subSrc
   } = msg;
 
-  mode=mode||"balanced";
+  mode=mode||"normal";
+  if(mode==="balanced"||mode==="meet") mode="normal";
+  if(mode==="free"||mode==="meetfast") mode="speed";
+  if(mode==="ries") mode="accuracy";
   const mp=modeParams(mode);
 
   KEYP=mp.keyPrec;
@@ -1684,7 +1719,9 @@ onmessage=async(ev)=>{
 
     const valKey=v.toPrecision(BESTP);
     const type=obj.searchType||"fwd";
-    const key = mp.keepMeetDup ? (valKey+"|"+type) : valKey;
+    const hasPow=(typeof expr==="string" && expr.includes("^"));
+    const keyBase = mp.keepMeetDup ? (valKey+"|"+type) : valKey;
+    const key = hasPow ? (keyBase+"|pow") : keyBase;
 
     const idx=bestSeen.get(key);
     if(idx!==undefined){
@@ -1693,8 +1730,8 @@ onmessage=async(ev)=>{
       const oldDelta=Math.abs(old?.delta??INF);
       const newDelta=Math.abs(delta);
       const oldPow=old ? (typeof old.expr==="string" && old.expr.includes("^")) : false;
-      const newPow=(typeof expr==="string" && expr.includes("^"));
-      const powPrefer = (!oldPow && newPow && newDelta <= oldDelta*1.0000005 && newCost <= (old?.cost??INF)+2);
+      const newPow=hasPow;
+      const powPrefer = (!oldPow && newPow && newDelta <= oldDelta*1.000002 && newCost <= (old?.cost??INF)+4);
       if(old && !powPrefer && (oldDelta < newDelta || (oldDelta===newDelta && old.cost <= newCost))){
         dupesKilled++;
         return;
@@ -1711,7 +1748,9 @@ onmessage=async(ev)=>{
     bestSeen.clear();
     for(let i=0;i<best.length;i++){
       const vk=best[i].v.toPrecision(BESTP);
-      const kk = mp.keepMeetDup ? (vk+"|"+(best[i].searchType||"fwd")) : vk;
+      const hasPowBest=(typeof best[i].expr==="string" && best[i].expr.includes("^"));
+      const kkBase = mp.keepMeetDup ? (vk+"|"+(best[i].searchType||"fwd")) : vk;
+      const kk = hasPowBest ? (kkBase+"|pow") : kkBase;
       bestSeen.set(kk,i);
     }
   }
@@ -2158,15 +2197,9 @@ onmessage=async(ev)=>{
   }
   function sendLayerToSubs(cost){
     if(subWorkers.length===0) return;
+    const layer=packLayer(cost);
     for(const w of subWorkers){
-      const layer=packLayer(cost);
-      if(useBitmask){
-        w.postMessage({type:"setLayer", cost, layer}, [layer.v.buffer, layer.mask.buffer]);
-      }else if(noConstraintFast){
-        w.postMessage({type:"setLayer", cost, layer}, [layer.v.buffer]);
-      }else{
-        w.postMessage({type:"setLayer", cost, layer}, [layer.v.buffer, layer.cnt.buffer]);
-      }
+      w.postMessage({type:"setLayer", cost, layer});
     }
   }
 
@@ -2451,9 +2484,10 @@ $("btnStart").onclick=()=>{
   if(!Number.isFinite(T)){alert("目标值无效");return}
   lastT=T;
 
-  const mode=$("mode").value;
+  const mode=normalizeMode($("mode").value);
+  $("mode").value=mode;
   let bidir=$("bidir").checked;
-  if(mode==="meet"||mode==="meetfast") bidir=true; // meet类模式强制开启双向
+  if(mode==="normal"||mode==="speed") bidir=true; // 高性能模式强制开启双向
 
   const maxC=Math.max(1,Math.min(200,Number($("maxC").value||30)));
   const beam=Math.max(50,Math.min(50000,Number($("beam").value||4000)));
@@ -2468,6 +2502,7 @@ $("btnStart").onclick=()=>{
   const mt=$("mt").checked;
   const threads=Math.max(1,Math.min(64,Number($("threads").value||1)));
 
+  tuneOpsByMode(mode);
   const {opsUn,opsBin}=getOps();
   if(!opsUn.length&&!opsBin.length){alert("请至少选择一个运算");return}
 
@@ -2483,15 +2518,8 @@ $("btnStart").onclick=()=>{
   $("btnStop").disabled=false;
   $("pruneStats").style.display="none";
   $("copyMsg").textContent="";
-
-  statusPills({
-    T:fmt(T),
-    status:"running",
-    profile:mode,
-    bidir:bidir?"ON":"OFF",
-    mt:mt?("ON("+threads+")"):"OFF",
-    maxC,beam,outN
-  });
+  updateRuntimePanel({c:0,maxC,elapsed:0,visited:0});
+  $("status").style.display="none";
 
   worker.onmessage=(ev)=>{
     const {type,payload}=ev.data;
@@ -2505,38 +2533,48 @@ $("btnStart").onclick=()=>{
       const rows=payload.best||[];
       const ba=rows.length?Math.abs(rows[0].delta):NaN;
 
-      statusPills({
-        T:fmt(lastT),
-        status:type,
-        profile:payload.profile||mode,
-        mode:payload.mode,
-        mt:payload.mt||"OFF",
-        c:(payload.c??0)+"/"+payload.maxC,
-        elapsed_ms:payload.elapsed,
-        visited:payload.visited,
-        pruned:payload.pruned||0,
-        meetLookups:payload.meetLookups||0,
-        meetCand:payload.meetCandidates||0,
-        meetOK:payload.meetConfirmed||0,
-        best_delta:Number.isFinite(ba)?fmt(ba):"n/a"
-      });
+      updateRuntimePanel(payload);
 
-      const ps=$("pruneStats");
-      ps.style.display="block";
-      ps.innerHTML =
-        "<b>AST重求值修正：</b>"+(payload.reEvalFixed||0).toLocaleString()+
-        " &nbsp;|&nbsp; <b>输出同值合并：</b>"+(payload.dupesKilled||0).toLocaleString();
-      if(payload.meetDbg){
-        const d=payload.meetDbg;
-        ps.innerHTML +=
-          "<br><b>MEET Debug</b> " +
-          `revIdxKeys=${d.revIdxKeys} revIdxItems=${d.revIdxItems} ` +
-          `keyHits=${d.keyHits} pairsTried=${d.pairsTried}<br>` +
-          `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, probe=${d.rejProbeConfirm}, confirm=${d.rejConfirm}) ` +
-          `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}`;
+      const debugOn=$("debugMode").checked;
+      if(debugOn){
+        $("status").style.display="flex";
+        statusPills({
+          T:fmt(lastT),
+          status:type,
+          profile:payload.profile||mode,
+          mode:payload.mode,
+          mt:payload.mt||"OFF",
+          c:(payload.c??0)+"/"+payload.maxC,
+          elapsed_ms:payload.elapsed,
+          visited:payload.visited,
+          pruned:payload.pruned||0,
+          meetLookups:payload.meetLookups||0,
+          meetCand:payload.meetCandidates||0,
+          meetOK:payload.meetConfirmed||0,
+          best_delta:Number.isFinite(ba)?fmt(ba):"n/a"
+        });
+
+        const ps=$("pruneStats");
+        ps.style.display="block";
+        ps.innerHTML =
+          "<b>AST重求值修正：</b>"+(payload.reEvalFixed||0).toLocaleString()+
+          " &nbsp;|&nbsp; <b>输出同值合并：</b>"+(payload.dupesKilled||0).toLocaleString();
+        if(payload.meetDbg){
+          const d=payload.meetDbg;
+          ps.innerHTML +=
+            "<br><b>MEET Debug</b> " +
+            `revIdxKeys=${d.revIdxKeys} revIdxItems=${d.revIdxItems} ` +
+            `keyHits=${d.keyHits} pairsTried=${d.pairsTried}<br>` +
+            `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, probe=${d.rejProbeConfirm}, confirm=${d.rejConfirm}) ` +
+            `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}`;
+        }
+      }else{
+        $("status").style.display="none";
+        $("status").innerHTML="";
+        $("pruneStats").style.display="none";
       }
 
-      renderResults(rows,showCounts);
+      renderResults(rows,showCounts,debugOn);
       if(type==="done"){
         $("btnStart").disabled=false;
         $("btnStop").disabled=true;
@@ -2565,10 +2603,11 @@ $("btnStop").onclick=()=>{
 mountConsts();
 mountOps();
 try{applyUIState(JSON.parse(localStorage.getItem(LS_KEY)||"null"));}catch(e){}
+tuneOpsByMode($("mode").value);
 $("timeLimit").disabled=$("infiniteTime").checked;
 updateMtHint();
 hookAutoSave();
-statusPills({status:"idle"});
+updateRuntimePanel({c:0,maxC:Number($("maxC").value||0),elapsed:0,visited:0});
 })();
 </script>
 </body>
