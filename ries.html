@@ -331,8 +331,8 @@ function updateRuntimePanel(payload){
 
 let latexScriptLoading=null;
 async function ensureLatexRenderer(){
-  if(!navigator.onLine) return false;
   if(window.MathJax?.typesetPromise) return true;
+  if(!navigator.onLine) return false;
   if(latexScriptLoading) return latexScriptLoading;
   latexScriptLoading = new Promise((resolve)=>{
     const sc=document.createElement('script');
@@ -451,7 +451,7 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
   lastRows=rows||[];
   const tb=$("tbody");tb.innerHTML="";
   const frag=document.createDocumentFragment();
-  const useLatex = latexMode && navigator.onLine && await ensureLatexRenderer();
+  const useLatex = latexMode && await ensureLatexRenderer();
   for(const r of rows){
     const tr=document.createElement("tr");
 
@@ -470,7 +470,7 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
     if(useLatex && r.latex){
       const lx=document.createElement("div");
       lx.className="countsLine";
-      lx.textContent=`\(${r.latex}\)`;
+      lx.textContent=`\\(${r.latex}\\)`;
       t2.appendChild(lx);
     }
     if(showCounts && r.countsInfo){
@@ -2047,7 +2047,7 @@ onmessage=async(ev)=>{
     }
 
     // binary inverse with fwd assistance (same as之前思路，但 beamR 更大)
-    const sBin=opsBin.filter(op=>["+","-","*","/"].includes(op));
+    const sBin=opsBin.filter(op=>["+","-","*","/","^"].includes(op));
     for(const op of sBin){
       const w=wBin(op);
       for(let rc=0; rc<=c-w-1; rc++){
@@ -2056,8 +2056,10 @@ onmessage=async(ev)=>{
         if(!rs||!fs||!rs.length||!fs.length) continue;
 
         const base=Math.floor(Math.sqrt(beamR));
-        const cR=Math.min(rs.length, Math.max(120, Math.floor(base*3.0)));
-        const cF=Math.min(fs.length, Math.max(120, Math.floor(base*3.0)));
+        const laneMul = (op==="^") ? 1.35 : 3.0;
+        const laneMin = (op==="^") ? 48 : 120;
+        const cR=Math.min(rs.length, Math.max(laneMin, Math.floor(base*laneMul)));
+        const cF=Math.min(fs.length, Math.max(laneMin, Math.floor(base*laneMul)));
 
         for(let ir=0; ir<cR; ir++){
           const r=rs[ir];
