@@ -1142,8 +1142,8 @@ function modeParams(mode){
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
     meetSweepMul:0.16, meetSweepPowMul:0.32,
     beamMul:0.82, subLayerCapMul:1.05,
-    revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:220, meetSweepRevCap:240,
-    capUnMul:2.8, capBinMul:2.3, jumpMul:0.85, meetStage2:0, qSeed:0.06
+    revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:180, meetSweepRevCap:240,
+    capUnMul:2.8, capBinMul:2.3, jumpMul:0.85, meetStage2:1, qSeed:0.08
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"min",
@@ -1861,7 +1861,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nPowBase=Math.max(0,Math.floor(beam*(mp.qPowBase||0)));
   const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
   const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
-  const exploreRatio = mode==="speed" ? 0.04 : (mode==="accuracy" ? 0.16 : 0.14);
+  const exploreRatio = mode==="speed" ? 0.06 : (mode==="accuracy" ? 0.20 : 0.18);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
 
@@ -2206,17 +2206,29 @@ onmessage=async(ev)=>{
   }
 
   
-function hasTinyAdditiveTail(ast, T){
-  if(!ast) return false;
-  if(ast.t!==2) return false;
+function isTinyPowTailNode(n,scale){
+  if(!n||n.t!==2||n.op!=="^") return false;
+  if(!n.l||n.l.t!==0||!n.r||n.r.t!==0) return false;
+  const b=n.l.val,e=n.r.val;
+  if(!Number.isFinite(b)||!Number.isFinite(e)) return false;
+  if(!nearInt(b)||!nearInt(e)) return false;
+  const ib=Math.abs(Math.round(b)), ie=Math.round(e);
+  if(ib<2||ib>12||ie>-5) return false;
+  const v=Math.pow(ib,ie);
+  return Number.isFinite(v) && Math.abs(v)<=Math.max(2e-6,scale*2e-8);
+}
+function isTinyTailClone(ast,T){
+  if(!ast||ast.t!==2) return false;
   if(ast.op!=="+" && ast.op!=="-") return false;
   if(!Number.isFinite(T) || Math.abs(T)<1) return false;
-  const lv=evalA(ast.l), rv=evalA(ast.r);
-  if(!Number.isFinite(lv)||!Number.isFinite(rv)) return false;
   const scale=Math.max(1,Math.abs(T));
-  const tiny=(x)=>Math.abs(x)<=Math.max(2e-6, scale*2e-8);
+  const lv=evalA(ast.l), rv=evalA(ast.r);
   const near=(x)=>Math.abs(x-T)<=Math.max(8e-5, scale*1.2e-6);
-  return (tiny(rv)&&near(lv)) || (tiny(lv)&&near(rv));
+  if(ast.op==="+"||ast.op==="-"){
+    if(isTinyPowTailNode(ast.r,scale) && near(lv)) return true;
+    if(isTinyPowTailNode(ast.l,scale) && near(rv)) return true;
+  }
+  return false;
 }
 
 function collectLeaves(ast, out){
@@ -2242,7 +2254,7 @@ function collectLeaves(ast, out){
 
     // leafOrder constraint final check too
     if(LEAF_ORDER && obj.ast && obj.ast.ord && !obj.ast.ord.ok) return;
-    if(mode!=="speed" && obj.ast && hasTinyAdditiveTail(obj.ast,T)) return;
+    if(mode!=="speed" && obj.ast && isTinyTailClone(obj.ast,T)) return;
 
     const expr=obj.ast?strA(obj.ast):(obj.s||"?");
     const latex=obj.ast?latexA(obj.ast):expr;
@@ -2647,7 +2659,8 @@ function collectLeaves(ast, out){
 
     const jm=Math.max(0.3, mp.jumpMul||1);
     if(jm<0.45) return;
-    const limItems=Math.min(layerItems.length, Math.max(18,Math.floor(beamF*0.08*jm)));
+    const limItems=Math.min(layerItems.length, Math.max(14,Math.floor(beamF*((mode==="speed")?0.05:0.08)*jm)));
+    if(mode==="speed" && (layerItems[0]?.cost||0)<4) return;
     const logT=(T>0)?Math.log(T):NaN;
     const jumpCache=new Map();
     const J=(tv,h)=>{
