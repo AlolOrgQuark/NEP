@@ -2213,6 +2213,7 @@ onmessage=async(ev)=>{
 
   const best=[];
   const bestSeen=new Map();
+  const nearSeen=new Map();
 
   function emit(c){
     const now=performance.now();
@@ -2289,10 +2290,22 @@ function collectLeaves(ast, out){
 
     // leafOrder constraint final check too
     if(LEAF_ORDER && obj.ast && obj.ast.ord && !obj.ast.ord.ok) return;
+    if(mode!=="speed" && obj.ast && isTinyTailClone(obj.ast,T)) return;
 
     const expr=obj.ast?strA(obj.ast):(obj.s||"?");
     const latex=obj.ast?latexA(obj.ast):expr;
     const delta=v-T;
+    const nearStep=Math.max(2e-6,Math.max(1,Math.abs(T))*2e-8);
+    const nearKey=Math.round(v/nearStep);
+    const prevNear=nearSeen.get(nearKey);
+    if(prevNear!==undefined){
+      const b=best[prevNear];
+      if(b && Math.abs(b.v-v)<=nearStep*1.2){
+        const oldScore=Math.abs(b.delta)+1e-8*(b.cost||0);
+        const newScore=Math.abs(delta)+1e-8*(obj.cost||0);
+        if(newScore>=oldScore) return;
+      }
+    }
     const ci=useBitmask?maskStr(obj.mask||0):cntStr(obj.cnt||EMPTY);
     const leaves = obj.ast ? collectLeaves(obj.ast, []) : [];
 
@@ -2337,12 +2350,15 @@ function collectLeaves(ast, out){
     if(best.length>outN*4)best.length=outN*3;
 
     bestSeen.clear();
+    nearSeen.clear();
     for(let i=0;i<best.length;i++){
       const vk=best[i].v.toPrecision(BESTP);
       const hasPowBest=!!best[i].hasPow;
       const kkBase=mp.keepMeetDup?(vk+"|"+(best[i].searchType||"fwd")):vk;
       const kk=hasPowBest?(kkBase+"|pow"):kkBase;
       bestSeen.set(kk,i);
+      const ns=Math.max(2e-6,Math.max(1,Math.abs(T))*2e-8);
+      nearSeen.set(Math.round(best[i].v/ns),i);
     }
 
     if(acc==="exact") maybeStopOnExact(delta);
