@@ -1142,11 +1142,11 @@ function modeParams(mode){
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
     meetSweepMul:0.16, meetSweepPowMul:0.32,
     beamMul:0.82, subLayerCapMul:1.05,
-    revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:220, meetSweepRevCap:240,
+    revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:180, meetSweepRevCap:240,
     capUnMul:3.0, capBinMul:2.5, jumpMul:1.00, meetStage2:1, qSeed:0.10
   };
   if(mode==="accuracy") return {
-    keyPrec:15, bestPrec:13, keepMode:"min",
+    keyPrec:14, bestPrec:12, keepMode:"min",
     bbD:72, bbMagA:0.018,
     qGoal:0.20,qBB:0.18,qMeet:0.12,qDiv:0.08,qPow:0.14,qFunc:0.10,qDepth:0.14,qMag:0.09,qIrr:0.07,
     qPowBase:0.16, qPowExp:0.12,
@@ -1161,7 +1161,7 @@ function modeParams(mode){
     capUnMul:5.2, capBinMul:4.5, jumpMul:2.25, meetStage2:1, qSeed:0.24
   };
   return {
-    keyPrec:13, bestPrec:12, keepMode:"min",
+    keyPrec:12, bestPrec:11, keepMode:"min",
     bbD:44, bbMagA:0.02,
     qGoal:0.20,qBB:0.12,qMeet:0.20,qDiv:0.06,qPow:0.12,qFunc:0.08,qDepth:0.14,qMag:0.10,qIrr:0.06,
     qPowBase:0.14, qPowExp:0.10,
@@ -1532,51 +1532,32 @@ function strA(n){return pretty(n,null,null);}
 
 // LaTeX
 function latexWrap(s){ return "("+s+")"; }
-function latexEscapeText(s){
-  return String(s)
-    .replace(/\/g,'')
-    .replace(/[{}]/g,'')
-    .replace(/_/g,'-')
-    .replace(/\^/g,'')
-    .replace(/−/g,'-');
-}
-function latexAtom(sym,val){
-  const s=String(sym??val??"0").replace(/−/g,'-');
-  if(s==="π")return"\pi";
-  if(s==="φ")return"\varphi";
-  if(s==="√2")return"\sqrt{2}";
-  if(s==="√3")return"\sqrt{3}";
-  if(s==="√5")return"\sqrt{5}";
-  if(s==="e")return"e";
-  if(/^-?\d+(?:\.\d+)?$/.test(s)) return s;
-  if(/^-?\d+\/\d+$/.test(s)){
-    const neg=s.startsWith('-');
-    const t=neg?s.slice(1):s;
-    const [a,b]=t.split('/');
-    return (neg?'-':'')+"\frac{"+a+"}{"+b+"}";
-  }
-  return "\mathrm{"+latexEscapeText(s)+"}";
-}
 function latexA(n){
   if(!n)return"";
   if(n.t===0){
-    return latexAtom(n.sym,n.val);
+    const s=String(n.sym||n.val||"0");
+    if(s==="π")return"\\pi";
+    if(s==="φ")return"\\varphi";
+    if(s==="√2")return"\\sqrt{2}";
+    if(s==="√3")return"\\sqrt{3}";
+    if(s==="√5")return"\\sqrt{5}";
+    return s;
   }
   if(n.t===1){
     const ch0=latexA(n.ch);
     const ch=(n.ch&&n.ch.t!==0)?latexWrap(ch0):ch0;
     switch(n.op){
       case"neg":return"-"+ch;
-      case"sqrt":return"\sqrt{"+ch0+"}";
-      case"cbrt":return"\sqrt[3]{"+ch0+"}";
-      case"inv":return"\frac{1}{"+ch0+"}";
+      case"sqrt":return"\\sqrt{"+((n.ch&&n.ch.t===2)?latexWrap(ch0):ch0)+"}";
+      case"cbrt":return"\\sqrt[3]{"+ch0+"}";
+      case"inv":return"\\frac{1}{"+ch0+"}";
       case"square":return"{"+ch+"}^{2}";
       case"cube":return"{"+ch+"}^{3}";
       case"fact":return ch+"!";
-      case"gammafn":return"\Gamma"+latexWrap(ch0);
+      case"gammafn":return"\\Gamma"+latexWrap(ch0);
       case"exp":return"e^{"+ch0+"}";
       case"expm1":return"e^{"+ch0+"}-1";
-      default:return"\mathrm{"+latexEscapeText(n.op)+"}"+latexWrap(ch0);
+      default:return"\\mathrm{"+n.op+"}"+latexWrap(ch0);
     }
   }
   if(n.op==="^"){
@@ -1589,16 +1570,16 @@ function latexA(n){
   let l=latexA(n.l), r=latexA(n.r);
   if(needParen(n.l,n.op,"left")) l="("+l+")";
   if(needParen(n.r,n.op,"right")) r="("+r+")";
-  if(n.op==="/" )return"\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  if(n.op==="*")return l+"\cdot "+r;
+  if(n.op==="/" )return"\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
+  if(n.op==="*")return l+"\\cdot "+r;
   if(n.op==="+"){
     if(n.r&&n.r.t===1&&n.r.op==="neg") return l+"-"+latexA(n.r.ch);
     if(isNegAtomNode(n.r)) return l+"-"+latexA({t:0,sym:absAtomText(n.r),val:Math.abs(n.r.val)});
     return l+"+"+r;
   }
   if(n.op==="-")return l+"-"+r;
-  if(n.op==="logab")return"\log_{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  return"\mathrm{"+latexEscapeText(n.op)+"}"+latexWrap(latexA(n.l)+","+latexA(n.r));
+  if(n.op==="logab")return"\\log_{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
+  return"\\mathrm{"+n.op+"}"+latexWrap(latexA(n.l)+","+latexA(n.r));
 }
 
 
@@ -2696,6 +2677,7 @@ function collectLeaves(ast, out){
     const jm=Math.max(0.3, mp.jumpMul||1);
     if(jm<0.45) return;
     const limItems=Math.min(layerItems.length, Math.max(14,Math.floor(beamF*((mode==="speed")?0.05:0.08)*jm)));
+    if(mode==="speed" && (layerItems[0]?.cost||0)<4) return;
     const logT=(T>0)?Math.log(T):NaN;
     const jumpCache=new Map();
     const J=(tv,h)=>{
