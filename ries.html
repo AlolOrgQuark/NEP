@@ -233,6 +233,8 @@ function allowCandidate(ctx){
   for(let i=0;i<SEQ.length;i++){
     if(nums[i]!==SEQ[i]) return false;
   }
+  if(nums.length!==SEQ.length) return false;
+  for(let i=0;i<SEQ.length;i++) if(nums[i]!==SEQ[i]) return false;
   return true;
 }
 </pre>
