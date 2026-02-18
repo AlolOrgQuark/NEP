@@ -9,11 +9,9 @@
     body{
       font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","PingFang SC","Hiragino Sans GB","Microsoft Yahei",sans-serif;
       margin:18px;
-      overflow-x:hidden; /* 页面不横向滚动 */
+      overflow-x:hidden;
     }
     h1{font-size:16px;margin:0 0 12px}
-
-    /* 溢出在容器内滚动 */
     .box{
       border:1px solid rgba(127,127,127,.35);
       padding:12px;
@@ -22,13 +20,11 @@
       overflow-x:auto;
       -webkit-overflow-scrolling:touch;
     }
-
     .row{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:end}
     .row > div{flex:1 1 160px;min-width:0;max-width:100%}
     @media(max-width:560px){ .row > div{flex:1 1 100%} }
-
     label{display:block;font-size:12px;opacity:.85;margin-bottom:4px}
-    input[type="text"],input[type="number"],select{
+    input[type="text"],input[type="number"],select,textarea{
       padding:6px 8px;width:100%;max-width:100%;
       box-sizing:border-box;
     }
@@ -37,48 +33,53 @@
     button:disabled{opacity:.6;cursor:not-allowed}
     .muted{opacity:.8;font-size:12px}
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
-
     .status{display:flex;flex-wrap:wrap;gap:10px 12px;margin-top:10px}
     .pill{padding:4px 8px;border:1px solid rgba(127,127,127,.35);border-radius:999px;font-size:12px}
-
     .split{display:grid;grid-template-columns:1.1fr .9fr;gap:12px}
     @media(max-width:1100px){.split{grid-template-columns:1fr}}
     .split > .box{min-width:0}
-
     .constWrap{max-height:360px;overflow:auto;border:1px solid rgba(127,127,127,.25);border-radius:10px}
     .constTable{width:100%;border-collapse:collapse;min-width:420px}
     .constTable th,.constTable td{border-bottom:1px solid rgba(127,127,127,.15);padding:6px;font-size:12px}
     .constTable th{position:sticky;top:0;background:color-mix(in srgb,Canvas 92%,transparent);z-index:2}
     .miniInp{width:70px;min-width:70px;padding:4px 6px;box-sizing:border-box}
-
     .opsGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px}
     .opsGrid label{display:flex;gap:8px;align-items:center;margin:0;font-size:12px}
     @media(max-width:640px){.opsGrid{grid-template-columns:repeat(2,minmax(0,1fr));}}
-
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .warn{color:#b45309}
-
     .pruneStats{margin-top:8px;padding:8px 12px;background:rgba(127,127,127,.08);border-radius:8px;font-size:12px}
     .runtimePanel{margin-top:10px;padding:10px;border:1px solid rgba(127,127,127,.25);border-radius:10px}
     .runtimeMeta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px}
     .runtimeBar{height:10px;background:rgba(127,127,127,.2);border-radius:999px;overflow:hidden}
     .runtimeBarFill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e,#16a34a);transition:width .2s ease}
-
     .tableWrap{
       margin-top:12px;border:1px solid rgba(127,127,127,.25);
       border-radius:10px;overflow-x:auto;
       -webkit-overflow-scrolling:touch;
       max-width:100%;
     }
-    table{width:100%;border-collapse:collapse;min-width:920px}
-    th,td{border-bottom:1px solid rgba(127,127,127,.25);padding:8px 6px;vertical-align:top}
+    table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:0;
+      table-layout:auto;
+    }
+    th,td{
+      border-bottom:1px solid rgba(127,127,127,.25);
+      padding:8px 6px;
+      vertical-align:top;
+      white-space:nowrap;
+    }
     th{text-align:left;font-size:12px;opacity:.85}
     td{font-size:13px}
     .right{text-align:right}
-    td.expr{white-space:nowrap} /* 表达式不剧烈换行 */
-
+    td.expr{
+      white-space:normal;
+      overflow-wrap:anywhere;
+      word-break:break-word;
+    }
     .countsLine{margin-top:3px;font-size:11px;opacity:.85}
-
     .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px}
     .tag-fwd{background:#dbeafe;color:#1e40af}
     .tag-meet{background:#d1fae5;color:#065f46}
@@ -86,9 +87,10 @@
       .tag-fwd{background:#1e3a5f;color:#93c5fd}
       .tag-meet{background:#064e3b;color:#6ee7b7}
     }
-
     .copyBtn{padding:6px 10px;font-size:12px}
     .copyTiny{padding:4px 8px;font-size:12px}
+    .noteBox{margin-top:10px;padding:10px;border:1px dashed rgba(127,127,127,.35);border-radius:10px;font-size:12px;line-height:1.35}
+    .noteBox code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:12px}
   </style>
 </head>
 <body>
@@ -106,11 +108,11 @@
         <option value="accuracy">精度模式</option>
       </select>
       <div class="muted" style="margin-top:6px;line-height:1.25">
-        普通模式：默认推荐，整合高效 Meet。速度模式：激进吞吐，优先性能。精度模式：整合 RIES 的构件保留，优先覆盖质量。
+        普通模式：默认推荐，兼顾吞吐与覆盖。速度模式：更激进，优先性能。精度模式：更强调保留构件/覆盖质量（参考 RIES 的“保留重要中间式”策略）。
       </div>
     </div>
 
-    <div><label>最大复杂度</label><input id="maxC" type="number" value="30" min="1" max="200"/></div>
+    <div><label>最大复杂度</label><input id="maxC" type="number" value="24" min="1" max="200"/></div>
     <div><label>Beam</label><input id="beam" type="number" value="4000" min="50" max="50000"/></div>
     <div><label>Diversity比例</label><input id="divRatio" type="number" value="0.25" min="0" max="1" step="0.05"/></div>
     <div><label>输出条数</label><input id="outN" type="number" value="30" min="1" max="200"/></div>
@@ -125,7 +127,7 @@
 
     <div>
       <label>搜索选项</label>
-      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="bidir" type="checkbox" checked/><span class="muted">双向搜索</span></label>
+      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="bidir" type="checkbox" checked/><span class="muted">双向搜索（meet）</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="showCounts" type="checkbox" checked/><span class="muted">显示常数计数</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="pruneEquiv" type="checkbox" checked/><span class="muted">恒等式剪枝</span></label>
       <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="excludeExact" type="checkbox"/><span class="muted">排除 exact</span></label>
@@ -144,8 +146,7 @@
     </div>
 
     <div class="toolbar">
-      <button id="btnStart">搜索</button>
-      <button id="btnStop" disabled>停止</button>
+      <button id="btnResetConstraints" title="清空所有 min/max 约束并恢复常数/函数默认勾选">恢复默认约束</button>
     </div>
   </div>
 
@@ -154,7 +155,7 @@
   <div class="split">
     <div class="box">
       <div class="toolbar">
-        <div class="muted">常数+次数限制</div>
+        <div class="muted">常数 + 次数限制</div>
         <button id="cAll">全选</button>
         <button id="cNone">全不选</button>
       </div>
@@ -167,20 +168,53 @@
     </div>
 
     <div class="box">
-      <div class="toolbar"><div class="muted">运算/函数</div><button id="oAll">全选</button><button id="oNone">全不选</button></div>
+      <div class="toolbar"><div class="muted">运算 / 函数</div><button id="oAll">全选</button><button id="oNone">全不选</button></div>
       <div class="opsGrid" id="opsBox" style="margin-top:8px"></div>
     </div>
   </div>
 
-
   <div style="height:10px"></div>
+
   <div class="box">
     <label style="display:flex;gap:8px;align-items:center;margin:0 0 6px 0">
       <input id="customEnable" type="checkbox"/>
-      <span class="muted">自定义约束 / 扩展（JS）</span>
+      <span class="muted">自定义约束 / 扩展（JS，支持新增常数/函数/逆变换，且尽量参与剪枝、多线程与优化）</span>
     </label>
-    <textarea id="customBox" class="mono" style="min-height:110px"></textarea>
-  </div>
+    <div class="toolbar" style="margin-bottom:8px">
+      <button id="btnApplyCustom">应用自定义扩展到UI（新增常数/函数）</button>
+      <span class="muted">提示：启用后会在“常数表/运算表”里出现你新增的项目</span>
+    </div>
+    <textarea id="customBox" class="mono" style="min-height:160px"></textarea>
+
+<details class="noteBox" style="cursor:pointer">
+      <summary style="font-weight:bold;opacity:.9">📌 点击查看：自定义脚本教程与示例</summary>
+      <div style="margin-top:8px;cursor:auto">
+        你可以在脚本里定义以下函数（都可选）：
+        <ul style="margin:6px 0 0 18px;padding:0">
+          <li><code>getExtensions()</code>：返回新增常数/一元/二元函数定义。</li>
+          <li><code>getConstraints()</code>：返回剪枝约束（如 <code>leafOrder:"nondecreasing"</code>）。</li>
+          <li><code>allowCandidate(ctx)</code>：最终结果过滤。</li>
+          <li><code>scoreAdjust(ctx)</code>：给结果调分。</li>
+        </ul>
+        <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(127,127,127,0.2)">
+          <b>示例：</b>新增常数 τ=2π，新增一元 <code>sinc(x)=sin(x)/x</code>：
+<pre class="mono" style="white-space:pre-wrap;margin:5px 0 0;font-size:11px;opacity:.85">
+function getExtensions(){
+  return {
+    constants: [ {key:"tau", sym:"τ", val:2*Math.PI, on:false} ],
+    unaryOps: [
+      {key:"sinc", label:"sinc", on:false, weight:4,
+       impl:"(x===0?1:Math.sin(x)/x)",
+       // 定义逆变换让双向搜索生效：sinc(x)=r => x=...
+       invImpl:"(r)=>[{v:r===0?0:Math.asin(Math.min(1,Math.max(-1,r)))}]" }
+    ]
+  };
+}
+function getConstraints(){ return { leafOrder:"nondecreasing" }; }
+</pre>
+        </div>
+      </div>
+    </details>
 
   <div class="runtimePanel" id="runtimePanel">
     <div class="runtimeMeta">
@@ -190,11 +224,18 @@
     </div>
     <div class="runtimeBar"><div class="runtimeBarFill" id="rtBar"></div></div>
   </div>
+
   <div class="status" id="status" style="display:none"></div>
   <div class="pruneStats" id="pruneStats" style="display:none"></div>
 </div>
 
-<div class="toolbar" style="margin-top:12px">
+<!-- Buttons moved here: above results table -->
+<div class="toolbar" style="margin-top:12px; justify-content: flex-start; gap: 15px;">
+  <button id="btnStart" style="min-width: 100px; background: #22c55e; color: white; font-weight: bold;">开始搜索</button>
+  <button id="btnStop" disabled style="min-width: 100px;">停止</button>
+</div>
+
+<div class="toolbar" style="margin-top:10px; padding-top: 10px; border-top: 1px dashed rgba(127,127,127,0.2)">
   <button class="copyBtn" id="btnCopyAllExpr">复制全部（表达式）</button>
   <button class="copyBtn" id="btnCopyAllTable">复制全部（含数值）</button>
   <span class="muted" id="copyMsg"></span>
@@ -205,7 +246,7 @@
     <thead>
       <tr>
         <th style="width:6%">type</th>
-        <th style="width:56%">expression</th>
+        <th>expression</th>
         <th style="width:12%">value</th>
         <th style="width:10%">distance</th>
         <th style="width:10%">accuracy</th>
@@ -230,8 +271,8 @@ function fmt(x){
   return x.toPrecision(14).replace(/(\.\d*?[1-9])0+$/,'$1').replace(/\.0+$/,'');
 }
 
-// ---------- constants / ops ----------
-const CONST_LIST=[
+// ----------- base constants / ops (UI) -----------
+const BASE_CONST_LIST=[
   ...Array.from({length:41},(_,i)=>{const v=i-10;return{key:String(v),sym:String(v),val:v,on:(v>=0&&v<=10)}}),
   {key:"1/2",sym:"1/2",val:.5,on:true},{key:"1/3",sym:"1/3",val:1/3,on:false},{key:"2/3",sym:"2/3",val:2/3,on:false},
   {key:"1/4",sym:"1/4",val:.25,on:false},{key:"3/4",sym:"3/4",val:.75,on:false},
@@ -246,49 +287,86 @@ const CONST_LIST=[
   {key:"zeta3",sym:"ζ(3)",val:1.2020569031595942854,on:false},
 ];
 
-const OP_LIST=[
+const BASE_OP_LIST=[
   {key:"+",label:"+",kind:"bin",on:true},{key:"-",label:"-",kind:"bin",on:true},
   {key:"*",label:"*",kind:"bin",on:true},{key:"/",label:"/",kind:"bin",on:true},{key:"^",label:"^",kind:"bin",on:true},
-
   {key:"min",label:"min(a,b)",kind:"bin",on:false},{key:"max",label:"max(a,b)",kind:"bin",on:false},
   {key:"atan2",label:"atan2",kind:"bin",on:false},{key:"hypot",label:"hypot",kind:"bin",on:false},
   {key:"mod",label:"mod",kind:"bin",on:false},{key:"gcd",label:"gcd",kind:"bin",on:false},{key:"lcm",label:"lcm",kind:"bin",on:false},
-
   {key:"neg",label:"neg(-x)",kind:"un",on:true},{key:"abs",label:"abs",kind:"un",on:true},
   {key:"inv",label:"inv(1/x)",kind:"un",on:false},
   {key:"sqrt",label:"sqrt",kind:"un",on:true},{key:"cbrt",label:"cbrt",kind:"un",on:false},
   {key:"square",label:"square",kind:"un",on:false},{key:"cube",label:"cube",kind:"un",on:false},
   {key:"exp",label:"exp",kind:"un",on:true},{key:"expm1",label:"expm1",kind:"un",on:false},
   {key:"log",label:"log",kind:"un",on:true},{key:"log10",label:"log10",kind:"un",on:false},{key:"log1p",label:"log1p",kind:"un",on:false},
-
   {key:"sin",label:"sin",kind:"un",on:false},{key:"cos",label:"cos",kind:"un",on:false},{key:"tan",label:"tan",kind:"un",on:false},
   {key:"asin",label:"asin",kind:"un",on:false},{key:"acos",label:"acos",kind:"un",on:false},{key:"atan",label:"atan",kind:"un",on:false},
-
   {key:"sinh",label:"sinh",kind:"un",on:false},{key:"cosh",label:"cosh",kind:"un",on:false},{key:"tanh",label:"tanh",kind:"un",on:false},
-
   {key:"floor",label:"floor",kind:"un",on:false},{key:"ceil",label:"ceil",kind:"un",on:false},
   {key:"round",label:"round",kind:"un",on:false},{key:"frac",label:"frac",kind:"un",on:false},{key:"sign",label:"sign",kind:"un",on:false},
-
   {key:"fact",label:"fact(!)",kind:"un",on:false},{key:"gammafn",label:"Γ(x)",kind:"un",on:false},{key:"erf",label:"erf",kind:"un",on:false},
 ];
 
+let CONST_LIST = BASE_CONST_LIST.slice();
+let OP_LIST = BASE_OP_LIST.slice();
+
+// ----------- custom extension loader -----------
+function safeEvalCustom(code){
+  const src = String(code||"");
+  const fn = new Function('"use strict";\n'+src+'\n;return {'
+    +'getExtensions:(typeof getExtensions==="function")?getExtensions:null,'
+    +'getConstraints:(typeof getConstraints==="function")?getConstraints:null,'
+    +'allowCandidate:(typeof allowCandidate==="function")?allowCandidate:null,'
+    +'scoreAdjust:(typeof scoreAdjust==="function")?scoreAdjust:null'
+    +'};');
+  return fn();
+}
+
+function normalizeExt(ext){
+  if(!ext||typeof ext!=="object") return {constants:[],unaryOps:[],binaryOps:[]};
+  const out={constants:[],unaryOps:[],binaryOps:[]};
+  if(Array.isArray(ext.constants)) out.constants = ext.constants.slice();
+  if(Array.isArray(ext.unaryOps)) out.unaryOps = ext.unaryOps.slice();
+  if(Array.isArray(ext.binaryOps)) out.binaryOps = ext.binaryOps.slice();
+  return out;
+}
+
+function mergeExtensionsToLists(ext){
+  // Avoid key collisions: if collision, last wins but keep stable ordering.
+  const cMap=new Map(CONST_LIST.map(c=>[c.key,c]));
+  for(const c of (ext.constants||[])){
+    if(!c||!c.key) continue;
+    const cc={key:String(c.key),sym:String(c.sym??c.key),val:Number(c.val),on:!!c.on, custom:true};
+    if(!Number.isFinite(cc.val)) continue;
+    cMap.set(cc.key,cc);
+  }
+  CONST_LIST = Array.from(cMap.values());
+
+  const oMap=new Map(OP_LIST.map(o=>[o.key,o]));
+  for(const u of (ext.unaryOps||[])){
+    if(!u||!u.key) continue;
+    oMap.set(String(u.key), {key:String(u.key), label:String(u.label??u.key), kind:"un", on:!!u.on, custom:true});
+  }
+  for(const b of (ext.binaryOps||[])){
+    if(!b||!b.key) continue;
+    oMap.set(String(b.key), {key:String(b.key), label:String(b.label??b.key), kind:"bin", on:!!b.on, custom:true});
+  }
+  OP_LIST = Array.from(oMap.values());
+}
+
+// ----------- UI mount -----------
 function mountConsts(){
   const tb=$("constBody");tb.innerHTML="";
   for(const c of CONST_LIST){
     const tr=document.createElement("tr");
-
     const t1=document.createElement("td"),ch=document.createElement("input");
     ch.type="checkbox";ch.className="cstOn";ch.dataset.key=c.key;ch.checked=!!c.on;t1.appendChild(ch);
-
     const t2=document.createElement("td");t2.className="mono";t2.textContent=c.sym;
     const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(c.val);
-
     const t4=document.createElement("td"),i1=document.createElement("input");
     i1.type="text";i1.placeholder="0";i1.className="miniInp cstMin mono";i1.dataset.key=c.key;t4.appendChild(i1);
-
     const t5=document.createElement("td"),i2=document.createElement("input");
     i2.type="text";i2.placeholder="∞";i2.className="miniInp cstMax mono";i2.dataset.key=c.key;t5.appendChild(i2);
-
     tr.append(t1,t2,t3,t4,t5);tb.appendChild(tr);
   }
 }
@@ -306,6 +384,50 @@ $("cAll").onclick=()=>setAll("cstOn",true);
 $("cNone").onclick=()=>setAll("cstOn",false);
 $("oAll").onclick=()=>setAll("opOn",true);
 $("oNone").onclick=()=>setAll("opOn",false);
+
+function resetConstraintsToDefault(){
+  // reset lists back to base (custom extensions removed)
+  CONST_LIST = BASE_CONST_LIST.slice();
+  OP_LIST = BASE_OP_LIST.slice();
+  mountConsts();
+  mountOps();
+
+  // constants: restore default enable + clear min/max
+  for(const c of CONST_LIST){
+    const key=c.key;
+    const ch=document.querySelector('.cstOn[data-key="'+CSS.escape(key)+'"]');
+    const mn=document.querySelector('.cstMin[data-key="'+CSS.escape(key)+'"]');
+    const mx=document.querySelector('.cstMax[data-key="'+CSS.escape(key)+'"]');
+    if(ch) ch.checked=!!c.on;
+    if(mn) mn.value="";
+    if(mx) mx.value="";
+  }
+  // ops: restore default enable
+  for(const o of OP_LIST){
+    const ch=document.querySelector('.opOn[data-key="'+CSS.escape(o.key)+'"]');
+    if(ch) ch.checked=!!o.on;
+  }
+  scheduleSave();
+}
+$("btnResetConstraints").onclick=()=>{ resetConstraintsToDefault(); };
+
+$("btnApplyCustom").onclick=()=>{
+  try{
+    CONST_LIST = BASE_CONST_LIST.slice();
+    OP_LIST = BASE_OP_LIST.slice();
+    if($("customEnable").checked){
+      const scope = safeEvalCustom($("customBox").value);
+      const ext = scope.getExtensions ? normalizeExt(scope.getExtensions()) : {constants:[],unaryOps:[],binaryOps:[]};
+      mergeExtensionsToLists(ext);
+    }
+    const st = collectUIState(); // keep selections if possible
+    mountConsts(); mountOps();
+    applyUIState(st);
+    scheduleSave();
+  }catch(e){
+    alert("应用自定义扩展失败: "+(e?.message||String(e)));
+  }
+};
 
 function statusPills(o){
   const el=$("status");el.innerHTML="";
@@ -329,11 +451,19 @@ function updateRuntimePanel(payload){
   $("rtBar").style.width=`${pct.toFixed(1)}%`;
 }
 
+// ---------- LaTeX render (MathJax) ----------
 let latexScriptLoading=null;
 async function ensureLatexRenderer(){
   if(window.MathJax?.typesetPromise) return true;
   if(!navigator.onLine) return false;
   if(latexScriptLoading) return latexScriptLoading;
+
+  window.MathJax = window.MathJax || {
+    tex: { inlineMath: [['\\(','\\)']] },
+    svg: { fontCache: 'global' },
+    options: { renderActions: { addMenu: [] } }
+  };
+
   latexScriptLoading = new Promise((resolve)=>{
     const sc=document.createElement('script');
     sc.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
@@ -369,7 +499,6 @@ function getOps(){
   };
 }
 
-
 function normalizeMode(mode){
   if(mode==="balanced"||mode==="meet") return "normal";
   if(mode==="free"||mode==="meetfast") return "speed";
@@ -377,15 +506,12 @@ function normalizeMode(mode){
   if(mode==="normal"||mode==="speed"||mode==="accuracy") return mode;
   return "normal";
 }
-function tuneOpsByMode(mode){
-  // 保留 ^，避免损失解空间；仅做模式归一化占位。
-  normalizeMode(mode);
-}
+function tuneOpsByMode(mode){ normalizeMode(mode); }
+
 function getConsts(){
   const en=new Set([...document.querySelectorAll(".cstOn")].filter(x=>x.checked).map(x=>x.dataset.key));
   const mnM=new Map([...document.querySelectorAll(".cstMin")].map(x=>[x.dataset.key,x.value]));
   const mxM=new Map([...document.querySelectorAll(".cstMax")].map(x=>[x.dataset.key,x.value]));
-
   const out=[];
   for(const c of CONST_LIST){
     if(!en.has(c.key))continue;
@@ -399,41 +525,24 @@ function getConsts(){
   return out;
 }
 
-// ---------- Copy with fallback ----------
 async function copyText(text){
   text=String(text??"");
   const setMsg=(s)=>{ $("copyMsg").textContent=s; setTimeout(()=>{$("copyMsg").textContent="";}, 1200); };
-
   try{
     if(navigator.clipboard && navigator.clipboard.writeText){
       await navigator.clipboard.writeText(text);
-      setMsg("已复制");
-      return true;
+      setMsg("已复制"); return true;
     }
   }catch(e){}
-
   try{
     const ta=document.createElement("textarea");
-    ta.value=text;
-    ta.style.position="fixed";
-    ta.style.left="-9999px";
-    ta.style.top="0";
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok=document.execCommand("copy");
-    document.body.removeChild(ta);
+    ta.value=text; ta.style.position="fixed"; ta.style.left="-9999px"; ta.style.top="0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok=document.execCommand("copy"); document.body.removeChild(ta);
     if(ok){ setMsg("已复制"); return true; }
   }catch(e){}
-
-  try{
-    window.prompt("复制以下文本：", text);
-    setMsg("已打开复制框");
-    return false;
-  }catch(e){
-    setMsg("复制失败");
-    return false;
-  }
+  try{ window.prompt("复制以下文本：", text); setMsg("已打开复制框"); return false;
+  }catch(e){ setMsg("复制失败"); return false; }
 }
 
 let lastRows=[];
@@ -454,7 +563,6 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
   const useLatex = latexMode && await ensureLatexRenderer();
   for(const r of rows){
     const tr=document.createElement("tr");
-
     const t1=document.createElement("td");
     const tg=document.createElement("span");
     const tp=r.searchType||"fwd";
@@ -463,35 +571,31 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
       tg.textContent=tp;
       t1.appendChild(tg);
     }
-
     const t2=document.createElement("td");
     t2.className="mono expr";
     t2.textContent=r.expr;
+
     if(useLatex && r.latex){
       const lx=document.createElement("div");
       lx.className="countsLine";
       lx.textContent=`\\(${r.latex}\\)`;
       t2.appendChild(lx);
     }
+
     if(showCounts && r.countsInfo){
       const d=document.createElement("div");
       d.className="mono countsLine";
       d.textContent=r.countsInfo;
       t2.appendChild(d);
     }
-
     const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(r.v);
     const t4=document.createElement("td");t4.className="mono";t4.textContent=(r.delta>=0?"+":"")+fmt(r.delta);
     const t5=document.createElement("td");t5.className="mono";t5.textContent=r.acc;
     const t6=document.createElement("td");t6.className="mono right";t6.textContent=String(r.cost);
-
     const t7=document.createElement("td");
     const b=document.createElement("button");
-    b.className="copyTiny";
-    b.textContent="复制";
-    b.onclick=()=>copyText(r.expr);
+    b.className="copyTiny"; b.textContent="复制"; b.onclick=()=>copyText(r.expr);
     t7.appendChild(b);
-
     tr.append(t1,t2,t3,t4,t5,t6,t7);
     frag.appendChild(tr);
   }
@@ -502,7 +606,7 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
 }
 
 // ---------- localStorage ----------
-const LS_KEY="ries_solver_cfg_v5";
+const LS_KEY="ries_solver_cfg_v10";
 function collectUIState(){
   const ops={};
   document.querySelectorAll(".opOn").forEach(ch=>{ops[ch.dataset.key]=!!ch.checked;});
@@ -514,25 +618,15 @@ function collectUIState(){
     consts[key]={on:!!ch.checked,min:mn,max:mx};
   });
   return {
-    target:$("target").value,
-    mode:$("mode").value,
-    maxC:$("maxC").value,
-    beam:$("beam").value,
-    divRatio:$("divRatio").value,
-    outN:$("outN").value,
-    emitInterval:$("emitInterval").value,
-    timeLimit:$("timeLimit").value,
-    infiniteTime:$("infiniteTime").checked,
-    bidir:$("bidir").checked,
-    showCounts:$("showCounts").checked,
-    pruneEquiv:$("pruneEquiv").checked,
-    excludeExact:$("excludeExact").checked,
-    debugMode:$("debugMode").checked,
-    latexMode:$("latexMode").checked,
-    customEnable:$("customEnable").checked,
-    customBox:$("customBox").value,
-    mt:$("mt").checked,
-    threads:$("threads").value,
+    target:$("target").value, mode:$("mode").value,
+    maxC:$("maxC").value, beam:$("beam").value,
+    divRatio:$("divRatio").value, outN:$("outN").value,
+    emitInterval:$("emitInterval").value, timeLimit:$("timeLimit").value,
+    infiniteTime:$("infiniteTime").checked, bidir:$("bidir").checked,
+    showCounts:$("showCounts").checked, pruneEquiv:$("pruneEquiv").checked,
+    excludeExact:$("excludeExact").checked, debugMode:$("debugMode").checked,
+    latexMode:$("latexMode").checked, customEnable:$("customEnable").checked,
+    customBox:$("customBox").value, mt:$("mt").checked, threads:$("threads").value,
     ops,consts
   };
 }
@@ -557,7 +651,6 @@ function applyUIState(st){
   if(st.customBox!=null)$("customBox").value=String(st.customBox);
   if(st.mt!=null)$("mt").checked=!!st.mt;
   if(st.threads!=null)$("threads").value=st.threads;
-
   if(st.ops){
     document.querySelectorAll(".opOn").forEach(ch=>{
       const k=ch.dataset.key;
@@ -599,7 +692,6 @@ function hookAutoSave(){
   });
 }
 
-// ---------- MT hint ----------
 function updateMtHint(){
   const hc=navigator.hardwareConcurrency||4;
   $("threads").max=String(Math.max(1,Math.min(64,hc)));
@@ -611,16 +703,12 @@ $("mode").addEventListener("change",()=>{
   const mode=normalizeMode($("mode").value);
   $("mode").value=mode;
   tuneOpsByMode(mode);
-  // 普通/速度模式强制建议开启 bidir
-  if(["normal","speed"].includes(mode)){
-    $("bidir").checked=true;
-  }
+  if(["normal","speed","accuracy"].includes(mode)) $("bidir").checked=true;
   scheduleSave();
 });
 $("infiniteTime").addEventListener("change",()=>{$("timeLimit").disabled=$("infiniteTime").checked;scheduleSave();});
 
-// ================= SubWorker code (sent to Worker) =================
-// 这里不再嵌套“外层模板字符串 -> 内层模板字符串”，避免引号地狱；直接把 subworker 源码当普通字符串传入 worker。
+// ================= SubWorker code (supports reqMask + custom ops + leafOrder pruning) =================
 const SUBWORKER_CODE = `
 let stopFlag=false;
 const CAP=1e12;
@@ -629,110 +717,110 @@ let KEYP=12;
 let USE_BITMASK=true;
 let NO_CONSTRAINT_FAST=false;
 let TCOUNT=0;
-let MAXT=null; // Uint16Array
+let MAXT=null;
 let OPS_UN=[], OPS_BIN=[];
 let PRUNE=true;
 let NEED_ZERO=false, NEED_ONE=false;
+let HAS_NEG=true, HAS_DIV=true, HAS_MUL=true, HAS_SUB=true;
 
-// ---- keys ----
-function vKey(v){ if(!Number.isFinite(v))return "NaN"; if(Object.is(v,-0))v=0; return v.toPrecision(KEYP); }
-
-// ---- math ----
-function nearInt(x){ return Math.abs(x - Math.round(x)) < 1e-12; }
-function safePow(a,b){
-  if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
-  if(a<0){const rb=Math.round(b); if(Math.abs(b-rb)>1e-12)return NaN; b=rb;}
-  if(Math.abs(b)>60)return NaN;
-  const r=Math.pow(a,b);
-  return (!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r;
+// bitmask-coverage retention (fix "bitmask漏解" due to beam fragmentation)
+let REQ_MASK=0, REQ_POP=0;
+function popcnt32(x){
+  x = x - ((x >>> 1) & 0x55555555);
+  x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
+  return (((x + (x >>> 4)) & 0x0F0F0F0F) * 0x01010101) >>> 24;
 }
+function reqAdj(mask){
+  if(!REQ_MASK) return 1.0;
+  const cov = popcnt32((mask|0) & REQ_MASK);
+  return 1.0 / (1.0 + 0.35 * cov);
+}
+
+// leafOrder constraint
+let LEAF_ORDER=""; // "nondecreasing" or ""
+function ordLeaf(sym){
+  if(!LEAF_ORDER) return {has:0, ok:1, mn:0, mx:0};
+  if(/^-?\\d+$/.test(sym)){
+    const v=Number(sym);
+    if(Number.isFinite(v)){
+      return {has:1, ok:1, mn:v, mx:v};
+    }
+  }
+  return {has:0, ok:1, mn:0, mx:0};
+}
+function ordUn(st){ return st; }
+function ordBin(a,b){
+  if(!LEAF_ORDER) return {has:0, ok:1, mn:0, mx:0};
+  if(!a.ok || !b.ok) return {has:(a.has|b.has), ok:0, mn:0, mx:0};
+  if(a.has && b.has){
+    if(a.mx > b.mn) return {has:1, ok:0, mn:0, mx:0};
+    return {has:1, ok:1, mn:Math.min(a.mn,b.mn), mx:Math.max(a.mx,b.mx)};
+  }
+  if(a.has) return a;
+  if(b.has) return b;
+  return {has:0, ok:1, mn:0, mx:0};
+}
+
+// custom ops
+let CUSTOM_UN=new Map();
+let CUSTOM_BIN=new Map();
+let CUSTOM_META=new Map(); // key -> {w, comm, type}
+let CUSTOM_PRUNE_UN=new Map();
+let CUSTOM_PRUNE_BIN=new Map();
+
+function vKey(v){ if(!Number.isFinite(v))return "NaN"; if(Object.is(v,-0))v=0; return v.toPrecision(KEYP); }
+function nearInt(x){ return Math.abs(x - Math.round(x)) < 1e-12; }
 function safePowStable(a,b){
   if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
-  if(a<0){
-    const rb=Math.round(b);
-    if(Math.abs(b-rb)>1e-12)return NaN;
-    b=rb;
-  }
+  if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb;}
   if(Math.abs(b)>60)return NaN;
   const r1=Math.pow(a,b);
   if(!Number.isFinite(r1)||Math.abs(r1)>CAP)return NaN;
   const bp=Math.round(b);
   if(Math.abs(b-bp)<1e-10 && Math.abs(bp)<=24){
-    let r=1;
-    let base=a;
-    let e=Math.abs(bp);
-    while(e>0){
-      if(e&1) r*=base;
-      base*=base;
-      if(!Number.isFinite(r)||!Number.isFinite(base)||Math.abs(r)>CAP||Math.abs(base)>CAP) return NaN;
-      e>>=1;
-    }
-    if(bp<0) r=1/r;
-    return (!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r;
+    let r=1,base=a,e=Math.abs(bp);
+    while(e>0){if(e&1)r*=base;base*=base;if(!Number.isFinite(r)||!Number.isFinite(base)||Math.abs(r)>CAP||Math.abs(base)>CAP)return NaN;e>>=1;}
+    if(bp<0)r=1/r;
+    return(!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r;
   }
   return r1;
 }
-function gcdInt(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ const t=a%b; a=b; b=t; } return a; }
+function gcdInt(a,b){a=Math.abs(a);b=Math.abs(b);while(b){const t=a%b;a=b;b=t;}return a;}
 
 function applyUn(op,v){
   switch(op){
-    case "neg": return -v;
-    case "abs": return Math.abs(v);
-    case "inv": return v===0?NaN:1/v;
-    case "sqrt": return v<0?NaN:Math.sqrt(v);
-    case "cbrt": return Math.cbrt(v);
-    case "square": { const r=v*v; return r>CAP?NaN:r; }
-    case "cube": { const r=v*v*v; return Math.abs(r)>CAP?NaN:r; }
-    case "exp": return v>80?NaN:Math.exp(v);
-    case "expm1": return v>80?NaN:Math.expm1(v);
-    case "log": return v<=0?NaN:Math.log(v);
-    case "log10": return v<=0?NaN:Math.log10(v);
-    case "log1p": return v<=-1?NaN:Math.log1p(v);
-    case "sin": return Math.sin(v);
-    case "cos": return Math.cos(v);
-    case "tan": return Math.tan(v);
-    case "asin": return (v<-1||v>1)?NaN:Math.asin(v);
-    case "acos": return (v<-1||v>1)?NaN:Math.acos(v);
-    case "atan": return Math.atan(v);
-    case "sinh": return Math.abs(v)>80?NaN:Math.sinh(v);
-    case "cosh": return Math.abs(v)>80?NaN:Math.cosh(v);
-    case "tanh": return Math.tanh(v);
-    case "floor": return Math.floor(v);
-    case "ceil": return Math.ceil(v);
-    case "round": return Math.round(v);
-    case "frac": return v-Math.floor(v);
-    case "sign": return Math.sign(v);
-    default: return NaN;
+    case "neg":return -v;case "abs":return Math.abs(v);case "inv":return v===0?NaN:1/v;
+    case "sqrt":return v<0?NaN:Math.sqrt(v);case "cbrt":return Math.cbrt(v);
+    case "square":{const r=v*v;return r>CAP?NaN:r;}
+    case "cube":{const r=v*v*v;return Math.abs(r)>CAP?NaN:r;}
+    case "exp":return v>80?NaN:Math.exp(v);case "expm1":return v>80?NaN:Math.expm1(v);
+    case "log":return v<=0?NaN:Math.log(v);case "log10":return v<=0?NaN:Math.log10(v);case "log1p":return v<=-1?NaN:Math.log1p(v);
+    case "sin":return Math.sin(v);case "cos":return Math.cos(v);case "tan":return Math.tan(v);
+    case "asin":return(v<-1||v>1)?NaN:Math.asin(v);case "acos":return(v<-1||v>1)?NaN:Math.acos(v);case "atan":return Math.atan(v);
+    case "sinh":return Math.abs(v)>80?NaN:Math.sinh(v);case "cosh":return Math.abs(v)>80?NaN:Math.cosh(v);case "tanh":return Math.tanh(v);
+    case "floor":return Math.floor(v);case "ceil":return Math.ceil(v);case "round":return Math.round(v);
+    case "frac":return v-Math.floor(v);case "sign":return Math.sign(v);
+    default:{
+      const fn=CUSTOM_UN.get(op);
+      if(fn){ try{ return fn(v); }catch(e){ return NaN; } }
+      return NaN;
+    }
   }
 }
 function applyBin(op,a,b){
   switch(op){
-    case "+": return a+b;
-    case "-": return a-b;
-    case "*": return a*b;
-    case "/": return b===0?NaN:a/b;
-    case "^": return safePowStable(a,b);
-    case "min": return Math.min(a,b);
-    case "max": return Math.max(a,b);
-    case "atan2": return Math.atan2(a,b);
-    case "hypot": return Math.hypot(a,b);
-    case "mod":{
-      if(!nearInt(a)||!nearInt(b))return NaN;
-      const bb=Math.round(b);
-      return bb===0?NaN:((Math.round(a)%bb)+bb)%bb;
+    case "+":return a+b;case "-":return a-b;case "*":return a*b;case "/":return b===0?NaN:a/b;
+    case "^":return safePowStable(a,b);
+    case "min":return Math.min(a,b);case "max":return Math.max(a,b);
+    case "atan2":return Math.atan2(a,b);case "hypot":return Math.hypot(a,b);
+    case "mod":{if(!nearInt(a)||!nearInt(b))return NaN;const bb=Math.round(b);return bb===0?NaN:((Math.round(a)%bb)+bb)%bb;}
+    case "gcd":{if(!nearInt(a)||!nearInt(b))return NaN;const aa=Math.round(a),bb=Math.round(b);return(Math.abs(aa)>1e6||Math.abs(bb)>1e6)?NaN:gcdInt(aa,bb);}
+    case "lcm":{if(!nearInt(a)||!nearInt(b))return NaN;const aa=Math.round(a),bb=Math.round(b);if(Math.abs(aa)>1e6||Math.abs(bb)>1e6)return NaN;return Math.abs(aa/gcdInt(aa,bb)*bb);}
+    default:{
+      const fn=CUSTOM_BIN.get(op);
+      if(fn){ try{ return fn(a,b); }catch(e){ return NaN; } }
+      return NaN;
     }
-    case "gcd":{
-      if(!nearInt(a)||!nearInt(b))return NaN;
-      const aa=Math.round(a),bb=Math.round(b);
-      return (Math.abs(aa)>1e6||Math.abs(bb)>1e6)?NaN:gcdInt(aa,bb);
-    }
-    case "lcm":{
-      if(!nearInt(a)||!nearInt(b))return NaN;
-      const aa=Math.round(a),bb=Math.round(b);
-      if(Math.abs(aa)>1e6||Math.abs(bb)>1e6)return NaN;
-      return Math.abs(aa/gcdInt(aa,bb)*bb);
-    }
-    default:return NaN;
   }
 }
 function wUn(op){
@@ -741,7 +829,11 @@ function wUn(op){
     case "sqrt":case "cbrt":case "inv":case "floor":case "ceil":case "round":case "frac":case "square":case "cube":return 2;
     case "exp":case "expm1":case "log":case "log10":case "log1p":case "sin":case "cos":case "tan":return 3;
     case "asin":case "acos":case "atan":case "sinh":case "cosh":case "tanh":return 4;
-    default:return 3;
+    default:{
+      const m=CUSTOM_META.get(op);
+      if(m && m.type==="un" && Number.isFinite(m.w)) return m.w|0;
+      return 3;
+    }
   }
 }
 function wBin(op){
@@ -752,20 +844,24 @@ function wBin(op){
     case "mod":return 3;
     case "atan2":case "hypot":return 4;
     case "gcd":case "lcm":return 6;
-    default:return 2;
+    default:{
+      const m=CUSTOM_META.get(op);
+      if(m && m.type==="bin" && Number.isFinite(m.w)) return m.w|0;
+      return 2;
+    }
   }
 }
-function isComm(op){ return op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd"||op==="lcm"; }
+function isComm(op){
+  if(op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd"||op==="lcm")return true;
+  const m=CUSTOM_META.get(op);
+  return !!(m && m.type==="bin" && m.comm);
+}
 
-// ---- pruning flags (minimal, matches coordinator) ----
 const TAG_NONE=0,TAG_NEG=1,TAG_EXP=2,TAG_LOG=3,TAG_SQRT=4,TAG_SQ=5,TAG_INV=6,TAG_ABS=7;
-const TAG_SIN=8,TAG_ASIN=9,TAG_COS=10,TAG_ACOS=11,TAG_TAN=12,TAG_ATAN=13;
-const TAG_SINH=14,TAG_COSH=15,TAG_TANH=16;
 const TAG_ADD=17,TAG_SUB=18,TAG_MUL=19,TAG_DIV=20,TAG_POW=21;
-const TAG_CBRT=22,TAG_CUBE=23,TAG_SIGN=24;
 const F_ZERO=1<<8,F_ONE=1<<9,F_NEGONE=1<<10,F_INT=1<<11,F_NONNEG=1<<12,F_CONST=1<<13,F_HAS_ABS=1<<14;
 function getTag(f){return f&0xFF;}
-function has(f,b){return (f&b)!==0;}
+function has(f,b){return(f&b)!==0;}
 function pruneUn(op,cf,cv){
   const ct=getTag(cf);
   if(op==="neg"&&ct===TAG_NEG)return true;
@@ -777,95 +873,82 @@ function pruneUn(op,cf,cv){
   if(op==="log"&&ct===TAG_EXP)return true;
   if(op==="sqrt"&&ct===TAG_SQ)return true;
   if(op==="square"&&ct===TAG_SQRT)return true;
-  if(op==="cbrt"&&ct===TAG_CUBE)return true;
-  if(op==="cube"&&ct===TAG_CBRT)return true;
   if(op==="neg"&&has(cf,F_ZERO))return true;
   if(op==="sqrt"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
   if(op==="exp"&&has(cf,F_ZERO))return true;
   if(op==="log"&&has(cf,F_ONE))return true;
   if(op==="inv"&&(has(cf,F_ONE)||has(cf,F_NEGONE)))return true;
   if(op==="square"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
-  if(op==="cube"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
   if((op==="floor"||op==="ceil"||op==="round")&&has(cf,F_INT))return true;
   if(op==="frac"&&has(cf,F_INT))return true;
-  if(op==="sign"&&(ct===TAG_SIGN||has(cf,F_ZERO)))return true;
+  if(op==="sign"&&(has(cf,F_ZERO)))return true;
+
+  const fn=CUSTOM_PRUNE_UN.get(op);
+  if(fn){ try{ if(fn(cf,cv)) return true; }catch(e){} }
+
   return false;
 }
 function pruneBin(op,af,bf,av,bv){
-  if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO))&&!NEED_ZERO)return true;
+  if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO)) && !NEED_ZERO)return true;
   if(op==="-"&&has(bf,F_ZERO))return true;
   if(op==="-"&&Math.abs(av-bv)<1e-15)return true;
   if(op==="-"&&has(af,F_ZERO))return true;
   if(op==="*"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
-  if(op==="*"&&(has(af,F_ONE)||has(bf,F_ONE))&&!NEED_ONE)return true;
-  if(op==="*"&&(has(af,F_NEGONE)||has(bf,F_NEGONE)))return true;
+  if(op==="*"&&(has(af,F_ONE)||has(bf,F_ONE)) && !NEED_ONE)return true;
+  if(op==="*"&&(has(af,F_NEGONE)||has(bf,F_NEGONE))&&HAS_NEG)return true;
   if(op==="/"&&has(af,F_ZERO))return true;
-  if(op==="/"&&(has(bf,F_ONE)||has(bf,F_NEGONE))&&!NEED_ONE)return true;
+  if(op==="/"&&(has(bf,F_ONE)||has(bf,F_NEGONE)) && !NEED_ONE && (has(bf,F_NEGONE)?HAS_NEG:true))return true;
   if(op==="/"&&Math.abs(av-bv)<1e-15&&Math.abs(av)>1e-15)return true;
-  if(op==="^"&&has(bf,F_ZERO)&&!NEED_ZERO)return true;
-  if(op==="^"&&has(bf,F_ONE)&&!NEED_ONE)return true;
-  if(op==="^"&&has(af,F_ZERO)&&!NEED_ZERO)return true;
-  if(op==="^"&&has(af,F_ONE)&&!NEED_ONE)return true;
+  if(op==="^"&&has(bf,F_ZERO) && !NEED_ZERO)return true;
+  if(op==="^"&&has(bf,F_ONE)  && !NEED_ONE)return true;
+  if(op==="^"&&has(af,F_ZERO) && !NEED_ZERO)return true;
+  if(op==="^"&&has(af,F_ONE)  && !NEED_ONE)return true;
   if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
+
+  if(op==="*"&&(getTag(af)===TAG_INV||getTag(bf)===TAG_INV) && HAS_DIV)return true;
+
+  const fn=CUSTOM_PRUNE_BIN.get(op);
+  if(fn){ try{ if(fn(af,bf,av,bv)) return true; }catch(e){} }
+
   return false;
 }
 
-// ---- building-block score (cheap) ----
 function bbScore(v, D, magA){
-  if(!Number.isFinite(v)) return 1e9;
+  if(!Number.isFinite(v))return 1e9;
   const a=Math.abs(v);
-  const mag = magA * Math.log1p(a);
-  if(a===0) return mag;
-  // integer closeness
-  const r=Math.round(v);
-  let best=Math.abs(v-r);
-  // small rational closeness
+  const mag=magA*Math.log1p(a);
+  if(a===0)return mag;
+  let best=Math.abs(v-Math.round(v));
   const DD=D|0;
-  for(let d=2; d<=DD; d++){
+  for(let d=2;d<=DD;d++){
     const rd=Math.round(v*d);
-    const err=Math.abs(v*d - rd)/d;
-    if(err<best) best=err;
-    if(best<1e-15) break;
+    const err=Math.abs(v*d-rd)/d;
+    if(err<best)best=err;
+    if(best<1e-15)break;
   }
-  return best + mag;
+  return best+mag;
 }
 
-// ---- layers storage ----
-let layers = new Map(); // cost -> packed layer
-function ckFromFlat(flat, off, tCount){
-  let s="";
-  for(let i=0;i<tCount;i++) s += String.fromCharCode(flat[off+i]);
-  return s;
-}
-function ckAdd(flatA, offA, flatB, offB, tCount, maxT){
-  let s="";
-  for(let i=0;i<tCount;i++){
-    const v = flatA[offA+i] + flatB[offB+i];
-    if(v>maxT[i]) return null;
-    s += String.fromCharCode(v);
-  }
-  return s;
-}
+let layers=new Map();
 
-// oversize local bucket to reduce quality loss before returning
 function mkBucket(beam){
   const bucket=new Map();
-  const spLim=Math.max(beam*64, 50000);
-  const keepSp=Math.max(beam*20, 16000);
+  const spLim=Math.max(beam*64,50000);
+  const keepSp=Math.max(beam*20,16000);
   function spill(){
     const v=Array.from(bucket.values());
     v.sort((a,b)=>a.keep-b.keep);
     bucket.clear();
-    for(let i=0;i<Math.min(keepSp,v.length);i++) bucket.set(v[i].key, v[i]);
+    for(let i=0;i<Math.min(keepSp,v.length);i++)bucket.set(v[i].key,v[i]);
   }
-  function put(key, pack){
+  function put(key,pack){
     const old=bucket.get(key);
-    if(old && pack.keep>=old.keep) return;
+    if(old&&pack.keep>=old.keep)return;
     pack.key=key;
-    bucket.set(key, pack);
-    if(bucket.size>spLim) spill();
+    bucket.set(key,pack);
+    if(bucket.size>spLim)spill();
   }
-  return {bucket, put};
+  return{bucket,put};
 }
 
 onmessage=(ev)=>{
@@ -875,205 +958,225 @@ onmessage=(ev)=>{
     USE_BITMASK=!!msg.useBitmask;
     NO_CONSTRAINT_FAST=!!msg.noConstraintFast;
     TCOUNT=msg.tCount|0;
-    MAXT = msg.maxT ? new Uint16Array(msg.maxT) : null;
-    OPS_UN = msg.opsUn||[];
-    OPS_BIN = msg.opsBin||[];
-    PRUNE = !!msg.pruneEquiv;
-    NEED_ZERO = !!msg.needZero;
-    NEED_ONE = !!msg.needOne;
-    layers = new Map();
+    MAXT=msg.maxT?new Uint16Array(msg.maxT):null;
+    OPS_UN=msg.opsUn||[];
+    OPS_BIN=msg.opsBin||[];
+    PRUNE=!!msg.pruneEquiv;
+    NEED_ZERO=!!msg.needZero;
+    NEED_ONE=!!msg.needOne;
+    HAS_NEG=!!msg.hasNeg; HAS_SUB=!!msg.hasSub; HAS_DIV=!!msg.hasDiv; HAS_MUL=!!msg.hasMul;
+
+    REQ_MASK = (msg.reqMask|0) || 0;
+    REQ_POP  = (msg.reqPop|0) || 0;
+
+    LEAF_ORDER = String(msg.leafOrder||"") || "";
+
+    // compile custom ops
+    CUSTOM_UN=new Map(); CUSTOM_BIN=new Map(); CUSTOM_META=new Map();
+    CUSTOM_PRUNE_UN=new Map(); CUSTOM_PRUNE_BIN=new Map();
+    try{
+      const cu=msg.customUnary||[];
+      for(const d of cu){
+        if(!d||!d.key||!d.impl) continue;
+        const key=String(d.key);
+        CUSTOM_META.set(key,{type:"un", w:(d.weight|0)||3, comm:false});
+        CUSTOM_UN.set(key, new Function("x","return ("+String(d.impl)+");"));
+        if(d.pruneImpl) CUSTOM_PRUNE_UN.set(key, new Function("flags","x","return !!("+String(d.pruneImpl)+");"));
+      }
+      const cb=msg.customBinary||[];
+      for(const d of cb){
+        if(!d||!d.key||!d.impl) continue;
+        const key=String(d.key);
+        CUSTOM_META.set(key,{type:"bin", w:(d.weight|0)||2, comm:!!d.commutative});
+        CUSTOM_BIN.set(key, new Function("a","b","return ("+String(d.impl)+");"));
+        if(d.pruneImpl) CUSTOM_PRUNE_BIN.set(key, new Function("af","bf","a","b","return !!("+String(d.pruneImpl)+");"));
+      }
+    }catch(e){}
+
+    layers=new Map();
     postMessage({type:"inited"});
     return;
   }
   if(msg.type==="setLayer"){
-    layers.set(msg.cost|0, msg.layer);
+    layers.set(msg.cost|0,msg.layer);
     return;
   }
   if(msg.type==="task"){
-    const {T,c,beam,capUn,capBin,workerId,workerCount,bbD,bbMagA,keepMode} = msg;
-    const {bucket, put}=mkBucket(beam);
-    let visited=0, pruned=0;
+    const{T,c,beam,capUn,capBin,workerId,workerCount,bbD,bbMagA,keepMode}=msg;
+    const{bucket,put}=mkBucket(beam);
+    let visited=0,pruned=0;
 
-    function keepScore(goal, bb){
-      // keepMode: "goal" | "min"  (min(goal, bb))  (ries/meet/rich)
-      if(keepMode==="goal") return goal;
-      return Math.min(goal, bb);
-    }
+    function keepScoreSub(goal,bb){ return (keepMode==="goal")?goal:Math.min(goal,bb); }
 
-    // unary
+    const keyOf=(v,maskOrCk)=>{
+      const vk=vKey(v);
+      if(USE_BITMASK) return vk+"|"+maskOrCk;
+      if(NO_CONSTRAINT_FAST) return vk;
+      return vk+"|"+maskOrCk;
+    };
+
     for(const op of OPS_UN){
-      const w=wUn(op), sc=c-w;
-      if(sc<1) continue;
+      const w=wUn(op),sc=c-w;
+      if(sc<1)continue;
       const src=layers.get(sc);
-      if(!src||!src.len) continue;
-      const lim=Math.min(src.len, capUn);
-
+      if(!src||!src.len)continue;
+      const lim=Math.min(src.len,capUn);
       for(let i=workerId;i<lim;i+=workerCount){
-        const av=src.v[i], af=src.flags?src.flags[i]:0;
-        if(PRUNE && pruneUn(op, af, av)){ pruned++; continue; }
-        const v=applyUn(op,av); visited++;
-        if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
-
+        const av=src.v[i],af=src.flags?src.flags[i]:0;
+        if(PRUNE&&pruneUn(op,af,av)){pruned++;continue;}
+        const v=applyUn(op,av);visited++;
+        if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
         const goal=Math.abs(v-T);
-        const bb=bbScore(v, bbD, bbMagA);
-        const keep=keepScore(goal, bb);
+        const bb=bbScore(v,bbD,bbMagA);
+        let keep=keepScoreSub(goal,bb);
 
         if(USE_BITMASK){
           const mask=src.mask[i]|0;
-          const key=vKey(v)+"|"+mask;
-          put(key,{v,goal,bb,keep,mask,kind:"u",op,ac:sc,ai:i});
+          if(LEAF_ORDER && src.ordOk && src.ordOk[i]===0) continue;
+          keep *= reqAdj(mask);
+          put(keyOf(v,mask),{v,goal,bb,keep,mask,kind:"u",op,ac:sc,ai:i});
         }else{
           if(NO_CONSTRAINT_FAST){
-            const key=vKey(v);
-            put(key,{v,goal,bb,keep,ck:"",kind:"u",op,ac:sc,ai:i});
+            put(keyOf(v,0),{v,goal,bb,keep,ck:"",kind:"u",op,ac:sc,ai:i});
           }else{
-            const ck=ckFromFlat(src.cnt, i*TCOUNT, TCOUNT);
-            const key=vKey(v)+"|"+ck;
-            put(key,{v,goal,bb,keep,ck,kind:"u",op,ac:sc,ai:i});
+            // counts mode used only when enabled in main (not in this file by default)
+            put(keyOf(v,""),{v,goal,bb,keep,ck:"",kind:"u",op,ac:sc,ai:i});
           }
         }
       }
     }
 
-    // binary
     for(const op of OPS_BIN){
-      const w=wBin(op), rem=c-w;
-      if(rem<2) continue;
+      const w=wBin(op),rem=c-w;
+      if(rem<2)continue;
       const comm=isComm(op);
-
-      for(let ic=1;ic<=rem-1;ic++){
+      const icMax = comm ? Math.floor(rem/2) : (rem-1);
+      for(let ic=1;ic<=icMax;ic++){
         const jc=rem-ic;
-        const A=layers.get(ic), B=layers.get(jc);
-        if(!A||!B||!A.len||!B.len) continue;
-        const cA=Math.min(A.len,capBin), cB=Math.min(B.len,capBin);
-
-        for(let ia=workerId; ia<cA; ia+=workerCount){
-          const av=A.v[ia], af=A.flags?A.flags[ia]:0;
-          const stB=(comm && ic===jc)?ia:0;
-
-          for(let ib=stB; ib<cB; ib++){
-            const bv=B.v[ib], bf=B.flags?B.flags[ib]:0;
-            if(PRUNE && pruneBin(op, af, bf, av, bv)){ pruned++; continue; }
+        const A=layers.get(ic),B=layers.get(jc);
+        if(!A||!B||!A.len||!B.len)continue;
+        const cA=Math.min(A.len,capBin),cB=Math.min(B.len,capBin);
+        for(let ia=workerId;ia<cA;ia+=workerCount){
+          const av=A.v[ia],af=A.flags?A.flags[ia]:0;
+          const stB=(comm&&ic===jc)?ia:0;
+          for(let ib=stB;ib<cB;ib++){
+            const bv=B.v[ib],bf=B.flags?B.flags[ib]:0;
+            if(PRUNE&&pruneBin(op,af,bf,av,bv)){pruned++;continue;}
 
             if(USE_BITMASK){
-              const am=A.mask[ia]|0, bm=B.mask[ib]|0;
-              if((am&bm)!==0) continue;
-              const mask=am|bm;
-              const v=applyBin(op,av,bv); visited++;
-              if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+              const am=A.mask[ia]|0,bm=B.mask[ib]|0;
+              if((am&bm)!==0)continue;
 
-              const goal=Math.abs(v-T);
-              const bb=bbScore(v, bbD, bbMagA);
-              const keep=keepScore(goal, bb);
-
-              const key=vKey(v)+"|"+mask;
-              put(key,{v,goal,bb,keep,mask,kind:"b",op,ac:ic,ai:ia,bc:jc,bi:ib});
-            }else{
-              let ck="";
-              if(!NO_CONSTRAINT_FAST){
-                ck=ckAdd(A.cnt, ia*TCOUNT, B.cnt, ib*TCOUNT, TCOUNT, MAXT);
-                if(ck===null) continue;
+              if(LEAF_ORDER){
+                if(A.ordOk && A.ordOk[ia]===0) continue;
+                if(B.ordOk && B.ordOk[ib]===0) continue;
+                // cheap nondecreasing order: if both have leaves then check A.max <= B.min
+                if(A.ordHas && B.ordHas && A.ordHas[ia] && B.ordHas[ib]){
+                  const aMx=A.ordMax[ia], bMn=B.ordMin[ib];
+                  if(aMx > bMn) continue;
+                }
               }
-              const v=applyBin(op,av,bv); visited++;
-              if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
 
+              const mask=am|bm;
+              const v=applyBin(op,av,bv);visited++;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
               const goal=Math.abs(v-T);
-              const bb=bbScore(v, bbD, bbMagA);
-              const keep=keepScore(goal, bb);
-
-              const key=NO_CONSTRAINT_FAST ? vKey(v) : (vKey(v)+"|"+ck);
-              put(key,{v,goal,bb,keep,ck,kind:"b",op,ac:ic,ai:ia,bc:jc,bi:ib});
+              const bb=bbScore(v,bbD,bbMagA);
+              let keep=keepScoreSub(goal,bb);
+              keep *= reqAdj(mask);
+              put(keyOf(v,mask),{v,goal,bb,keep,mask,kind:"b",op,ac:ic,ai:ia,bc:jc,bi:ib});
+            }else{
+              const v=applyBin(op,av,bv);visited++;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              const goal=Math.abs(v-T);
+              const bb=bbScore(v,bbD,bbMagA);
+              const keep=keepScoreSub(goal,bb);
+              put(keyOf(v,0),{v,goal,bb,keep,ck:"",kind:"b",op,ac:ic,ai:ia,bc:jc,bi:ib});
             }
           }
         }
       }
     }
 
-    postMessage({type:"taskDone", payload:{visited, pruned, items:Array.from(bucket.values())}});
+    postMessage({type:"taskDone",payload:{visited,pruned,items:Array.from(bucket.values())}});
   }
 };
 `;
 
-// ================= Worker builder (single-file) =================
+// ================= Worker builder =================
 function buildWorker(){
 const workerSrc = `
 let stopFlag=false;
 
 const CAP=1e12, EXACT_EPS=5e-15, INF=65535;
 
-// ===== mode params =====
 function modeParams(mode){
-  // keyPrec: 状态去重精度
-  // bestPrec: 输出同值去重精度
-  // keepMode: "goal" | "min"
-  // bbD: small rational check denom up to
-  // bbMagA: magnitude penalty
-  // quotas: goal/bb/meet/div in [0,1]
-  // meetStyle: "prec" | "bin"
-  // meetQ/meetR: bin quantize and neighbor radius
-  // revBeamMul: reverse beam multiplier
-  // meetHitBonus: prefer forward items that can meet
-  // candEpsMul: candidate eps multiplier for meet
-  // confirmEpsMul: confirmation eps multiplier for meet
-  // binSlackMul: bin-mode candidate slack multiplier
-  // confirmAbsFloor: absolute floor for final confirm epsilon
-  // keepMeetDup: output shows meet separately (debug)
   if(mode==="speed") return {
     keyPrec:10, bestPrec:10, keepMode:"goal",
-    bbD:20, bbMagA:0.032,
-    qGoal:0.74,qBB:0.08,qMeet:0.08,qDiv:0.04,qPow:0.04,qFunc:0.02,
-    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:5,
+    bbD:18, bbMagA:0.032,
+    qGoal:0.40,qBB:0.10,qMeet:0.10,qDiv:0.06,qPow:0.07,qFunc:0.05,qDepth:0.10,qMag:0.08,qIrr:0.06,
+    qPowBase:0.10, qPowExp:0.08,
+    qReq:0.08,
+    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:7,
     revBeamMul:1.8, meetHitBonus:0.14,
-    candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.16, confirmAbsFloor:2e-6,
-    spillMul:0.4, capMul:0.5, keepMeetDup:false,
-    meetSweepMul:0.14,
-    beamMul:0.7, subLayerCapMul:0.62,
-    revIdxKeyCap:112, meetKeyProbeCap:100, meetSweepRevCap:132
+    candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
+    spillMul:0.55, capMul:0.9, keepMeetDup:false,
+    meetSweepMul:0.16, meetSweepPowMul:0.32,
+    beamMul:0.85, subLayerCapMul:0.95,
+    revIdxKeyCap:140, fwdIdxKeyCap:140, meetKeyProbeCap:160, meetSweepRevCap:180,
+    capUnMul:2.2, capBinMul:1.9
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"min",
-    bbD:64, bbMagA:0.02,
-    qGoal:0.44,qBB:0.28,qMeet:0.05,qDiv:0.09,qPow:0.10,qFunc:0.04,
-    meetStyle:"prec", meetPrec:12, meetQ:8192, meetR:2,
-    revBeamMul:1.6, meetHitBonus:0.10,
-    candEpsMul:1.1, confirmEpsMul:0.75, binSlackMul:0.30, confirmAbsFloor:0.0,
-    spillMul:1.7, capMul:1.25, keepMeetDup:false,
-    meetSweepMul:0.22,
-    beamMul:1.0, subLayerCapMul:1.0,
-    revIdxKeyCap:120, meetKeyProbeCap:120, meetSweepRevCap:140
+    bbD:72, bbMagA:0.018,
+    qGoal:0.20,qBB:0.18,qMeet:0.12,qDiv:0.08,qPow:0.14,qFunc:0.10,qDepth:0.14,qMag:0.09,qIrr:0.07,
+    qPowBase:0.16, qPowExp:0.12,
+    qReq:0.14,
+    meetStyle:"bin", meetPrec:12, meetQ:16384, meetR:6,
+    revBeamMul:2.0, meetHitBonus:0.10,
+    candEpsMul:1.45, confirmEpsMul:1.0, binSlackMul:0.30, confirmAbsFloor:0.0,
+    spillMul:1.6, capMul:1.35, keepMeetDup:false,
+    meetSweepMul:0.24, meetSweepPowMul:0.42,
+    beamMul:1.05, subLayerCapMul:1.35,
+    revIdxKeyCap:200, fwdIdxKeyCap:200, meetKeyProbeCap:220, meetSweepRevCap:260,
+    capUnMul:2.9, capBinMul:2.4
   };
-  if(mode==="normal") return {
-    keyPrec:12, bestPrec:11, keepMode:"min",
-    bbD:48, bbMagA:0.02,
-    qGoal:0.36,qBB:0.16,qMeet:0.28,qDiv:0.08,qPow:0.08,qFunc:0.04,
-    meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
-    revBeamMul:2.8, meetHitBonus:0.22,
-    candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:0.0,
-    spillMul:1.9, capMul:1.45, keepMeetDup:false,
-    meetSweepMul:0.30,
-    beamMul:1.0, subLayerCapMul:1.0,
-    revIdxKeyCap:208, meetKeyProbeCap:236, meetSweepRevCap:280
-  };
-  // fallback normal
   return {
     keyPrec:12, bestPrec:11, keepMode:"min",
-    bbD:48, bbMagA:0.02,
-    qGoal:0.36,qBB:0.16,qMeet:0.28,qDiv:0.08,qPow:0.08,qFunc:0.04,
+    bbD:44, bbMagA:0.02,
+    qGoal:0.20,qBB:0.12,qMeet:0.20,qDiv:0.06,qPow:0.12,qFunc:0.08,qDepth:0.14,qMag:0.10,qIrr:0.06,
+    qPowBase:0.14, qPowExp:0.10,
+    qReq:0.12,
     meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
     revBeamMul:2.8, meetHitBonus:0.22,
-    candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.12, confirmAbsFloor:0.0,
-    spillMul:1.9, capMul:1.45, keepMeetDup:false,
-    meetSweepMul:0.30,
-    beamMul:1.0, subLayerCapMul:1.0,
-    revIdxKeyCap:208, meetKeyProbeCap:236, meetSweepRevCap:280
+    candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.14, confirmAbsFloor:0.0,
+    spillMul:1.55, capMul:1.25, keepMeetDup:false,
+    meetSweepMul:0.34, meetSweepPowMul:0.60,
+    beamMul:1.0, subLayerCapMul:1.25,
+    revIdxKeyCap:260, fwdIdxKeyCap:260, meetKeyProbeCap:280, meetSweepRevCap:360,
+    capUnMul:2.5, capBinMul:2.1
   };
 }
 
 let KEYP=12, BESTP=11;
 let ALLOW_ADD=true, NEED_ZERO=false, NEED_ONE=false;
+let HAS_NEG=true, HAS_SUB=true, HAS_DIV=true, HAS_MUL=true;
+
+// bitmask coverage retention (RIES-like: preserve required constructs)
+let REQ_MASK=0, REQ_POP=0;
+function popcnt32(x){
+  x = x - ((x >>> 1) & 0x55555555);
+  x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
+  return (((x + (x >>> 4)) & 0x0F0F0F0F) * 0x01010101) >>> 24;
+}
+function reqAdj(mask){
+  if(!REQ_MASK) return 1.0;
+  const cov = popcnt32((mask|0) & REQ_MASK);
+  return 1.0 / (1.0 + 0.35 * cov);
+}
+
 function vKey(v){if(!Number.isFinite(v))return"NaN";if(Object.is(v,-0))v=0;return v.toPrecision(KEYP)}
 
-// ===== meet indexing =====
 let MEET_STYLE="prec";
 let MEETP=10;
 let MEET_Q=8192;
@@ -1083,77 +1186,85 @@ function meetKeyPrec(v){if(!Number.isFinite(v))return"NaN";if(Object.is(v,-0))v=
 function meetKeyBinPrimary(v){
   if(!Number.isFinite(v))return"NaN";
   if(Object.is(v,-0))v=0;
-  if(v===0)return "0|0|0";
+  if(v===0)return"0|0|0";
   const sign=v<0?1:0;
   const a=Math.abs(v);
   const e=Math.floor(Math.log2(a));
   const scale=Math.pow(2,e);
   const x=a/scale;
   const q=Math.round(x*MEET_Q);
-  return ""+sign+"|"+e+"|"+q;
+  return""+sign+"|"+e+"|"+q;
 }
 function meetPrimaryKey(v){
-  return MEET_STYLE==="bin" ? meetKeyBinPrimary(v) : meetKeyPrec(v);
+  return MEET_STYLE==="bin"?meetKeyBinPrimary(v):meetKeyPrec(v);
 }
+// broaden meet keys: bin neighborhood + precision key (improves meet on pow-heavy targets)
+// [替换 function meetKeys]
+
+// 预分配数组避免 GC
+const _meetKeyOut = []; 
 function meetKeys(v){
   if(MEET_STYLE!=="bin") return [meetKeyPrec(v)];
   if(!Number.isFinite(v)) return ["NaN"];
-  if(Object.is(v,-0))v=0;
-  if(v===0) return ["0|0|0"];
-
+  if(Object.is(v,-0)) v=0;
+  if(v===0) return ["0|0|0","0"];
+  
+  // 清空数组而不是新建
+  _meetKeyOut.length = 0;
+  
   const sign=v<0?1:0;
   const a=Math.abs(v);
+  // 快速计算 log2
   const e=Math.floor(Math.log2(a));
   const scale=Math.pow(2,e);
   const x=a/scale;
-
-  const out=[];
-  for(let de=-1;de<=1;de++){
-    const e2=e+de;
-    const x2=x*Math.pow(2,-de);
-    const q0=Math.round(x2*MEET_Q);
-    for(let dq=-MEET_R;dq<=MEET_R;dq++){
-      out.push(""+sign+"|"+e2+"|"+(q0+dq));
-    }
+  
+  // 核心优化：只在关键区间生成 key
+  const q0 = Math.round(x * MEET_Q);
+  
+  // 生成主要 key
+  _meetKeyOut.push(""+sign+"|"+e+"|"+q0);
+  
+  // 生成邻居 key (减少范围，提升速度，Meet_R 从 2 降为 1 足够了，因为有精度补救)
+  // 如果你需要更宽的容错，保持原来的逻辑，但尽量少 push
+  if(MEET_R > 0) {
+      _meetKeyOut.push(""+sign+"|"+e+"|"+(q0-1));
+      _meetKeyOut.push(""+sign+"|"+e+"|"+(q0+1));
   }
-  return out;
+  
+  // 总是加入高精度 Key 作为备选
+  _meetKeyOut.push(meetKeyPrec(v));
+  
+  // 返回副本以防覆盖（因为我们是多处调用），或者确保调用方立即使用
+  // 为了安全起见，这里还是返回 slice，但比之前每次都 new 很多 string 好一点
+  return _meetKeyOut.slice(); 
 }
 
-// ===== accuracy label =====
 function relAcc(v,T){
   const r=Math.abs(v-T)/Math.max(1,Math.abs(T));
   if(r<EXACT_EPS||r===0)return"exact";
   const n=1/r;
   if(!Number.isFinite(n))return"exact";
-  return n>1e6?n.toExponential(4):n.toPrecision(6).replace(/\\.0+$/,"");
+  return n>1e6?n.toExponential(4):n.toPrecision(6).replace(/\\\\.0+$/,"");
 }
 
-// ===== math =====
-function safePow(a,b){
-  if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
-  if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb}
-  if(Math.abs(b)>60)return NaN;
-  const r=Math.pow(a,b);
-  return(!Number.isFinite(r)||Math.abs(r)>CAP)?NaN:r
-}
 function safePowStable(a,b){
   if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
   if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb}
   if(Math.abs(b)>60)return NaN;
-  if(a===0) return b>0?0:NaN;
-
+  if(a===0)return b>0?0:NaN;
   const r1=Math.pow(a,b);
   let r2=NaN;
   if(a>0){
-    if(Math.abs(a-1)<0.25) r2=Math.exp(b*Math.log1p(a-1));
+    if(Math.abs(a-1)<0.25)r2=Math.exp(b*Math.log1p(a-1));
     else r2=Math.exp(b*Math.log(a));
   }
   const cands=[r1,r2].filter(v=>Number.isFinite(v)&&Math.abs(v)<=CAP);
-  if(!cands.length) return NaN;
-  if(cands.length===1) return cands[0];
+  if(!cands.length)return NaN;
+  if(cands.length===1)return cands[0];
   const gap=Math.abs(cands[0]-cands[1]);
   const scale=Math.max(1,Math.abs(cands[0]),Math.abs(cands[1]));
-  return (gap<=1e-10*scale)?(0.5*(cands[0]+cands[1])):cands[0];
+  return(gap<=1e-10*scale)?(0.5*(cands[0]+cands[1])):cands[0];
 }
 function erf(x){
   const s=x<0?-1:1;x=Math.abs(x);
@@ -1173,39 +1284,73 @@ function factInt(n){if(n<0||n>170)return NaN;let v=1;for(let i=2;i<=n;i++)v*=i;r
 function nearInt(x){return Math.abs(x-Math.round(x))<1e-12}
 function gcdInt(a,b){a=Math.abs(a);b=Math.abs(b);while(b){const t=a%b;a=b;b=t}return a}
 
-// ===== weights =====
+// ---- leafOrder constraint (early pruning like RIES rules) ----
+let LEAF_ORDER=""; // "nondecreasing" | ""
+function ordLeaf(sym){
+  if(!LEAF_ORDER) return {has:0, ok:1, mn:0, mx:0};
+  if(/^-?\\d+$/.test(sym)){
+    const v=Number(sym);
+    if(Number.isFinite(v)) return {has:1, ok:1, mn:v, mx:v};
+  }
+  return {has:0, ok:1, mn:0, mx:0};
+}
+function ordUn(st){ return st; }
+function ordBin(a,b){
+  if(!LEAF_ORDER) return {has:0, ok:1, mn:0, mx:0};
+  if(!a.ok || !b.ok) return {has:(a.has|b.has), ok:0, mn:0, mx:0};
+  if(a.has && b.has){
+    if(a.mx > b.mn) return {has:1, ok:0, mn:0, mx:0};
+    return {has:1, ok:1, mn:Math.min(a.mn,b.mn), mx:Math.max(a.mx,b.mx)};
+  }
+  if(a.has) return a;
+  if(b.has) return b;
+  return {has:0, ok:1, mn:0, mx:0};
+}
+
+// ---- custom ops support ----
+let CUSTOM_UN=new Map();
+let CUSTOM_BIN=new Map();
+let CUSTOM_META=new Map(); // key->{type:"un"/"bin", w, comm}
+let CUSTOM_INV_UN=new Map(); // key -> (r)=>[{v}]
+let CUSTOM_INV_BIN_L=new Map(); // key -> (r,b)=>x
+let CUSTOM_INV_BIN_R=new Map(); // key -> (r,a)=>x
+let CUSTOM_PRUNE_UN=new Map();
+let CUSTOM_PRUNE_BIN=new Map();
+
 function wUn(op){switch(op){
   case"neg":case"abs":case"sign":return 1;
   case"sqrt":case"cbrt":case"inv":case"floor":case"ceil":case"round":case"frac":case"square":case"cube":return 2;
   case"exp":case"expm1":case"log":case"log10":case"log1p":case"sin":case"cos":case"tan":return 3;
   case"asin":case"acos":case"atan":case"sinh":case"cosh":case"tanh":case"erf":return 4;
-  case"fact":return 6;
-  case"gammafn":return 7;
-  default:return 3
+  case"fact":return 6;case"gammafn":return 7;default:{
+    const m=CUSTOM_META.get(op); if(m&&m.type==="un"&&Number.isFinite(m.w)) return m.w|0; return 3;
+  }
 }}
 function wBin(op){switch(op){
-  case"+":case"-":case"*":case"/":return 1;
-  case"^":return 3;
-  case"min":case"max":return 2;
-  case"mod":return 3;
-  case"atan2":case"hypot":return 4;
-  case"gcd":case"lcm":return 6;
-  default:return 2
+  case"+":case"-":case"*":case"/":return 1;case"^":return 3;
+  case"min":case"max":return 2;case"mod":return 3;
+  case"atan2":case"hypot":return 4;case"gcd":case"lcm":return 6;default:{
+    const m=CUSTOM_META.get(op); if(m&&m.type==="bin"&&Number.isFinite(m.w)) return m.w|0; return 2;
+  }
 }}
-function isComm(op){return op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd"||op==="lcm"}
+function isComm(op){
+  if(op==="+"||op==="*"||op==="min"||op==="max"||op==="gcd"||op==="lcm")return true;
+  const m=CUSTOM_META.get(op); return !!(m&&m.type==="bin"&&m.comm);
+}
 
-// ===== AST =====
-function mkC(sym,val){return{t:0,sym,val,p:0,f:0}}
+function mkC(sym,val,ord){return{t:0,sym,val,p:0,f:0,d:0,ord:ord||{has:0,ok:1,mn:0,mx:0}}}
 function mkU(op,ch){
-  const isFunc = op!=="neg" && op!=="abs";
-  return{t:1,op,ch,p:(ch&&ch.p)?1:0,f:(isFunc||((ch&&ch.f)?1:0))?1:0}
+  const isFunc=op!=="neg"&&op!=="abs";
+  return{t:1,op,ch,p:(ch&&ch.p)?1:0,f:(isFunc||((ch&&ch.f)?1:0))?1:0,d:(ch?ch.d:0)+1,ord:ordUn(ch.ord)};
 }
 function mkB(op,l,r){
-  if(op==="-" && ALLOW_ADD && r && r.t===1 && r.op==="neg"){
+  if(op==="-"&&ALLOW_ADD&&r&&r.t===1&&r.op==="neg"){
     const rr=r.ch;
-    return {t:2,op:"+",l,r:rr,p:((l&&l.p)||(rr&&rr.p))?1:0,f:((l&&l.f)||(rr&&rr.f))?1:0};
+    const o=ordBin(l.ord,rr.ord);
+    return{t:2,op:"+",l,r:rr,p:((l&&l.p)||(rr&&rr.p))?1:0,f:((l&&l.f)||(rr&&rr.f))?1:0,d:Math.max(l?l.d:0,rr?rr.d:0)+1,ord:o};
   }
-  return{t:2,op,l,r,p:(op==="^"||(l&&l.p)||(r&&r.p))?1:0,f:((l&&l.f)||(r&&r.f))?1:0};
+  const o=ordBin(l.ord,r.ord);
+  return{t:2,op,l,r,p:(op==="^"||(l&&l.p)||(r&&r.p))?1:0,f:((l&&l.f)||(r&&r.f))?1:0,d:Math.max(l?l.d:0,r?r.d:0)+1,ord:o};
 }
 
 function applyUn(op,v){switch(op){
@@ -1223,7 +1368,11 @@ function applyUn(op,v){switch(op){
   case"fact":return nearInt(v)?factInt(Math.round(v)):NaN;
   case"gammafn":return v>60?NaN:gamma(v);
   case"erf":return erf(v);
-  default:return NaN
+  default:{
+    const fn=CUSTOM_UN.get(op);
+    if(fn){ try{ return fn(v); }catch(e){ return NaN; } }
+    return NaN;
+  }
 }}
 function applyBin(op,a,b){switch(op){
   case"+":return a+b;case"-":return a-b;case"*":return a*b;case"/":return b===0?NaN:a/b;case"^":return safePowStable(a,b);
@@ -1232,7 +1381,11 @@ function applyBin(op,a,b){switch(op){
   case"mod":{if(!nearInt(a)||!nearInt(b))return NaN;const bb=Math.round(b);return bb===0?NaN:((Math.round(a)%bb)+bb)%bb}
   case"gcd":{if(!nearInt(a)||!nearInt(b))return NaN;const aa=Math.round(a),bb=Math.round(b);return(Math.abs(aa)>1e6||Math.abs(bb)>1e6)?NaN:gcdInt(aa,bb)}
   case"lcm":{if(!nearInt(a)||!nearInt(b))return NaN;const aa=Math.round(a),bb=Math.round(b);if(Math.abs(aa)>1e6||Math.abs(bb)>1e6)return NaN;return Math.abs(aa/gcdInt(aa,bb)*bb)}
-  default:return NaN
+  default:{
+    const fn=CUSTOM_BIN.get(op);
+    if(fn){ try{ return fn(a,b); }catch(e){ return NaN; } }
+    return NaN;
+  }
 }}
 function evalA(n){
   if(n.t===0)return n.val;
@@ -1242,54 +1395,44 @@ function evalA(n){
 function evalAStable(n){
   if(n.t===0)return n.val;
   if(n.t===1)return applyUn(n.op,evalAStable(n.ch));
-  const lv=evalAStable(n.l), rv=evalAStable(n.r);
-  if(n.op==="^") return safePowStable(lv,rv);
+  const lv=evalAStable(n.l),rv=evalAStable(n.r);
+  if(n.op==="^")return safePowStable(lv,rv);
   return applyBin(n.op,lv,rv);
 }
 function astPowStats(n){
-  if(!n) return {cnt:0, risk:0, val:NaN};
-  if(n.t===0) return {cnt:0, risk:0, val:n.val};
-
+  if(!n)return{cnt:0,risk:0,val:NaN};
+  if(n.t===0)return{cnt:0,risk:0,val:n.val};
   if(n.t===1){
     const cs=astPowStats(n.ch);
-    return {cnt:cs.cnt, risk:cs.risk, val:applyUn(n.op, cs.val)};
+    return{cnt:cs.cnt,risk:cs.risk,val:applyUn(n.op,cs.val)};
   }
-
-  const ls=astPowStats(n.l), rs=astPowStats(n.r);
+  const ls=astPowStats(n.l),rs=astPowStats(n.r);
   let cnt=ls.cnt+rs.cnt;
   let risk=ls.risk+rs.risk;
-  const val=applyBin(n.op, ls.val, rs.val);
-
+  const val=applyBin(n.op,ls.val,rs.val);
   if(n.op==="^"){
     cnt++;
-    const b=ls.val, e=rs.val;
+    const b=ls.val,e=rs.val;
     if(Number.isFinite(b)&&Number.isFinite(e)){
-      const ab=Math.abs(b), ae=Math.abs(e);
-      const nearOne = 1/Math.max(1e-6, Math.abs(ab-1));
-      const sens = ae/Math.max(1e-6, ab);
-      const expAmp = Math.max(0, ae-2);
-      const localRisk = Math.min(20, 0.05*sens + 0.15*expAmp + 2e-4*nearOne);
-      risk += localRisk;
-    }else{
-      risk += 5;
-    }
+      const ab=Math.abs(b),ae=Math.abs(e);
+      const nearOne=1/Math.max(1e-6,Math.abs(ab-1));
+      const sens=ae/Math.max(1e-6,ab);
+      const expAmp=Math.max(0,ae-2);
+      const localRisk=Math.min(20,0.05*sens+0.15*expAmp+2e-4*nearOne);
+      risk+=localRisk;
+    }else{risk+=5;}
   }
-
-  return {cnt, risk, val};
+  return{cnt,risk,val};
 }
+function astDepth(n){ return (!n)?0:(n.d||0); }
 
-// ===== Pretty Unicode printer (no simplification) =====
-const PREC_ATOM=100, PREC_POSTFIX=96, PREC_UN=90, PREC_POW=80, PREC_MUL=70, PREC_ADD=60, PREC_FUNC=50;
+// pretty
+const PREC_ATOM=100,PREC_POSTFIX=96,PREC_UN=90,PREC_POW=80,PREC_MUL=70,PREC_ADD=60,PREC_FUNC=50;
 function prec(n){
   if(n.t===0)return PREC_ATOM;
-  if(n.t===1){ if(n.op==="fact")return PREC_POSTFIX; return PREC_UN; }
+  if(n.t===1){if(n.op==="fact")return PREC_POSTFIX;return PREC_UN;}
   if(n.t===2){
-    switch(n.op){
-      case "^":return PREC_POW;
-      case "*":case "/":return PREC_MUL;
-      case "+":case "-":return PREC_ADD;
-      default:return PREC_FUNC;
-    }
+    switch(n.op){case"^":return PREC_POW;case"*":case"/":return PREC_MUL;case"+":case"-":return PREC_ADD;default:return PREC_FUNC;}
   }
   return PREC_FUNC;
 }
@@ -1297,19 +1440,14 @@ function needParen(child,parentOp,side){
   if(!parentOp)return false;
   const cp=prec(child);
   let pp;
-  switch(parentOp){
-    case "^":pp=PREC_POW;break;
-    case "*":case "/":pp=PREC_MUL;break;
-    case "+":case "-":pp=PREC_ADD;break;
-    default:pp=PREC_FUNC;
-  }
+  switch(parentOp){case"^":pp=PREC_POW;break;case"*":case"/":pp=PREC_MUL;break;case"+":case"-":pp=PREC_ADD;break;default:pp=PREC_FUNC;}
   if(cp>pp)return false;
   if(cp<pp)return true;
   if(parentOp==="-"&&side==="right")return true;
   if(parentOp==="/"&&side==="right")return true;
   if(parentOp==="^"){
-    if(side==="left") return true;
-    if(side==="right") return child.t===2 && child.op!=="^";
+    if(side==="left")return true;
+    if(side==="right")return child.t===2&&child.op!=="^";
     return false;
   }
   return false;
@@ -1317,60 +1455,31 @@ function needParen(child,parentOp,side){
 function pretty(n,parentOp=null,side=null){
   if(n.t===0)return n.sym;
   if(n.t===1){
-    const op=n.op, ch=n.ch;
-    if(op==="neg"){
-      const s=pretty(ch,"neg","right");
-      const need=prec(ch)<PREC_UN;
-      return "−"+(need?"("+s+")":s);
-    }
-    if(op==="sqrt"){
-      const s=pretty(ch,null,null);
-      const need=prec(ch)<PREC_UN;
-      return "√"+(need?"("+s+")":s);
-    }
-    if(op==="cbrt"){
-      const s=pretty(ch,null,null);
-      const need=prec(ch)<PREC_UN;
-      return "∛"+(need?"("+s+")":s);
-    }
-    if(op==="inv"){
-      const s=pretty(ch,null,null);
-      const need=prec(ch)<PREC_MUL;
-      return "1/"+(need?"("+s+")":s);
-    }
-    if(op==="square"){
-      const s=pretty(ch,null,null);
-      const need=prec(ch)<PREC_POSTFIX;
-      return (need?"("+s+")":s)+"²";
-    }
-    if(op==="cube"){
-      const s=pretty(ch,null,null);
-      const need=prec(ch)<PREC_POSTFIX;
-      return (need?"("+s+")":s)+"³";
-    }
-    if(op==="fact"){
-      const s=pretty(ch,null,null);
-      const need=prec(ch)<PREC_POSTFIX;
-      return (need?"("+s+")":s)+"!";
-    }
+    const op=n.op,ch=n.ch;
+    if(op==="neg"){const s=pretty(ch,"neg","right");const need=prec(ch)<PREC_UN;return"−"+(need?"("+s+")":s);}
+    if(op==="sqrt"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_UN;return"√"+(need?"("+s+")":s);}
+    if(op==="cbrt"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_UN;return"∛"+(need?"("+s+")":s);}
+    if(op==="inv"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_MUL;return"1/"+(need?"("+s+")":s);}
+    if(op==="square"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_POSTFIX;return(need?"("+s+")":s)+"²";}
+    if(op==="cube"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_POSTFIX;return(need?"("+s+")":s)+"³";}
+    if(op==="fact"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_POSTFIX;return(need?"("+s+")":s)+"!";}
     const s=pretty(ch,null,null);
     const name=(op==="gammafn")?"Γ":op;
     return name+"("+s+")";
   }
   const op=n.op;
   if(op==="min"||op==="max"||op==="atan2"||op==="hypot"||op==="mod"||op==="gcd"||op==="lcm"){
-    const a=pretty(n.l,null,null), b=pretty(n.r,null,null);
-    return op+"("+a+","+b+")";
+    return op+"("+pretty(n.l,null,null)+","+pretty(n.r,null,null)+")";
   }
   const L=n.l,R=n.r;
-  const ls=pretty(L,op,"left"), rs=pretty(R,op,"right");
-  if(op==="+" && R && R.t===1 && R.op==="neg") {
+  const ls=pretty(L,op,"left"),rs=pretty(R,op,"right");
+  if(op==="+"&&R&&R.t===1&&R.op==="neg"){
     const rs2=pretty(R.ch,op,"right");
     const rout2=needParen(R.ch,op,"right")?"("+rs2+")":rs2;
     const lout2=needParen(L,op,"left")?"("+ls+")":ls;
     return lout2+"-"+rout2;
   }
-  if(op==="-" && ALLOW_ADD && R && R.t===1 && R.op==="neg"){
+  if(op==="-"&&ALLOW_ADD&&R&&R.t===1&&R.op==="neg"){
     const rs2=pretty(R.ch,"+","right");
     const rout2=needParen(R.ch,"+","right")?"("+rs2+")":rs2;
     const lout2=needParen(L,"+","left")?"("+ls+")":ls;
@@ -1381,92 +1490,78 @@ function pretty(n,parentOp=null,side=null){
   return lout+op+rout;
 }
 function strA(n){return pretty(n,null,null);}
-function latexA(n,parentOp=null,side=null){
-  if(!n) return "";
+
+// LaTeX
+function latexA(n){
+  if(!n)return"";
   if(n.t===0){
     const s=String(n.sym||n.val||"0");
-    if(s==="π") return "\\pi";
-    if(s==="φ") return "\\varphi";
-    if(s==="√2") return "\\sqrt{2}";
-    if(s==="√3") return "\\sqrt{3}";
-    if(s==="√5") return "\\sqrt{5}";
+    if(s==="π")return"\\\\pi";
+    if(s==="φ")return"\\\\varphi";
+    if(s==="√2")return"\\\\sqrt{2}";
+    if(s==="√3")return"\\\\sqrt{3}";
+    if(s==="√5")return"\\\\sqrt{5}";
     return s;
   }
   if(n.t===1){
-    const ch0=latexA(n.ch,null,null);
-    const ch=(n.ch && n.ch.t===2) ? ("("+ch0+")") : ch0;
+    const ch0=latexA(n.ch);
+    const needP=(n.ch&&n.ch.t===2);
+    const ch=needP?("("+ch0+")"):ch0;
     switch(n.op){
-      case "neg": return "-"+ch;
-      case "sqrt": return "\\sqrt{"+ch+"}";
-      case "cbrt": return "\\sqrt[3]{"+ch+"}";
-      case "inv": return "\\frac{1}{"+ch+"}";
-      case "square": return "{"+ch+"}^{2}";
-      case "cube": return "{"+ch+"}^{3}";
-      default: return "\\mathrm{"+n.op+"}\\left("+ch+"\\right)";
+      case"neg":return"-"+ch;
+      case"sqrt":return"\\\\sqrt{"+ch0+"}";
+      case"cbrt":return"\\\\sqrt[3]{"+ch0+"}";
+      case"inv":return"\\\\frac{1}{"+ch0+"}";
+      case"square":return"{"+ch+"}^{2}";
+      case"cube":return"{"+ch+"}^{3}";
+      case"fact":return ch+"!";
+      case"gammafn":return"\\\\Gamma\\\\left("+ch0+"\\\\right)";
+      default:return"\\\\mathrm{"+n.op+"}\\\\left("+ch0+"\\\\right)";
     }
   }
-  const L=n.l,R=n.r;
-  let l=latexA(L,n.op,"left");
-  let r=latexA(R,n.op,"right");
-  if(needParen(L,n.op,"left")) l="("+l+")";
-  if(needParen(R,n.op,"right")) r="("+r+")";
+  if(n.op==="^"){
+    // 修复：如果底数本身也是幂运算（或其他复杂运算），必须强制加括号，避免渲染成幂塔
+    const needParenBase = (n.l && (n.l.t!==0 || n.l.op==="^")); 
+    // 或者更严格：只要底数不是单纯的数字/符号，就加括号，防止 ((a+b)^2)^2 这种歧义
+    const baseStr = latexA(n.l);
+    const base = (needParenBase || (n.l && n.l.t===2)) ? ("\\\\left("+baseStr+"\\\\right)") : baseStr;
+    const exp  = latexA(n.r);
+    return "{"+base+"}^{"+exp+"}";
+  }
 
-  if(n.op==="+" && R && R.t===1 && R.op==="neg"){
-    const rn=latexA(R.ch,"+","right");
-    return l+"-"+(needParen(R.ch,"+","right")?("("+rn+")"):rn);
-  }
-  if(n.op==="-"){
-    if(R && R.t===1 && R.op==="neg"){
-      const rn=latexA(R.ch,"+","right");
-      return l+"+"+(needParen(R.ch,"+","right")?("("+rn+")"):rn);
-    }
-    return l+"-"+r;
-  }
-  if(n.op==="/") return "\\frac{"+latexA(L,null,null)+"}{"+latexA(R,null,null)+"}";
-  if(n.op==="^") return "{"+l+"}^{"+r+"}";
-  if(n.op==="*") return l+"\\cdot "+r;
-  if(n.op==="+") return l+"+"+r;
-  return "\\mathrm{"+n.op+"}\\left("+latexA(L,null,null)+","+latexA(R,null,null)+"\\right)";
+  let l=latexA(n.l), r=latexA(n.r);
+  if(needParen(n.l,n.op,"left")) l="("+l+")";
+  if(needParen(n.r,n.op,"right")) r="("+r+")";
+  if(n.op==="/" )return"\\\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
+  if(n.op==="*")return l+"\\\\cdot "+r;
+  if(n.op==="+")return l+"+"+r;
+  if(n.op==="-")return l+"-"+r;
+  return"\\\\mathrm{"+n.op+"}\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
 }
 
-
-// ===== pruning flags =====
 const TAG_NONE=0,TAG_NEG=1,TAG_EXP=2,TAG_LOG=3,TAG_SQRT=4,TAG_SQ=5,TAG_INV=6,TAG_ABS=7;
-const TAG_SIN=8,TAG_ASIN=9,TAG_COS=10,TAG_ACOS=11,TAG_TAN=12,TAG_ATAN=13;
-const TAG_SINH=14,TAG_COSH=15,TAG_TANH=16;
 const TAG_ADD=17,TAG_SUB=18,TAG_MUL=19,TAG_DIV=20,TAG_POW=21;
-const TAG_CBRT=22,TAG_CUBE=23,TAG_SIGN=24;
-const F_ZERO=1<<8,F_ONE=1<<9,F_NEGONE=1<<10,F_INT=1<<11,F_NONNEG=1<<12,F_CONST=1<<13,F_HAS_ABS=1<<14;
+const F_ZERO=1<<8, F_ONE=1<<9, F_NEGONE=1<<10, F_INT=1<<11, F_NONNEG=1<<12, F_CONST=1<<13, F_HAS_ABS=1<<14, F_E=1<<15;
 
 function mkFlags(v,tag,isLeaf,extra=0){
   let f=(tag&0xFF)|extra;const e=1e-15;
   if(Math.abs(v)<e)f|=F_ZERO;
   if(Math.abs(v-1)<e)f|=F_ONE;
   if(Math.abs(v+1)<e)f|=F_NEGONE;
+  if(Math.abs(v-Math.E)<1e-13)f|=F_E; // 标记常数 e
   if(nearInt(v))f|=F_INT;
   if(v>=0)f|=F_NONNEG;
   if(isLeaf)f|=F_CONST;
   return f
 }
-function extraUnFlags(op, cf){
-  return ((op==="abs") || has(cf,F_HAS_ABS)) ? F_HAS_ABS : 0;
-}
-function extraBinFlags(af,bf){
-  return (af|bf)&F_HAS_ABS;
-}
+function extraUnFlags(op,cf){return((op==="abs")||has(cf,F_HAS_ABS))?F_HAS_ABS:0;}
+function extraBinFlags(af,bf){return(af|bf)&F_HAS_ABS;}
 function getTag(f){return f&0xFF}
 function has(f,b){return(f&b)!==0}
 function opTag(op){switch(op){
   case"neg":return TAG_NEG;case"abs":return TAG_ABS;case"inv":return TAG_INV;
-  case"exp":case"expm1":return TAG_EXP;
-  case"log":case"log10":case"log1p":return TAG_LOG;
+  case"exp":case"expm1":return TAG_EXP;case"log":case"log10":case"log1p":return TAG_LOG;
   case"sqrt":return TAG_SQRT;case"square":return TAG_SQ;
-  case"cbrt":return TAG_CBRT;case"cube":return TAG_CUBE;
-  case"sin":return TAG_SIN;case"asin":return TAG_ASIN;
-  case"cos":return TAG_COS;case"acos":return TAG_ACOS;
-  case"tan":return TAG_TAN;case"atan":return TAG_ATAN;
-  case"sinh":return TAG_SINH;case"cosh":return TAG_COSH;case"tanh":return TAG_TANH;
-  case"sign":return TAG_SIGN;
   case"+":return TAG_ADD;case"-":return TAG_SUB;case"*":return TAG_MUL;case"/":return TAG_DIV;case"^":return TAG_POW;
   default:return TAG_NONE
 }}
@@ -1481,22 +1576,19 @@ function pruneUn(op,cf,cv){
   if(op==="log"&&ct===TAG_EXP)return true;
   if(op==="sqrt"&&ct===TAG_SQ)return true;
   if(op==="square"&&ct===TAG_SQRT)return true;
-  if(op==="cbrt"&&ct===TAG_CUBE)return true;
-  if(op==="cube"&&ct===TAG_CBRT)return true;
-  if(op==="sin"&&ct===TAG_ASIN)return true;if(op==="asin"&&ct===TAG_SIN)return true;
-  if(op==="cos"&&ct===TAG_ACOS)return true;if(op==="acos"&&ct===TAG_COS)return true;
-  if(op==="tan"&&ct===TAG_ATAN)return true;if(op==="atan"&&ct===TAG_TAN)return true;
-
   if(op==="neg"&&has(cf,F_ZERO))return true;
   if(op==="sqrt"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
   if(op==="exp"&&has(cf,F_ZERO))return true;
   if(op==="log"&&has(cf,F_ONE))return true;
   if(op==="inv"&&(has(cf,F_ONE)||has(cf,F_NEGONE)))return true;
   if(op==="square"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
-  if(op==="cube"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
   if((op==="floor"||op==="ceil"||op==="round")&&has(cf,F_INT))return true;
   if(op==="frac"&&has(cf,F_INT))return true;
-  if(op==="sign"&&(ct===TAG_SIGN||has(cf,F_ZERO)))return true;
+  if(op==="sign"&&(has(cf,F_ZERO)))return true;
+
+  const fn=CUSTOM_PRUNE_UN.get(op);
+  if(fn){ try{ if(fn(cf,cv)) return true; }catch(e){} }
+
   return false
 }
 function pruneBin(op,af,bf,av,bv){
@@ -1506,9 +1598,9 @@ function pruneBin(op,af,bf,av,bv){
   if(op==="-"&&has(af,F_ZERO))return true;
   if(op==="*"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
   if(op==="*"&&(has(af,F_ONE)||has(bf,F_ONE))&&!NEED_ONE)return true;
-  if(op==="*"&&(has(af,F_NEGONE)||has(bf,F_NEGONE)))return true;
+  if(op==="*"&&(has(af,F_NEGONE)||has(bf,F_NEGONE))&&HAS_NEG)return true;
   if(op==="/"&&has(af,F_ZERO))return true;
-  if(op==="/"&&(has(bf,F_ONE)||has(bf,F_NEGONE))&&!NEED_ONE)return true;
+  if(op==="/"&&(has(bf,F_ONE)||has(bf,F_NEGONE))&&!NEED_ONE && (has(bf,F_NEGONE)?HAS_NEG:true))return true;
   if(op==="/"&&Math.abs(av-bv)<1e-15&&Math.abs(av)>1e-15)return true;
   if(op==="^"&&has(bf,F_ZERO)&&!NEED_ZERO)return true;
   if(op==="^"&&has(bf,F_ONE)&&!NEED_ONE)return true;
@@ -1516,154 +1608,288 @@ function pruneBin(op,af,bf,av,bv){
   if(op==="^"&&has(af,F_ONE)&&!NEED_ONE)return true;
   if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
 
-  if(op==="+"&&getTag(bf)===TAG_NEG)return true;
-  if(op==="+"&&getTag(af)===TAG_NEG)return true;
-  if(op==="-"&&getTag(bf)===TAG_NEG)return true;
-  if(op==="*"&&(getTag(bf)===TAG_INV||getTag(af)===TAG_INV))return true;
-  if(op==="/"&&getTag(bf)===TAG_INV)return true;
+  if(op==="+" && HAS_SUB && (getTag(bf)===TAG_NEG || getTag(af)===TAG_NEG)) return true;
+  if(op==="*" && HAS_DIV && (getTag(bf)===TAG_INV || getTag(af)===TAG_INV)) return true;
+  if(op==="/" && HAS_MUL && getTag(bf)===TAG_INV) return true;
+    if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO)) && !NEED_ZERO)return true;
+  if(op==="-"&&has(bf,F_ZERO))return true;
+  if(op==="-"&&Math.abs(av-bv)<1e-15)return true;
+  if(op==="*"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
+  
+  // --- 新增严格代数剪枝 ---
+  if(op==="*" && (has(af,F_ONE)||has(bf,F_ONE))) return true; // 禁止 x*1, 1*x
+  if(op==="/" && has(bf,F_ONE)) return true; // 禁止 x/1
+  
+  if(op==="^"){
+    if(has(bf,F_ONE)) return true; // 禁止 x^1 (解决 f 与 f^1 重复)
+    if(has(bf,F_ZERO)) return true; // 禁止 x^0
+    if(has(af,F_ONE)) return true; // 禁止 1^x
+    // 如果启用了一元函数 exp，则禁止二元运算 e^x (解决 e^f 与 exp(f) 重复)
+    if(has(af,F_E) && OPS_UN.includes("exp")) return true; 
+  }
+  
+  // 交换律规范化：如果两个操作数都是常数，强制从小到大排列 (ries 核心优化)
+  if((op==="+"||op==="*") && has(af,F_CONST) && has(bf,F_CONST) && av > bv) return true;
+
+  const fn=CUSTOM_PRUNE_BIN.get(op);
+  if(fn){ try{ if(fn(af,bf,av,bv)) return true; }catch(e){} }
+
   return false
 }
 
-// ===== reverse inverse =====
+// Reverse inversion (built-in + custom inverses if provided)
 function invUn(op,r){switch(op){
   case"neg":return[{v:-r}];
   case"abs":return r<0?[]:[{v:r},{v:-r}];
   case"inv":return r===0?[]:[{v:1/r}];
   case"sqrt":return[{v:r*r}];
-  case"cbrt":return[{v:r*r*r}];
   case"square":return r<0?[]:[{v:Math.sqrt(r)},{v:-Math.sqrt(r)}];
-  case"cube":return[{v:Math.cbrt(r)}];
   case"exp":return r<=0?[]:[{v:Math.log(r)}];
-  case"expm1":return r<=-1?[]:[{v:Math.log1p(r)}];
   case"log":return[{v:Math.exp(r)}];
-  case"log10":return[{v:Math.pow(10,r)}];
-  case"log1p":return[{v:Math.expm1(r)}];
-  case"sin":return(r<-1||r>1)?[]:[{v:Math.asin(r)}];
-  case"cos":return(r<-1||r>1)?[]:[{v:Math.acos(r)}];
-  case"tan":return[{v:Math.atan(r)}];
-  case"asin":return[{v:Math.sin(r)}];
-  case"acos":return[{v:Math.cos(r)}];
-  case"atan":return[{v:Math.tan(r)}];
-  case"sinh":return[{v:Math.asinh(r)}];
-  case"cosh":return r<1?[]:[{v:Math.acosh(r)}];
-  case"tanh":return(r<=-1||r>=1)?[]:[{v:Math.atanh(r)}];
-  default:return[]
+  default:{
+    const fn=CUSTOM_INV_UN.get(op);
+    if(fn){ try{ return fn(r)||[]; }catch(e){ return []; } }
+    return [];
+  }
 }}
 function invBinR(op,r,a){switch(op){
-  case"+":return r-a;
-  case"-":return a-r;
-  case"*":return a===0?NaN:r/a;
-  case"/":return r===0?NaN:a/r;
+  case"+":return r-a;case"-":return a-r;
+  case"*":return a===0?NaN:r/a;case"/":return r===0?NaN:a/r;
   case"^":return a<=0||r<=0?NaN:Math.log(r)/Math.log(a);
-  default:return NaN
+  default:{
+    const fn=CUSTOM_INV_BIN_R.get(op);
+    if(fn){ try{ return fn(r,a); }catch(e){ return NaN; } }
+    return NaN;
+  }
 }}
 function invBinL(op,r,b){switch(op){
-  case"+":return r-b;
-  case"-":return r+b;
-  case"*":return b===0?NaN:r/b;
-  case"/":return r*b;
+  case"+":return r-b;case"-":return r+b;
+  case"*":return b===0?NaN:r/b;case"/":return r*b;
   case"^":return b===0||r<=0?NaN:Math.pow(r,1/b);
-  default:return NaN
+  default:{
+    const fn=CUSTOM_INV_BIN_L.get(op);
+    if(fn){ try{ return fn(r,b); }catch(e){ return NaN; } }
+    return NaN;
+  }
 }}
 
-// ===== building-block score =====
-function bbScore(v, D, magA){
-  if(!Number.isFinite(v)) return 1e9;
+function bbScore(v,D,magA){
+  if(!Number.isFinite(v))return 1e9;
   const a=Math.abs(v);
-  const mag = magA * Math.log1p(a);
-  if(a===0) return mag;
+  const mag=magA*Math.log1p(a);
+  if(a===0)return mag;
   let best=Math.abs(v-Math.round(v));
   const DD=D|0;
-  for(let d=2; d<=DD; d++){
+  for(let d=2;d<=DD;d++){
     const rd=Math.round(v*d);
     const err=Math.abs(v*d-rd)/d;
-    if(err<best) best=err;
-    if(best<1e-15) break;
+    if(err<best)best=err;
+    if(best<1e-15)break;
   }
-  return best + mag;
+  return best+mag;
 }
 
-// ===== bucket with multi-objective selection =====
-function mkBucket(beam){
+function mkBucket(beam,spillMul){
   const bucket=new Map();
-  return {
+  const spLim=Math.max(beam*64,50000);
+  const keepSp=Math.max(beam*20,16000);
+  const hard=Math.floor(spLim*Math.max(0.35,Math.min(2.0,spillMul||1.0)));
+  function spill(){
+    const v=Array.from(bucket.values());
+    v.sort((a,b)=>a.keep-b.keep);
+    bucket.clear();
+    for(let i=0;i<Math.min(keepSp,v.length);i++)bucket.set(v[i].key,v[i]);
+  }
+  return{
     bucket,
-    put(key, pack){
+    put(key,pack){
       const old=bucket.get(key);
-      if(old && pack.keep>=old.keep) return false;
+      if(old&&pack.keep>=old.keep)return false;
       pack.key=key;
-      bucket.set(key, pack);
+      bucket.set(key,pack);
+      if(bucket.size>hard)spill();
       return true;
     }
   };
 }
 
-// ===== selection from bucket values with quotas =====
-function selectTop(items, beam, divRatio, qGoal, qBB, qMeet, qDiv, qPow, qFunc, revIdx, allowPow){
-  // items each: {v, goal, bb, keep, ...; revHit computed optionally}
+// topK (heap)
+function heapPushMax(heap, item, keyFn){
+  heap.push(item);
+  let i=heap.length-1;
+  while(i>0){
+    const p=(i-1)>>1;
+    if(keyFn(heap[p])>=keyFn(heap[i]))break;
+    const t=heap[p];heap[p]=heap[i];heap[i]=t;
+    i=p;
+  }
+}
+function heapPopMax(heap, keyFn){
+  const top=heap[0];
+  const last=heap.pop();
+  if(heap.length){
+    heap[0]=last;
+    let i=0;
+    for(;;){
+      let l=i*2+1,r=l+1,b=i;
+      if(l<heap.length && keyFn(heap[l])>keyFn(heap[b]))b=l;
+      if(r<heap.length && keyFn(heap[r])>keyFn(heap[b]))b=r;
+      if(b===i)break;
+      const t=heap[i];heap[i]=heap[b];heap[b]=t;
+      i=b;
+    }
+  }
+  return top;
+}
+function topK(items,k,scoreFn,lowerBetter=true,filterFn=null){
+  k=k|0;
+  if(k<=0)return [];
+  const heap=[];
+  const keyFn=(x)=>x.__sc;
+  const inv=lowerBetter?1:-1;
+  for(let i=0;i<items.length;i++){
+    const it=items[i];
+    if(filterFn && !filterFn(it)) continue;
+    const sc=scoreFn(it);
+    if(!Number.isFinite(sc)) continue;
+    it.__sc = sc*inv;
+    if(heap.length<k){
+      heapPushMax(heap,it,keyFn);
+    }else if(it.__sc < heap[0].__sc){
+      heap[0]=it;
+      let idx=0;
+      for(;;){
+        let l=idx*2+1,r=l+1,b=idx;
+        if(l<heap.length && keyFn(heap[l])>keyFn(heap[b]))b=l;
+        if(r<heap.length && keyFn(heap[r])>keyFn(heap[b]))b=r;
+        if(b===idx)break;
+        const t=heap[idx];heap[idx]=heap[b];heap[b]=t;
+        idx=b;
+      }
+    }
+  }
   const out=[];
-  const used=new Set(); // by key
-  function takeFrom(sorted, limit){
-    for(let i=0;i<sorted.length && out.length<beam && limit>0;i++){
-      const it=sorted[i];
-      if(used.has(it.key)) continue;
-      used.add(it.key);
-      out.push(it);
-      limit--;
-    }
-  }
-
-  // compute revHit if revIdx provided
-  if(revIdx){
-    for(const it of items){
-      it.revHit = revIdx.has(meetPrimaryKey(it.v));
-    }
-  }else{
-    for(const it of items){ it.revHit=false; }
-  }
-
-  const byGoal = items.slice().sort((a,b)=>a.goal-b.goal);
-  const byBB   = items.slice().sort((a,b)=>a.bb-b.bb);
-  const meetList = items.filter(x=>x.revHit).sort((a,b)=>a.goal-b.goal);
-  const powList = allowPow ? items.filter(x=>x.hasPow).sort((a,b)=>((a.goal+0.20*a.bb)-(b.goal+0.20*b.bb))) : [];
-  const funcList = items.filter(x=>x.hasFunc).sort((a,b)=>((a.goal+0.16*a.bb)-(b.goal+0.16*b.bb)));
-
-  const nGoal=Math.max(0, Math.floor(beam*qGoal));
-  const nBB  =Math.max(0, Math.floor(beam*qBB));
-  const nMeet=Math.max(0, Math.floor(beam*qMeet));
-  const nDiv =Math.max(0, Math.floor(beam*qDiv));
-  const nPow =Math.max(0, Math.floor(beam*(qPow||0)));
-  const nFunc=Math.max(0, Math.floor(beam*(qFunc||0)));
-
-  takeFrom(byGoal, nGoal);
-  takeFrom(meetList, nMeet);
-  takeFrom(powList, nPow);
-  takeFrom(funcList, nFunc);
-  takeFrom(byBB, nBB);
-
-  // diversity by magnitude bins (prefer low keep)
-  if(nDiv>0){
-    const bins=new Map();
-    for(const it of items){
-      if(used.has(it.key)) continue;
-      const b=Math.floor(Math.log(Math.abs(it.v)+1e-30)*3);
-      const old=bins.get(b);
-      if(!old || it.keep<old.keep) bins.set(b,it);
-    }
-    const divArr=Array.from(bins.values()).sort((a,b)=>a.keep-b.keep);
-    takeFrom(divArr, nDiv);
-  }
-
-  // fill rest by keep
-  if(out.length<beam){
-    const byKeep=items.slice().sort((a,b)=>a.keep-b.keep);
-    takeFrom(byKeep, beam-out.length);
-  }
-
+  while(heap.length) out.push(heapPopMax(heap,keyFn));
+  out.reverse();
   return out;
 }
 
-// ================= MAIN =================
+function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask){
+  const out=[];
+  const used=new Set();
+  const take=(arr,limit)=>{
+    for(let i=0;i<arr.length&&out.length<beam&&limit>0;i++){
+      const it=arr[i];
+      const k=it.key;
+      if(used.has(k))continue;
+      used.add(k);
+      out.push(it);
+      limit--;
+    }
+  };
+
+  if(revIdx){
+    for(const it of items){
+      const mk = it.mkey || (it.mkey = meetPrimaryKey(it.v));
+      it.revHit = revIdx.has(mk);
+    }
+  }else{
+    for(const it of items){it.revHit=false;}
+  }
+
+  // bitmask: compute required-coverage for quota/keep
+  if(useBitmask && REQ_POP>0){
+    for(const it of items){
+      it.cov = popcnt32((it.mask|0) & REQ_MASK);
+    }
+  }else{
+    for(const it of items){it.cov=0;}
+  }
+
+  const nGoal=Math.max(0,Math.floor(beam*mp.qGoal));
+  const nBB=Math.max(0,Math.floor(beam*mp.qBB));
+  const nMeet=Math.max(0,Math.floor(beam*(revIdx?mp.qMeet:0)));
+  const nDiv=Math.max(0,Math.floor(beam*mp.qDiv));
+  const nPow=Math.max(0,Math.floor(beam*(mp.qPow||0)));
+  const nFunc=Math.max(0,Math.floor(beam*(mp.qFunc||0)));
+  const nDepth=Math.max(0,Math.floor(beam*(mp.qDepth||0)));
+  const nMagD=Math.max(0,Math.floor(beam*(mp.qMag||0)));
+  const nIrr=Math.max(0,Math.floor(beam*(mp.qIrr||0)));
+  const nPowBase=Math.max(0,Math.floor(beam*(mp.qPowBase||0)));
+  const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
+  const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
+
+  take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
+  if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
+
+  // Required-coverage quota (fix bitmask漏解 due to beam fragmentation)
+  if(useBitmask && REQ_POP>0 && nReq>0){
+    take(topK(items,nReq,(x)=>(x.keep - 0.35*(x.cov||0)),true,(x)=> (x.cov||0)>0), nReq);
+  }
+
+  if(allowPow && nPow>0) take(topK(items,nPow,(x)=>(x.goal+0.20*x.bb),true,(x)=>x.hasPow), nPow);
+
+  if(allowPow && nPowBase>0){
+    const baseFilter=(x)=>{
+      const v=x.v;
+      if(!Number.isFinite(v))return false;
+      if(v<=0)return false;
+      const a=Math.abs(v);
+      return a>0.12 && a<24 && Math.abs(a-1)>1e-12;
+    };
+    take(topK(items,nPowBase,(x)=>x.bb,true,baseFilter), nPowBase);
+  }
+  if(allowPow && nPowExp>0){
+    const expFilter=(x)=>{
+      const v=x.v;
+      if(!Number.isFinite(v))return false;
+      return Math.abs(v)<24;
+    };
+    take(topK(items,nPowExp,(x)=>(x.bb*0.7 + 0.01/(1+(x.depth||0))),false,expFilter), nPowExp);
+  }
+
+  if(nFunc>0) take(topK(items,nFunc,(x)=>(x.goal+0.16*x.bb),true,(x)=>x.hasFunc), nFunc);
+
+  if(nDepth>0){
+    take(topK(items,nDepth,(x)=>-(x.depth||0),true), nDepth);
+  }
+
+  if(nMagD>0){
+    const bins=new Map();
+    for(const it of items){
+      const mb=Math.floor(Math.log2(Math.abs(it.v)+1e-30));
+      const old=bins.get(mb);
+      if(!old||it.keep<old.keep)bins.set(mb,it);
+    }
+    const magList=Array.from(bins.values());
+    magList.sort((a,b)=>a.keep-b.keep);
+    take(magList,nMagD);
+  }
+
+  if(nIrr>0){
+    take(topK(items,nIrr,(x)=> (x.bb*0.8 - x.goal*0.15), false), nIrr);
+  }
+
+  take(topK(items,nBB,(x)=>x.bb,true), nBB);
+
+  if(nDiv>0){
+    const bins=new Map();
+    for(const it of items){
+      if(used.has(it.key))continue;
+      const b=Math.floor(Math.log(Math.abs(it.v)+1e-30)*3);
+      const old=bins.get(b);
+      if(!old||it.keep<old.keep)bins.set(b,it);
+    }
+    const divArr=Array.from(bins.values()).sort((a,b)=>a.keep-b.keep);
+    take(divArr,nDiv);
+  }
+
+  if(out.length<beam){
+    take(topK(items,beam-out.length,(x)=>x.keep,true), beam-out.length);
+  }
+  return out;
+}
+
 onmessage=async(ev)=>{
   const msg=ev.data;
   if(msg.type==="stop"){stopFlag=true;return;}
@@ -1671,36 +1897,91 @@ onmessage=async(ev)=>{
 
   stopFlag=false;
 
-  let {
-    T, mode, maxC, beam, divRatio, outN, timeLimit, infiniteTime, emitInterval,
-    opsUn, opsBin, consts, showCounts, bidir, pruneEquiv, excludeExact,
-    mt, threads, subSrc
-  } = msg;
+  let{
+    T,mode,maxC,beam,divRatio,outN,timeLimit,infiniteTime,emitInterval,
+    opsUn,opsBin,consts,showCounts,bidir,pruneEquiv,excludeExact,
+    mt,threads,subSrc,
+    customEnable,customCode
+  }=msg;
 
   mode=mode||"normal";
-  if(mode==="balanced"||mode==="meet") mode="normal";
-  if(mode==="free"||mode==="meetfast") mode="speed";
-  if(mode==="ries") mode="accuracy";
+  mode=(mode==="balanced"||mode==="meet")?"normal":mode;
+  mode=(mode==="free"||mode==="meetfast")?"speed":mode;
+  mode=(mode==="ries")?"accuracy":mode;
   const mp=modeParams(mode);
 
-  let customAllow=null, customScoreAdjust=null;
-
-  const customOn = !!msg.customEnable;
-  const customCode = String(msg.customCode||"");
-  if(customOn && customCode.trim()){
+  // compile custom
+  let customAllow=null,customScoreAdjust=null;
+  let ext={constants:[],unaryOps:[],binaryOps:[]};
+  let constraints={};
+  let customUnary=[], customBinary=[];
+  if(!!customEnable){
     try{
-      const scope = new Function('\"use strict\";\\n' + customCode + '\\n; return {allowCandidate: (typeof allowCandidate===\"function\")?allowCandidate:null, scoreAdjust:(typeof scoreAdjust===\"function\")?scoreAdjust:null};')();
-      customAllow = scope.allowCandidate;
-      customScoreAdjust = scope.scoreAdjust;
+      const scope=new Function('"use strict";\\n'+String(customCode||"")+'\\n; return {'
+        +'getExtensions:(typeof getExtensions==="function")?getExtensions:null,'
+        +'getConstraints:(typeof getConstraints==="function")?getConstraints:null,'
+        +'allowCandidate:(typeof allowCandidate==="function")?allowCandidate:null,'
+        +'scoreAdjust:(typeof scoreAdjust==="function")?scoreAdjust:null'
+      +'};')();
+
+      customAllow=scope.allowCandidate;
+      customScoreAdjust=scope.scoreAdjust;
+      constraints = scope.getConstraints ? (scope.getConstraints()||{}) : {};
+      ext = scope.getExtensions ? (scope.getExtensions()||{}) : {};
     }catch(err){
-      postMessage({type:"error", payload:"自定义约束脚本错误: "+err.message});
+      postMessage({type:"error",payload:"自定义脚本错误: "+err.message});
       return;
     }
   }
 
+  // normalize constraints
+  const leafOrder = String(constraints?.leafOrder||"");
+  LEAF_ORDER = (leafOrder==="nondecreasing") ? "nondecreasing" : "";
+
+  // normalize extensions (ops only; constants are already in 'consts' list passed from UI)
+  function normOpDef(d,kind){
+    if(!d||!d.key||!d.impl) return null;
+    const o={
+      key:String(d.key),
+      kind,
+      weight: (d.weight|0) || (kind==="un"?3:2),
+      commutative: !!d.commutative,
+      impl: String(d.impl),
+      pruneImpl: d.pruneImpl ? String(d.pruneImpl) : "",
+      invImpl: d.invImpl ? String(d.invImpl) : "",
+      invLImpl: d.invLImpl ? String(d.invLImpl) : "",
+      invRImpl: d.invRImpl ? String(d.invRImpl) : ""
+    };
+    return o;
+  }
+  customUnary = Array.isArray(ext?.unaryOps) ? ext.unaryOps.map(d=>normOpDef(d,"un")).filter(Boolean) : [];
+  customBinary = Array.isArray(ext?.binaryOps) ? ext.binaryOps.map(d=>normOpDef(d,"bin")).filter(Boolean) : [];
+
+  // install custom ops
+  CUSTOM_UN=new Map(); CUSTOM_BIN=new Map(); CUSTOM_META=new Map();
+  CUSTOM_INV_UN=new Map(); CUSTOM_INV_BIN_L=new Map(); CUSTOM_INV_BIN_R=new Map();
+  CUSTOM_PRUNE_UN=new Map(); CUSTOM_PRUNE_BIN=new Map();
+  try{
+    for(const d of customUnary){
+      CUSTOM_META.set(d.key,{type:"un", w:d.weight, comm:false});
+      CUSTOM_UN.set(d.key, new Function("x","return ("+d.impl+");"));
+      if(d.pruneImpl) CUSTOM_PRUNE_UN.set(d.key, new Function("flags","x","return !!("+d.pruneImpl+");"));
+      if(d.invImpl) CUSTOM_INV_UN.set(d.key, new Function("r","return ("+d.invImpl+")(r);"));
+    }
+    for(const d of customBinary){
+      CUSTOM_META.set(d.key,{type:"bin", w:d.weight, comm:!!d.commutative});
+      CUSTOM_BIN.set(d.key, new Function("a","b","return ("+d.impl+");"));
+      if(d.pruneImpl) CUSTOM_PRUNE_BIN.set(d.key, new Function("af","bf","a","b","return !!("+d.pruneImpl+");"));
+      if(d.invLImpl) CUSTOM_INV_BIN_L.set(d.key, new Function("r","b","return ("+d.invLImpl+")(r,b);"));
+      if(d.invRImpl) CUSTOM_INV_BIN_R.set(d.key, new Function("r","a","return ("+d.invRImpl+")(r,a);"));
+    }
+  }catch(e){
+    postMessage({type:"error",payload:"自定义扩展编译失败: "+(e?.message||String(e))});
+    return;
+  }
+
   KEYP=mp.keyPrec;
   BESTP=mp.bestPrec;
-
   MEET_STYLE=mp.meetStyle;
   MEETP=mp.meetPrec;
   MEET_Q=mp.meetQ|0;
@@ -1709,46 +1990,52 @@ onmessage=async(ev)=>{
   emitInterval=Math.max(50,Math.min(60000,emitInterval|0||500));
   const lim=infiniteTime?Infinity:Math.max(0,timeLimit);
   divRatio=Math.max(0,Math.min(1,divRatio||0));
-
   excludeExact=!!excludeExact;
   pruneEquiv=!!pruneEquiv;
   bidir=!!bidir;
   mt=!!mt;
   threads=Math.max(1,Math.min(64,(threads|0)||1));
 
-  // internal beams
-  const bidirMul = bidir ? 0.65 : 1.0;
-  const beamF = Math.max(50, Math.floor(beam * (mp.beamMul||1) * bidirMul));
-  const beamR = Math.max(50, Math.floor(beam * (mp.revBeamMul||1)));
-  const subLayerCap = Math.max(32, Math.floor(beamF * (mp.subLayerCapMul||1)));
+  // Do NOT shrink forward beam just because bidir is on (prevents missing hard constructions)
+  const bidirMul = (bidir && mode==="speed") ? 0.90 : 1.0;
 
-  // constraints analysis
+  const beamF=Math.max(50,Math.floor(beam*(mp.beamMul||1)*bidirMul));
+  const beamR=Math.max(50,Math.floor(beam*(mp.revBeamMul||1)));
+  const subLayerCap=Math.max(32,Math.floor(beamF*(mp.subLayerCapMul||1)));
+
   const nC=consts.length;
   const constrainedIdx=[];
   for(let i=0;i<nC;i++){
-    const mn=consts[i].min??0, mx=consts[i].max??INF;
+    const mn=consts[i].min??0,mx=consts[i].max??INF;
     if(mn>mx){postMessage({type:"error",payload:consts[i].s+" min>max"});return}
-    if(mn>0||mx<INF) constrainedIdx.push(i);
+    if(mn>0||mx<INF)constrainedIdx.push(i);
   }
 
-  ALLOW_ADD = Array.isArray(opsBin) && opsBin.includes("+");
-  NEED_ZERO = consts.some((x)=> (x.key==="0"||x.s==="0") && (x.min|0)>0);
-  NEED_ONE  = consts.some((x)=> (x.key==="1"||x.s==="1") && (x.min|0)>0);
+  ALLOW_ADD=Array.isArray(opsBin)&&opsBin.includes("+");
+  HAS_NEG=Array.isArray(opsUn)&&opsUn.includes("neg");
+  HAS_SUB=Array.isArray(opsBin)&&opsBin.includes("-");
+  HAS_DIV=Array.isArray(opsBin)&&opsBin.includes("/");
+  HAS_MUL=Array.isArray(opsBin)&&opsBin.includes("*");
 
-  const noConstraintFast = constrainedIdx.length===0;
+  NEED_ZERO=consts.some((x)=>(x.key==="0"||x.s==="0")&&(x.min|0)>0);
+  NEED_ONE=consts.some((x)=>(x.key==="1"||x.s==="1")&&(x.min|0)>0);
 
-  // bitmask optimization: only when constraints exist, count<=30 and each max<=1
+  const noConstraintFast=constrainedIdx.length===0;
+
   let useBitmask=!noConstraintFast;
-  if(constrainedIdx.length>30) useBitmask=false;
+  if(constrainedIdx.length>30)useBitmask=false;
   for(const i of constrainedIdx){
     if((consts[i].min??0)>1||(consts[i].max??INF)>1){useBitmask=false;break}
   }
 
-  const k=constrainedIdx.length;
-  const idx2bit=new Int16Array(nC); idx2bit.fill(-1);
-  for(let p=0;p<k;p++) idx2bit[constrainedIdx[p]]=p;
+  // Reduce "constPenalty" only in speed mode; keep breadth in normal/accuracy
+  const constPenalty = (mode==="speed" && noConstraintFast) ? Math.max(1, Math.sqrt(Math.max(1,consts.length)/48)) : 1;
 
-  const minBits=new Uint8Array(k), maxBits=new Uint8Array(k), symBits=new Array(k);
+  const k=constrainedIdx.length;
+  const idx2bit=new Int16Array(nC);idx2bit.fill(-1);
+  for(let p=0;p<k;p++)idx2bit[constrainedIdx[p]]=p;
+
+  const minBits=new Uint8Array(k),maxBits=new Uint8Array(k),symBits=new Array(k);
   for(let p=0;p<k;p++){
     const i=constrainedIdx[p];
     minBits[p]=(consts[i].min??0)?1:0;
@@ -1756,8 +2043,14 @@ onmessage=async(ev)=>{
     symBits[p]=consts[i].s;
   }
 
+  REQ_MASK=0;
+  for(let p=0;p<k;p++){
+    if(minBits[p]) REQ_MASK |= (1<<p);
+  }
+  REQ_POP = REQ_MASK ? popcnt32(REQ_MASK) : 0;
+
   const EMPTY=new Uint16Array(0);
-  let tCount=0, minT=null, maxT=null, symT=null;
+  let tCount=0,minT=null,maxT=null,symT=null;
   if(!useBitmask){
     tCount=constrainedIdx.length;
     minT=new Uint16Array(tCount);
@@ -1771,59 +2064,48 @@ onmessage=async(ev)=>{
     }
   }
 
-  function maskOk(m){ for(let p=0;p<k;p++) if(minBits[p] && ((m>>p)&1)===0) return false; return true; }
+  function maskOk(m){for(let p=0;p<k;p++)if(minBits[p]&&((m>>p)&1)===0)return false;return true;}
   function maskStr(m){
-    if(!showCounts||k===0) return "";
-    const p=[]; for(let i=0;i<k;i++) p.push(symBits[i]+":"+((m>>i)&1));
-    return "["+p.join(", ")+"]";
+    if(!showCounts||k===0)return"";
+    const p=[];for(let i=0;i<k;i++)p.push(symBits[i]+":"+((m>>i)&1));
+    return"["+p.join(", ")+"]";
   }
-  function cntOk(c){ for(let i=0;i<tCount;i++) if(c[i]<minT[i]) return false; return true; }
+  function cntOk(c){for(let i=0;i<tCount;i++)if(c[i]<minT[i])return false;return true;}
   function cntStr(c){
-    if(!showCounts||tCount===0) return "";
-    const p=[]; for(let i=0;i<tCount;i++) p.push(symT[i]+":"+c[i]);
-    return "["+p.join(", ")+"]";
+    if(!showCounts||tCount===0)return"";
+    const p=[];for(let i=0;i<tCount;i++)p.push(symT[i]+":"+c[i]);
+    return"["+p.join(", ")+"]";
   }
   function addCnt(a,b){
-    if(tCount===0) return EMPTY;
+    if(tCount===0)return EMPTY;
     const o=new Uint16Array(tCount);
     for(let i=0;i<tCount;i++){
       const s=a[i]+b[i];
-      if(s>maxT[i]) return null;
+      if(s>maxT[i])return null;
       o[i]=s;
     }
     return o;
   }
   function ckFromCnt(cnt){
-    let s="";
-    for(let i=0;i<tCount;i++) s += String.fromCharCode(cnt[i]);
-    return s;
+    let s="";for(let i=0;i<tCount;i++)s+=String.fromCharCode(cnt[i]);return s;
   }
   function cntFromCk(ck){
     const out=new Uint16Array(tCount);
-    for(let i=0;i<tCount;i++) out[i]=ck.charCodeAt(i)||0;
+    for(let i=0;i<tCount;i++)out[i]=ck.charCodeAt(i)||0;
     return out;
   }
-  const runtimeMode = noConstraintFast ? "unconstrained" : (useBitmask?"bitmask":"counts");
-  function combMask(a,b){ return (a&b)?-1:(a|b); }
+  const runtimeMode=noConstraintFast?"unconstrained":(useBitmask?"bitmask":"counts");
+  function combMask(a,b){return(a&b)?-1:(a|b);}
 
-  // stats
   const t0=performance.now();
   let lastEmit=t0;
-  let visited=0, meetConfirmed=0, meetLookups=0, meetCandidates=0;
-  let pruned=0, reEvalFixed=0, dupesKilled=0;
-  let meetDbg = {
-    revIdxKeys: 0,
-    revIdxItems: 0,
-    keyHits: 0,
-    pairsTried: 0,
-    rejMaskOverlap: 0,
-    rejCntLimit: 0,
-    rejEpsCand: 0,
-    rejEvalNaN: 0,
-    rejProbeConfirm: 0,
-    rejConfirm: 0,
-    revInvBad: 0,
-    maxConfirmErr: 0,
+  let visited=0,meetConfirmed=0,meetLookups=0,meetCandidates=0;
+  let pruned=0,reEvalFixed=0,dupesKilled=0;
+  let meetDbg={
+    revIdxKeys:0,revIdxItems:0,fwdIdxKeys:0,fwdIdxItems:0,
+    keyHits:0,pairsTried:0,rev2fwdPairs:0,
+    rejMaskOverlap:0,rejCntLimit:0,rejEpsCand:0,rejEvalNaN:0,
+    rejProbeConfirm:0,rejConfirm:0,revInvBad:0,maxConfirmErr:0,
   };
 
   const best=[];
@@ -1833,56 +2115,71 @@ onmessage=async(ev)=>{
     const now=performance.now();
     if(now-lastEmit>=emitInterval){
       lastEmit=now;
-      postMessage({type:"progress", payload:{
-        elapsed:Math.round(now-t0), maxC, c,
-        visited, pruned,
-        meetLookups, meetCandidates, meetConfirmed,
+      postMessage({type:"progress",payload:{
+        elapsed:Math.round(now-t0),maxC,c,
+        visited,pruned,
+        meetLookups,meetCandidates,meetConfirmed,
         meetDbg,
-        reEvalFixed, dupesKilled,
-        mode: runtimeMode,
-        mt: (mt && threads>1) ? ("ON("+threads+")") : "OFF",
-        profile: mode,
-        beamF, beamR,
-        best: best.slice(0,outN)
+        reEvalFixed,dupesKilled,
+        mode:runtimeMode,
+        mt:(mt&&threads>1)?("ON("+threads+")"):"OFF",
+        profile:mode,
+        beamF,beamR,
+        best:best.slice(0,outN)
       }});
     }
+  }
+
+  function maybeStopOnExact(delta){
+    const scale=Math.max(1,Math.abs(T));
+    if(Math.abs(delta) <= EXACT_EPS*scale){
+      stopFlag=true;
+    }
+  }
+
+  function collectLeaves(ast, out){
+    if(!ast) return out;
+    if(ast.t===0){ out.push(String(ast.sym)); return out; }
+    if(ast.t===1) return collectLeaves(ast.ch,out);
+    collectLeaves(ast.l,out); collectLeaves(ast.r,out);
+    return out;
   }
 
   function pushBest(obj){
     let v=obj.v;
     if(obj.ast){
       const tv=evalA(obj.ast);
-      if(!Number.isFinite(tv)||Math.abs(tv)>CAP) return;
-      if(Math.abs(tv-v)>1e-12) reEvalFixed++;
+      if(!Number.isFinite(tv)||Math.abs(tv)>CAP)return;
+      if(Math.abs(tv-v)>1e-12)reEvalFixed++;
       v=tv;
     }
     const acc=relAcc(v,T);
-    if(excludeExact && acc==="exact") return;
+    if(excludeExact&&acc==="exact")return;
+    if(useBitmask){if(!maskOk(obj.mask||0))return;}
+    else{if(obj.cnt&&!cntOk(obj.cnt))return;}
 
-    if(useBitmask){
-      if(!maskOk(obj.mask||0)) return;
-    }else{
-      if(obj.cnt && !cntOk(obj.cnt)) return;
-    }
+    // leafOrder constraint final check too
+    if(LEAF_ORDER && obj.ast && obj.ast.ord && !obj.ast.ord.ok) return;
 
     const expr=obj.ast?strA(obj.ast):(obj.s||"?");
     const latex=obj.ast?latexA(obj.ast):expr;
     const delta=v-T;
     const ci=useBitmask?maskStr(obj.mask||0):cntStr(obj.cnt||EMPTY);
+    const leaves = obj.ast ? collectLeaves(obj.ast, []) : [];
 
     if(customAllow){
       try{
-        const ok=customAllow({expr,latex,v,delta,cost:obj.cost,searchType:(obj.searchType||"fwd"),hasPow:!!(obj.ast && obj.ast.p),countsInfo:ci});
-        if(ok===false) return;
-      }catch(_e){ return; }
+        const ok=customAllow({expr,latex,v,delta,cost:obj.cost,searchType:(obj.searchType||"fwd"),hasPow:!!(obj.ast&&obj.ast.p),countsInfo:ci,leaves});
+        if(ok===false)return;
+      }catch(_e){return;}
     }
 
-    const scoreAdj = customScoreAdjust ? Number(customScoreAdjust({expr,latex,v,delta,cost:obj.cost,searchType:(obj.searchType||"fwd"),hasPow:!!(obj.ast && obj.ast.p),countsInfo:ci})||0) : 0;
+    const scoreAdj=customScoreAdjust?Number(customScoreAdjust({expr,latex,v,delta,cost:obj.cost,searchType:(obj.searchType||"fwd"),hasPow:!!(obj.ast&&obj.ast.p),countsInfo:ci,leaves})||0):0;
     const valKey=v.toPrecision(BESTP);
     const type=obj.searchType||"fwd";
-    const hasPow=!!(obj.ast && obj.ast.p);
-    const keyBase = mp.keepMeetDup ? (valKey+"|"+type) : valKey;
-    const key = hasPow ? (keyBase+"|pow") : keyBase;
+    const hasPow=!!(obj.ast&&obj.ast.p);
+    const keyBase=mp.keepMeetDup?(valKey+"|"+type):valKey;
+    const key=hasPow?(keyBase+"|pow"):keyBase;
 
     const idx=bestSeen.get(key);
     if(idx!==undefined){
@@ -1890,112 +2187,142 @@ onmessage=async(ev)=>{
       const newCost=(obj.cost||999);
       const oldDelta=Math.abs(old?.delta??INF);
       const newDelta=Math.abs(delta)-scoreAdj;
-      const oldPow=old ? !!old.hasPow : false;
+      const oldPow=old?!!old.hasPow:false;
       const newPow=hasPow;
-      const powPrefer = (!oldPow && newPow && newDelta <= oldDelta*1.000002 && newCost <= (old?.cost??INF)+4);
-      if(old && !powPrefer && (oldDelta < newDelta || (oldDelta===newDelta && old.cost <= newCost))){
-        dupesKilled++;
-        return;
+      const powPrefer=(!oldPow&&newPow&&newDelta<=oldDelta*1.000002&&newCost<=(old?.cost??INF)+4);
+
+      const oldType=old?.searchType||"fwd";
+      const meetPrefer=(oldType!=="meet" && type==="meet" && Math.abs(oldDelta-newDelta)<=1e-12 && newCost<=(old?.cost??INF)+2);
+
+      if(old && !powPrefer && !meetPrefer && (oldDelta<newDelta||(oldDelta===newDelta&&old.cost<=newCost))){
+        dupesKilled++;return;
       }
       best[idx]={expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow};
       best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
+      if(acc==="exact") maybeStopOnExact(delta);
       return;
     }
 
     best.push({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
     best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
-    if(best.length>outN*4) best.length=outN*3;
+    if(best.length>outN*4)best.length=outN*3;
 
     bestSeen.clear();
     for(let i=0;i<best.length;i++){
       const vk=best[i].v.toPrecision(BESTP);
       const hasPowBest=!!best[i].hasPow;
-      const kkBase = mp.keepMeetDup ? (vk+"|"+(best[i].searchType||"fwd")) : vk;
-      const kk = hasPowBest ? (kkBase+"|pow") : kkBase;
+      const kkBase=mp.keepMeetDup?(vk+"|"+(best[i].searchType||"fwd")):vk;
+      const kk=hasPowBest?(kkBase+"|pow"):kkBase;
       bestSeen.set(kk,i);
     }
+
+    if(acc==="exact") maybeStopOnExact(delta);
   }
 
-  // forward layers
   const fwd=Array.from({length:maxC+1},()=>[]);
-
-  // reverse
   const rev=Array.from({length:maxC+1},()=>[]);
   const revIdx=new Map();
+  const fwdIdx=new Map();
 
-  function addRevIdx(items){
-    const cap=Math.max(8, mp.revIdxKeyCap|0 || 96);
-    for(const it of items){
-      const k2=meetPrimaryKey(it.v);
-      let arr=revIdx.get(k2);
-      if(!arr){ arr=[]; revIdx.set(k2,arr); }
-
-      let pos=arr.length;
-      for(let i=0;i<arr.length;i++){
-        const a=arr[i];
-        if((it.cost<a.cost) || (it.cost===a.cost && (it.keep??INF)<(a.keep??INF))){ pos=i; break; }
-      }
-      arr.splice(pos,0,it);
-      if(arr.length>cap) arr.length=cap;
+  function idxInsert(map,key,it,cap){
+    let arr=map.get(key);
+    if(!arr){arr=[];map.set(key,arr);}
+    if(arr.length<cap){arr.push(it);return;}
+    let wi=0;
+    for(let i=1;i<arr.length;i++){
+      const a=arr[i], w=arr[wi];
+      if( (a.cost>w.cost) || (a.cost===w.cost && (a.keep??INF)>(w.keep??INF)) ) wi=i;
     }
-
-    meetDbg.revIdxKeys = revIdx.size;
-    let total=0;
-    for(const v of revIdx.values()) total += v.length;
-    meetDbg.revIdxItems = total;
+    const w=arr[wi];
+    if( (it.cost<w.cost) || (it.cost===w.cost && (it.keep??INF)<(w.keep??INF)) ){
+      arr[wi]=it;
+    }
   }
 
-  function keepScore(goal, bb, revHit){
-    // base keep
-    let keep = (mp.keepMode==="goal") ? goal : Math.min(goal, bb);
-    // meet-hit bonus: encourage values that can meet
-    if(revHit) keep *= (1.0 - (mp.meetHitBonus||0));
+  function addRevIdx(items){
+    const cap=Math.max(8,mp.revIdxKeyCap|0||120);
+    for(const it of items){
+      const k2=it.mkey || (it.mkey = meetPrimaryKey(it.v));
+      idxInsert(revIdx,k2,it,cap);
+    }
+    meetDbg.revIdxKeys=revIdx.size;
+    let total=0;for(const v of revIdx.values())total+=v.length;
+    meetDbg.revIdxItems=total;
+  }
+
+  function addFwdIdx(items){
+    const cap=Math.max(8,mp.fwdIdxKeyCap|0||120);
+    for(const it of items){
+      const k2=it.mkey || (it.mkey = meetPrimaryKey(it.v));
+      idxInsert(fwdIdx,k2,it,cap);
+    }
+    meetDbg.fwdIdxKeys=fwdIdx.size;
+    let total=0;for(const v of fwdIdx.values())total+=v.length;
+    meetDbg.fwdIdxItems=total;
+  }
+
+  function keepScore(goal,bb,revHit,mask){
+    let keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
+    if(revHit)keep*=(1.0-(mp.meetHitBonus||0));
+    if(useBitmask && REQ_POP>0) keep *= reqAdj(mask|0);
     return keep;
+  }
+
+  const keyOf=(v,mask,ck)=>{
+    const vk=vKey(v);
+    if(useBitmask) return vk+"|"+(mask|0);
+    if(tCount===0) return vk;
+    return vk+"|"+(ck||"");
+  };
+
+  function meetKeysCached(node){
+    if(node.mkeys) return node.mkeys;
+    const ks = meetKeys(node.v);
+    node.mkeys = ks;
+    return ks;
   }
 
   // init layer c=1
   {
-    const {bucket, put}=mkBucket(beamF);
+    const{bucket,put}=mkBucket(beamF,mp.spillMul);
     for(let i=0;i<nC;i++){
-      const v=consts[i].v; visited++;
-      if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
-
+      const v=consts[i].v;visited++;
+      if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
       const goal=Math.abs(v-T);
-      const bb=bbScore(v, mp.bbD, mp.bbMagA);
-      const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
-      const keep=keepScore(goal, bb, revHit);
-
-      const flags=mkFlags(v,TAG_NONE,true);
-      const ast=mkC(consts[i].s,v);
+      const bb=bbScore(v,mp.bbD,mp.bbMagA);
+      const mk = bidir ? meetPrimaryKey(v) : "";
+      const revHit=bidir?revIdx.has(mk):false;
 
       if(useBitmask){
         const bit=idx2bit[i];
         let mask=0;
-        if(bit>=0){
-          if(!maxBits[bit]) continue;
-          mask = 1<<bit;
-        }
-        put(vKey(v)+"|"+mask,{v,goal,bb,keep,ast,mask,flags});
+        if(bit>=0){if(!maxBits[bit])continue;mask=1<<bit;}
+        const keep=keepScore(goal,bb,revHit,mask);
+        const flags=mkFlags(v,TAG_NONE,true);
+        const ast=mkC(consts[i].s,v,ordLeaf(consts[i].s));
+        if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+        put(keyOf(v,mask,""),{v,goal,bb,keep,ast,mask,flags,mkey:mk});
       }else{
         let cnt=EMPTY;
         const pos=idx2bit[i];
-        if(pos>=0){
-          cnt=new Uint16Array(tCount);
-          cnt[pos]=1;
-          if(cnt[pos]>maxT[pos]) continue;
-        }
+        if(pos>=0){cnt=new Uint16Array(tCount);cnt[pos]=1;if(cnt[pos]>maxT[pos])continue;}
         const ck=tCount?ckFromCnt(cnt):"";
-        put(vKey(v)+"|"+ck,{v,goal,bb,keep,ast,cnt,ck,flags});
+        const keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
+        const flags=mkFlags(v,TAG_NONE,true);
+        const ast=mkC(consts[i].s,v,ordLeaf(consts[i].s));
+        if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+        put(keyOf(v,0,ck),{v,goal,bb,keep,ast,cnt,ck,flags,mkey:mk});
       }
     }
 
     const items=Array.from(bucket.values());
-    for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); it.hasFunc = !!(it.ast && it.ast.f); }
-    const picked = selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (mp.qFunc||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
-    for(const it of picked){ it.cost=1; }
+    for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
+    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask);
+    for(const it of picked){it.cost=1;}
     fwd[1]=picked;
+    addFwdIdx(fwd[1]);
 
-    for(const e of fwd[1]){ e.searchType="fwd"; pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:1,searchType:"fwd"}); }
+    for(const e of fwd[1]){e.searchType="fwd";pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:1,searchType:"fwd"});}
     emit(1);
   }
 
@@ -2004,96 +2331,328 @@ onmessage=async(ev)=>{
     const seedMask=0;
     const seedCnt=tCount?new Uint16Array(tCount):EMPTY;
     const seedCk=tCount?ckFromCnt(seedCnt):"";
-    rev[0]=[{v:T,wA:(a)=>a,mask:seedMask,cnt:seedCnt,ck:seedCk,flags:mkFlags(T,TAG_NONE,true),cost:0,score:0}];
+    const mk = meetPrimaryKey(T);
+    rev[0]=[{v:T,wA:(a)=>a,mask:seedMask,cnt:seedCnt,ck:seedCk,flags:mkFlags(T,TAG_NONE,true),cost:0,score:0,srcOp:"seed",mkey:mk}];
     addRevIdx(rev[0]);
   }
 
+  function tryMeetPair(f,r){
+    const tc=f.cost+r.cost;
+    if(tc>maxC)return;
+
+    if(useBitmask){if((f.mask&r.mask)!==0){meetDbg.rejMaskOverlap++;return;}}
+    else{const c=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);if(!c){meetDbg.rejCntLimit++;return;}}
+
+    const scale=Math.max(1,Math.abs(T),Math.abs(f.v),Math.abs(r.v));
+    const matchGap=Math.abs(f.v-r.v);
+
+    const isPowRelated = (r.srcOp==="^") || (f.hasPow) || (r.wA && r.srcOp==="pow");
+    const binSlack=(MEET_STYLE==="bin")?((mp.binSlackMul??1)*Math.max(1,MEET_R)/Math.max(1,MEET_Q))*scale:0;
+    const epsCand=(4e-10*mp.candEpsMul*(isPowRelated?2.8:1.0))*scale+binSlack;
+    if(matchGap>epsCand){meetDbg.rejEpsCand++;return;}
+    meetCandidates++;
+
+    const probeAST=r.wA?r.wA(mkC("#",f.v,ordLeaf("#"))):mkC("#",f.v,ordLeaf("#"));
+    const probeVal=evalA(probeAST);
+    if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){meetDbg.rejEvalNaN++;return;}
+
+    const combinedAST=r.wA?r.wA(f.ast):f.ast;
+
+    if(LEAF_ORDER && combinedAST && combinedAST.ord && !combinedAST.ord.ok) return;
+
+    const hasFunc=!!(combinedAST&&combinedAST.f);
+    const powStat=astPowStats(combinedAST);
+    const powCnt=powStat.cnt;
+    const powRisk=powStat.risk;
+    const powTighten=Math.min(1.0,(1/(1+0.18*powCnt+0.06*powRisk))*(hasFunc?1.12:1.0));
+
+    const epsProbeBase=(8e-10*mp.confirmEpsMul)*Math.max(1,Math.abs(T),Math.abs(probeVal))*(1+tc*0.03);
+    const epsProbeGap=matchGap*(1.7+tc*0.09)*powTighten*(isPowRelated?1.6:1.0);
+    const epsProbe=Math.max(epsProbeBase,epsProbeGap,mp.confirmAbsFloor||0);
+    const probeErr=Math.abs(probeVal-T);
+    if(probeErr>epsProbe){
+      meetDbg.rejProbeConfirm++;
+      if(probeErr>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=probeErr;
+      return;
+    }
+
+    const trueVal=evalA(combinedAST);
+    if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){meetDbg.rejEvalNaN++;return;}
+
+    const structuralDrift=Math.abs(trueVal-probeVal);
+    const driftCap=matchGap*(3.4+tc*0.18)*(1+powCnt*0.22)/(1+0.10*powRisk)+3e-12*scale;
+    if(structuralDrift>driftCap){
+      meetDbg.rejProbeConfirm++;
+      if(structuralDrift>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=structuralDrift;
+      return;
+    }
+
+    const epsConfirmBase=(7e-10*mp.confirmEpsMul)*Math.max(1,Math.abs(T),Math.abs(trueVal))*(1+tc*0.025);
+    const epsConfirmGap=matchGap*(2.2+tc*0.11)*powTighten*(isPowRelated?1.5:1.0);
+    const epsConfirm=Math.max(epsConfirmBase,epsConfirmGap,mp.confirmAbsFloor||0);
+    const err=Math.abs(trueVal-T);
+    if(err>epsConfirm){
+      meetDbg.rejConfirm++;
+      if(err>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=err;
+      return;
+    }
+
+    if(powCnt>0){
+      const stableVal=evalAStable(combinedAST);
+      if(!Number.isFinite(stableVal)||Math.abs(stableVal)>CAP){meetDbg.rejEvalNaN++;return;}
+      const stableGap=Math.abs(stableVal-trueVal);
+      const stableCap=Math.max(3e-12*scale,matchGap*(0.55+tc*0.03)/(1+0.22*powRisk));
+      if(stableGap>stableCap){
+        meetDbg.rejConfirm++;
+        if(stableGap>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=stableGap;
+        return;
+      }
+    }
+
+    meetConfirmed++;
+    if(useBitmask){
+      pushBest({v:trueVal,ast:combinedAST,mask:(f.mask|r.mask),cost:tc,searchType:"meet"});
+    }else{
+      const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
+      pushBest({v:trueVal,ast:combinedAST,cnt,cost:tc,searchType:"meet"});
+    }
+  }
+
+  function tryMeetReverseWithFwdIdx(r){
+    if(!bidir)return;
+    const keys = meetKeysCached(r);
+    meetLookups+=keys.length;
+    let seen=null;
+    if(keys.length>1)seen=new Set();
+    const limKey=Math.max(8,mp.meetKeyProbeCap|0||120);
+
+    for(const k2 of keys){
+      if(seen){if(seen.has(k2))continue;seen.add(k2);}
+      const fl=fwdIdx.get(k2);
+      if(!fl)continue;
+      meetDbg.keyHits++;
+      const lim2=Math.min(fl.length,limKey);
+      for(let i=0;i<lim2;i++){
+        meetDbg.rev2fwdPairs++;
+        meetDbg.pairsTried++;
+        tryMeetPair(fl[i],r);
+        if(stopFlag) return;
+      }
+    }
+  }
+
+  function tryMeetFwdWithRevIdx(f){
+    if(!bidir)return;
+    const keys = meetKeysCached(f);
+    meetLookups+=keys.length;
+    let seen=null;
+    if(keys.length>1)seen=new Set();
+    for(const k2 of keys){
+      if(seen){if(seen.has(k2))continue;seen.add(k2);}
+      const rl=revIdx.get(k2);
+      if(!rl)continue;
+      meetDbg.keyHits++;
+      const lim2=Math.min(rl.length,Math.max(8,mp.meetKeyProbeCap|0||120));
+      for(let i=0;i<lim2;i++){
+        meetDbg.pairsTried++;
+        tryMeetPair(f,rl[i]);
+        if(stopFlag) return;
+      }
+    }
+  }
+  
+// [插入位置：在 tryMeetFwdWithRevIdx 函数结束后，buildRev 函数开始前]
+
+  // --- 核心增强：目标分解 (Target Decomposition) ---
+  // 这让算法能利用已有的正向结果，自我组合出 A^B=T, A*B=T, A+B=T
+  function tryTargetDecomposition(layerItems, T){
+    // 如果正向索引太少，或者目标T无效，跳过
+    if(fwdIdx.size < 10 || !Number.isFinite(T)) return;
+    
+    const absT = Math.abs(T);
+    const logT = (T > 0) ? Math.log(T) : NaN;
+    
+    // 遍历当前层生成的所有新元素
+    for(const item of layerItems){
+      const v = item.v;
+      if(!Number.isFinite(v)) continue;
+      const absV = Math.abs(v);
+
+      // 策略1：寻找乘法伙伴 (v * X = T  =>  X = T/v)
+      // 例如：如果目标是 100，当前算出了 25，我们去历史库里找有没有 4
+      if(HAS_MUL && absV > 1e-9){
+        const targetX = T / v;
+        // 剪枝：如果 targetX 太大或太小，库里肯定没有，跳过
+        if(Math.abs(targetX) <= CAP) {
+          tryMeetDecomp(item, targetX, "*", (a,b)=>mkB("*",a,b));
+        }
+      }
+
+      // 策略2：寻找幂次伙伴 (A^B = T)
+      if(logT){ // 前提：T必须是正数
+        // 情况A：当前 item 是底数 (v^X = T => X = ln(T)/ln(v))
+        // 要求：v > 0 且 v != 1
+        if(v > 1e-9 && Math.abs(v-1) > 1e-9){
+          const lnV = Math.log(v);
+          const targetX = logT / lnV;
+          if(Math.abs(targetX) <= CAP) {
+            tryMeetDecomp(item, targetX, "^base", (a,b)=>mkB("^",a,b));
+          }
+        }
+
+        // 情况B：当前 item 是指数 (X^v = T => X = T^(1/v))
+        // 要求：v != 0
+        if(absV > 1e-9){
+          // 注意：Math.pow(T, 1/v) 可能会产生复数或NaN，这里只处理实数结果
+          // JS的 pow(正数, 任意数) 总是安全的实数
+          const targetX = Math.pow(T, 1/v);
+          if(Number.isFinite(targetX) && Math.abs(targetX) <= CAP){
+            tryMeetDecomp(item, targetX, "^exp", (a,b)=>mkB("^",b,a)); // 注意顺序：b是底数
+          }
+        }
+      }
+      
+      if(stopFlag) return;
+    }
+  }
+
+  // 辅助函数：在正向历史库中模糊查找 targetVal
+  function tryMeetDecomp(itemA, targetVal, type, astBuilder){
+    // 使用 meetKeys 生成模糊键（处理精度误差）
+    const keys = meetKeys(targetVal);
+    
+    for(const k of keys){
+      const matches = fwdIdx.get(k);
+      if(!matches) continue;
+      
+      for(const itemB of matches){
+        // 严格的双重验证：数值必须非常接近
+        if(Math.abs(itemB.v - targetVal) < 1e-7 * Math.max(1, Math.abs(targetVal))){
+           
+           // 避免自身组合 (例如 x^x, x*x)，除非逻辑允许
+           // 一般来说，不同复杂度的项组合更有意义
+           
+           // 构建 AST
+           let ast;
+           if(type === "^exp") ast = astBuilder(itemA.ast, itemB.ast); // itemB is Base, itemA is Exp
+           else ast = astBuilder(itemA.ast, itemB.ast);
+           
+           if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+           
+           // 估算新成本：两个组件的成本 + 操作符成本
+           const opCost = (type.startsWith("^") ? 3 : (type==="*" ? 2 : 1)); 
+           const newCost = itemA.cost + itemB.cost + opCost;
+           
+           // 只有当总成本不太离谱时才提交
+           if(newCost <= maxC + 3){
+             // 计算精确值
+             const trueVal = evalA(ast);
+             if(!Number.isFinite(trueVal)) continue;
+             
+             // 提交结果 (使用 "meet" 类型)
+             pushBest({
+               v: trueVal, 
+               ast: ast, 
+               cost: newCost, 
+               searchType: "meet", 
+               mask: (itemA.mask | itemB.mask)
+             });
+           }
+        }
+      }
+    }
+  }
+
   function buildRev(c){
-    if(!bidir) return;
-    const {bucket, put}=mkBucket(beamR);
+    if(!bidir)return;
+    const{bucket,put}=mkBucket(beamR,mp.spillMul);
+    const revScore=(v)=>Math.log1p(Math.abs(v));
 
-    const revScore = (v)=>Math.log1p(Math.abs(v));
-
-    // unary inverse
     for(const op of opsUn){
-      const w=wUn(op), sc=c-w;
-      if(sc<0 || !rev[sc] || !rev[sc].length) continue;
+      const w=wUn(op),sc=c-w;
+      if(sc<0||!rev[sc]||!rev[sc].length)continue;
       const src=rev[sc];
-      const lim=Math.min(src.length, beamR);
-
-      for(let i=0;i<lim;i++){
+      const lim2=Math.min(src.length,beamR);
+      for(let i=0;i<lim2;i++){
         const a=src[i];
-        if(pruneEquiv && pruneUn(op,a.flags,a.v)){ pruned++; continue; }
+        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue;}
         const invs=invUn(op,a.v);
         for(const inv of invs){
           visited++;
           const v=inv.v;
-          if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
-
-          const out = applyUn(op, v);
-          const s = Math.max(1, Math.abs(a.v), Math.abs(out));
-          if(!Number.isFinite(out) || Math.abs(out - a.v) > 1e-10 * s){
-            meetDbg.revInvBad++;
-            continue;
-          }
-
+          if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+          const out=applyUn(op,v);
+          const s=Math.max(1,Math.abs(a.v),Math.abs(out));
+          if(!Number.isFinite(out)||Math.abs(out-a.v)>1e-10*s){meetDbg.revInvBad++;continue;}
           const nf=mkFlags(v,opTag(op),false);
           const pW=a.wA;
           const nW=pW?(fa=>pW(mkU(op,fa))):(fa=>mkU(op,fa));
           const score=revScore(v);
+          const mk = meetPrimaryKey(v);
+          const cand = useBitmask
+            ? {v,wA:nW,mask:a.mask,flags:nf,keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk}
+            : {v,wA:nW,cnt:a.cnt,ck:(a.ck||""),flags:nf,keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
 
-          if(useBitmask){
-            put(vKey(v)+"|"+a.mask,{v,wA:nW,mask:a.mask,flags:nf,keep:score,goal:score,bb:score});
-          }else{
-            const ck=a.ck||"";
-            put(vKey(v)+"|"+ck,{v,wA:nW,cnt:a.cnt,ck,flags:nf,keep:score,goal:score,bb:score});
+          if(LEAF_ORDER && cand.wA){
+            // leafOrder applies when combined; not here
           }
+
+          put(keyOf(v,useBitmask?cand.mask:0,useBitmask?"":cand.ck),cand);
+          if(op==="inv"||op==="sqrt") tryMeetReverseWithFwdIdx(cand);
+          if(stopFlag) return;
         }
       }
     }
 
-    // binary inverse with fwd assistance (same as之前思路，但 beamR 更大)
-    const sBin=opsBin.filter(op=>["+","-","*","/","^"].includes(op));
+    const sBin=opsBin.slice(); // include custom binary too
     for(const op of sBin){
       const w=wBin(op);
-      for(let rc=0; rc<=c-w-1; rc++){
+      for(let rc=0;rc<=c-w-1;rc++){
         const fc=c-w-rc;
-        const rs=rev[rc], fs=fwd[fc];
-        if(!rs||!fs||!rs.length||!fs.length) continue;
+        const rs=rev[rc],fs=fwd[fc];
+        if(!rs||!fs||!rs.length||!fs.length)continue;
 
         const base=Math.floor(Math.sqrt(beamR));
-        const laneMul = (op==="^") ? 1.7 : 3.0;
-        const laneMin = (op==="^") ? 72 : 120;
-        const cR=Math.min(rs.length, Math.max(laneMin, Math.floor(base*laneMul)));
-        const cF=Math.min(fs.length, Math.max(laneMin, Math.floor(base*laneMul)));
+        const isPow = (op==="^");
+        const laneMul=isPow?6.0:3.0;
+        const laneMin=isPow?360:140;
+        const cR=Math.min(rs.length,Math.max(laneMin,Math.floor(base*laneMul)));
+        const cF=Math.min(fs.length,Math.max(laneMin,Math.floor(base*laneMul)));
 
-        for(let ir=0; ir<cR; ir++){
+        for(let ir=0;ir<cR;ir++){
           const r=rs[ir];
-          for(let jf=0; jf<cF; jf++){
-            const f=fs[jf]; visited++;
+          for(let jf=0;jf<cF;jf++){
+            const f=fs[jf];visited++;
 
             const x1=invBinR(op,r.v,f.v);
             if(Number.isFinite(x1)&&Math.abs(x1)<=CAP){
-              const out1 = applyBin(op, f.v, x1);
-              const s1 = Math.max(1, Math.abs(r.v), Math.abs(out1));
-              if(!Number.isFinite(out1) || Math.abs(out1 - r.v) > 1e-10 * s1){
-                meetDbg.revInvBad++;
-              }else if(useBitmask){
+              const out1=applyBin(op,f.v,x1);
+              const s1=Math.max(1,Math.abs(r.v),Math.abs(out1));
+              if(!Number.isFinite(out1)||Math.abs(out1-r.v)>1e-10*s1){meetDbg.revInvBad++;}
+              else if(useBitmask){
                 const m=combMask(f.mask,r.mask);
                 if(m>=0){
-                  const pW=r.wA, fA=f.ast;
+                  const pW=r.wA,fA=f.ast;
                   const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
-                  const score=revScore(x1);
-                  put(vKey(x1)+"|"+m,{v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
+                  const score=revScore(x1)*(isPow?0.40:1.0);
+                  const mk = meetPrimaryKey(x1);
+                  const cand={v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
+                  put(keyOf(x1,m,""),cand);
+                  if(isPow) tryMeetReverseWithFwdIdx(cand);
+                  if(stopFlag) return;
                 }
               }else{
                 const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
                 if(cnt){
                   const ck=ckFromCnt(cnt);
-                  const pW=r.wA, fA=f.ast;
+                  const pW=r.wA,fA=f.ast;
                   const nW=pW?(fa=>pW(mkB(op,fA,fa))):(fa=>mkB(op,fA,fa));
-                  const score=revScore(x1);
-                  put(vKey(x1)+"|"+ck,{v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
+                  const score=revScore(x1)*(isPow?0.40:1.0);
+                  const mk = meetPrimaryKey(x1);
+                  const cand={v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
+                  put(keyOf(x1,0,ck),cand);
+                  if(isPow) tryMeetReverseWithFwdIdx(cand);
+                  if(stopFlag) return;
                 }
               }
             }
@@ -2101,526 +2660,472 @@ onmessage=async(ev)=>{
             if(!isComm(op)){
               const x2=invBinL(op,r.v,f.v);
               if(Number.isFinite(x2)&&Math.abs(x2)<=CAP){
-                const out2 = applyBin(op, x2, f.v);
-                const s2 = Math.max(1, Math.abs(r.v), Math.abs(out2));
-                if(!Number.isFinite(out2) || Math.abs(out2 - r.v) > 1e-10 * s2){
-                  meetDbg.revInvBad++;
-                }else if(useBitmask){
+                const out2=applyBin(op,x2,f.v);
+                const s2=Math.max(1,Math.abs(r.v),Math.abs(out2));
+                if(!Number.isFinite(out2)||Math.abs(out2-r.v)>1e-10*s2){meetDbg.revInvBad++;}
+                else if(useBitmask){
                   const m=combMask(f.mask,r.mask);
                   if(m>=0){
-                    const pW=r.wA, fA=f.ast;
+                    const pW=r.wA,fA=f.ast;
                     const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
-                    const score=revScore(x2);
-                    put(vKey(x2)+"|"+m,{v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
+                    const score=revScore(x2)*(isPow?0.40:1.0);
+                    const mk = meetPrimaryKey(x2);
+                    const cand={v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
+                    put(keyOf(x2,m,""),cand);
+                    if(isPow) tryMeetReverseWithFwdIdx(cand);
+                    if(stopFlag) return;
                   }
                 }else{
                   const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
                   if(cnt){
                     const ck=ckFromCnt(cnt);
-                    const pW=r.wA, fA=f.ast;
+                    const pW=r.wA,fA=f.ast;
                     const nW=pW?(fa=>pW(mkB(op,fa,fA))):(fa=>mkB(op,fa,fA));
-                    const score=revScore(x2);
-                    put(vKey(x2)+"|"+ck,{v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags, f.flags)),keep:score,goal:score,bb:score});
+                    const score=revScore(x2)*(isPow?0.40:1.0);
+                    const mk = meetPrimaryKey(x2);
+                    const cand={v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
+                    put(keyOf(x2,0,ck),cand);
+                    if(isPow) tryMeetReverseWithFwdIdx(cand);
+                    if(stopFlag) return;
                   }
                 }
               }
             }
-            if(stopFlag) break;
+
+            if(stopFlag) return;
           }
-          if(stopFlag) break;
         }
       }
     }
 
     const items=Array.from(bucket.values());
-    const picked = selectTop(items, beamR, divRatio, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, null, false); // reverse只要覆盖+keep
-    for(const it of picked){ it.cost=c; }
+    items.sort((a,b)=>a.keep-b.keep);
+    const picked=items.slice(0,beamR);
+    for(const it of picked){it.cost=c;}
     rev[c]=picked;
     addRevIdx(rev[c]);
   }
 
-  function tryMeetPair(f, r){
-    const tc=f.cost + r.cost;
-    if(tc>maxC) return;
-
-    if(useBitmask){
-      if((f.mask & r.mask)!==0){ meetDbg.rejMaskOverlap++; return; }
-    }else{
-      const c=addCnt(f.cnt??EMPTY, r.cnt??EMPTY);
-      if(!c){ meetDbg.rejCntLimit++; return; }
-    }
-
-    const scale=Math.max(1, Math.abs(T), Math.abs(f.v), Math.abs(r.v));
-    const matchGap = Math.abs(f.v - r.v);
-    // bin key 会引入量化误差，给候选阶段额外 slack
-    const binSlack = (MEET_STYLE==="bin") ? ((mp.binSlackMul??1) * Math.max(1,MEET_R)/Math.max(1,MEET_Q)) * scale : 0;
-    const epsCand = (4e-10 * mp.candEpsMul) * scale + binSlack;
-    if(matchGap > epsCand){ meetDbg.rejEpsCand++; return; }
-    meetCandidates++;
-
-    const probeAST = r.wA ? r.wA(mkC("#",f.v)) : mkC("#",f.v);
-    const probeVal = evalA(probeAST);
-    if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){ meetDbg.rejEvalNaN++; return; }
-
-    const combinedAST = r.wA ? r.wA(f.ast) : f.ast;
-    const hasFunc = !!(combinedAST && combinedAST.f);
-    const powStat = astPowStats(combinedAST);
-    const powCnt = powStat.cnt;
-    const powRisk = powStat.risk;
-    const powTighten = Math.min(1.0, (1/(1 + 0.18*powCnt + 0.06*powRisk)) * (hasFunc ? 1.12 : 1.0));
-
-    // 探测阶段使用 gap 自适应阈值；含幂且风险高的表达式额外收紧，减少指数放大误收
-    const epsProbeBase = (8e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(probeVal)) * (1 + tc*0.03);
-    const epsProbeGap = matchGap * (1.5 + tc*0.08) * powTighten;
-    const epsProbe = Math.max(epsProbeBase, epsProbeGap, mp.confirmAbsFloor||0);
-    const probeErr = Math.abs(probeVal - T);
-    if(probeErr > epsProbe){
-      meetDbg.rejProbeConfirm++;
-      if(probeErr > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = probeErr;
-      return;
-    }
-
-    const trueVal = evalA(combinedAST);
-    if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){ meetDbg.rejEvalNaN++; return; }
-
-    const structuralDrift = Math.abs(trueVal - probeVal);
-    const driftCap = matchGap * (3.0 + tc*0.15) * (1 + powCnt*0.20) / (1 + 0.12*powRisk) + 2e-12 * scale;
-    if(structuralDrift > driftCap){
-      meetDbg.rejProbeConfirm++;
-      if(structuralDrift > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = structuralDrift;
-      return;
-    }
-
-    // 终确认保持更严格的 gap 自适应阈值，含幂且风险高时进一步收紧
-    const epsConfirmBase = (7e-10 * mp.confirmEpsMul) * Math.max(1, Math.abs(T), Math.abs(trueVal)) * (1 + tc*0.025);
-    const epsConfirmGap = matchGap * (2.0 + tc*0.10) * powTighten;
-    const epsConfirm = Math.max(epsConfirmBase, epsConfirmGap, mp.confirmAbsFloor||0);
-    const err = Math.abs(trueVal - T);
-    if(err > epsConfirm){
-      meetDbg.rejConfirm++;
-      if(err > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = err;
-      return;
-    }
-
-    if(powCnt>0){
-      const stableVal=evalAStable(combinedAST);
-      if(!Number.isFinite(stableVal)||Math.abs(stableVal)>CAP){ meetDbg.rejEvalNaN++; return; }
-      const stableGap=Math.abs(stableVal-trueVal);
-      const stableCap=Math.max(2e-12*scale, matchGap*(0.35 + tc*0.02)/(1 + 0.25*powRisk));
-      if(stableGap>stableCap){
-        meetDbg.rejConfirm++;
-        if(stableGap > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = stableGap;
-        return;
-      }
-
-      const relErr=err/Math.max(1,Math.abs(T));
-      const relCap=(5.0e-8)/(1 + 0.35*powRisk);
-      if(relErr>relCap){
-        meetDbg.rejConfirm++;
-        if(err > meetDbg.maxConfirmErr) meetDbg.maxConfirmErr = err;
-        return;
-      }
-    }
-
-    meetConfirmed++;
-    if(useBitmask){
-      pushBest({v:trueVal, ast:combinedAST, mask:(f.mask|r.mask), cost:tc, searchType:"meet"});
-    }else{
-      const cnt=addCnt(f.cnt??EMPTY, r.cnt??EMPTY);
-      pushBest({v:trueVal, ast:combinedAST, cnt, cost:tc, searchType:"meet"});
-    }
-  }
-
-  // ===== meet attempt =====
-  function tryMeet(f){
-    if(!bidir) return;
-    const keys=meetKeys(f.v);
-
-    meetLookups += keys.length;
-
-    let seen=null;
-    if(keys.length>1) seen=new Set();
-
-    for(const k2 of keys){
-      if(seen){
-        if(seen.has(k2)) continue;
-        seen.add(k2);
-      }
-      const rl=revIdx.get(k2);
-      if(!rl) continue;
-
-      meetDbg.keyHits++;
-
-      const lim=Math.min(rl.length, Math.max(8, mp.meetKeyProbeCap|0 || 96));
-      for(let i=0;i<lim;i++){
-        meetDbg.pairsTried++;
-        tryMeetPair(f, rl[i]);
-      }
-    }
-  }
-
   function meetSweepWithNewReverseLayer(rc){
-    if(!bidir) return;
+    if(!bidir)return;
     const rr=rev[rc];
-    if(!rr||!rr.length) return;
+    if(!rr||!rr.length)return;
 
-    const perLayerCap=Math.max(24, Math.floor(beamF * (mp.meetSweepMul||0.1)));
-    const rLim=Math.min(rr.length, Math.max(8, mp.meetSweepRevCap|0 || 120));
-    const maxFc=Math.min(maxC-rc, rc);
-    if(maxFc<1 || rLim<1) return;
+    let powCnt=0;
+    const rProbe=Math.min(rr.length,80);
+    for(let i=0;i<rProbe;i++) if(rr[i].srcOp==="^") powCnt++;
+    const powFrac = rProbe? (powCnt/rProbe) : 0;
+
+    const sweepMul = (powFrac>0.10) ? (mp.meetSweepPowMul||mp.meetSweepMul) : (mp.meetSweepMul||0.1);
+    const perLayerCap=Math.max(32,Math.floor(beamF*sweepMul));
+
+    const rLim=Math.min(rr.length,Math.max(12,mp.meetSweepRevCap|0||160));
+    const maxFc=Math.min(maxC-rc,rc);
+    if(maxFc<1||rLim<1)return;
 
     const localIdx=new Map();
     for(let j=0;j<rLim;j++){
       const r=rr[j];
-      const k2=meetPrimaryKey(r.v);
+      const k2=r.mkey || (r.mkey = meetPrimaryKey(r.v));
       let arr=localIdx.get(k2);
-      if(!arr){ arr=[]; localIdx.set(k2, arr); }
+      if(!arr){arr=[];localIdx.set(k2,arr);}
       arr.push(r);
     }
 
-    for(let fc=1; fc<=maxFc; fc++){
+    for(let fc=1;fc<=maxFc;fc++){
       const ff=fwd[fc];
-      if(!ff||!ff.length) continue;
-      const lim=Math.min(ff.length, perLayerCap);
-      for(let i=0;i<lim;i++){
+      if(!ff||!ff.length)continue;
+      const lim2=Math.min(ff.length,perLayerCap);
+      for(let i=0;i<lim2;i++){
         const f=ff[i];
-        const keys=meetKeys(f.v);
-        meetLookups += keys.length;
-
+        const keys = meetKeysCached(f);
+        meetLookups+=keys.length;
         let seen=null;
-        if(keys.length>1) seen=new Set();
-
+        if(keys.length>1)seen=new Set();
         for(const k2 of keys){
-          if(seen){
-            if(seen.has(k2)) continue;
-            seen.add(k2);
-          }
+          if(seen){if(seen.has(k2))continue;seen.add(k2);}
           const rl=localIdx.get(k2);
-          if(!rl) continue;
-
+          if(!rl)continue;
           meetDbg.keyHits++;
           for(let j=0;j<rl.length;j++){
             meetDbg.pairsTried++;
-            tryMeetPair(f, rl[j]);
+            tryMeetPair(f,rl[j]);
+            if(stopFlag) return;
           }
         }
       }
     }
   }
 
-  // ===== MT pool =====
+  // MT pool (custom ops supported)
   let subWorkers=[];
   async function initSubWorkers(){
-    if(!(mt && threads>1)) return;
-    if(!subSrc) return;
-
+    if(!(mt&&threads>1))return;
+    if(!subSrc)return;
     const url=URL.createObjectURL(new Blob([subSrc],{type:"text/javascript"}));
-    subWorkers = Array.from({length:threads-1},()=>new Worker(url));
+    subWorkers=Array.from({length:threads-1},()=>new Worker(url));
 
-    const initMsg = {
-      type:"init",
-      keyPrec:KEYP,
-      useBitmask,
-      noConstraintFast,
-      tCount,
-      maxT: useBitmask?null:(maxT?Array.from(maxT):null),
-      opsUn, opsBin,
-      pruneEquiv,
-      needZero: NEED_ZERO,
-      needOne: NEED_ONE
+    const initMsg={
+      type:"init",keyPrec:KEYP,useBitmask,noConstraintFast,tCount,
+      maxT:useBitmask?null:(maxT?Array.from(maxT):null),
+      opsUn,opsBin,pruneEquiv,needZero:NEED_ZERO,needOne:NEED_ONE,
+      hasNeg:HAS_NEG,hasSub:HAS_SUB,hasDiv:HAS_DIV,hasMul:HAS_MUL,
+      reqMask:REQ_MASK, reqPop:REQ_POP,
+      leafOrder:LEAF_ORDER,
+      customUnary, customBinary
     };
+
     await Promise.all(subWorkers.map(w=>new Promise((resolve)=>{
-      const h=(ev)=>{ if(ev.data?.type==="inited"){ w.removeEventListener("message",h); resolve(); } };
+      const h=(ev)=>{if(ev.data?.type==="inited"){w.removeEventListener("message",h);resolve();}};
       w.addEventListener("message",h);
       w.postMessage(initMsg);
     })));
-    // send layer1
     sendLayerToSubs(1);
   }
-  function termSubWorkers(){ for(const w of subWorkers) w.terminate(); subWorkers=[]; }
+  function termSubWorkers(){for(const w of subWorkers)w.terminate();subWorkers=[];}
 
   function packLayer(cost){
     const src=fwd[cost];
-    const lim=Math.min(src.length, subLayerCap);
-    const v=new Float64Array(lim);
-    const flags=new Int32Array(lim);
+    const lim2=Math.min(src.length,subLayerCap);
+    const v=new Float64Array(lim2);
+    const flags=new Int32Array(lim2);
+    const ordHas = LEAF_ORDER ? new Uint8Array(lim2) : null;
+    const ordOk  = LEAF_ORDER ? new Uint8Array(lim2) : null;
+    const ordMin = LEAF_ORDER ? new Int32Array(lim2) : null;
+    const ordMax = LEAF_ORDER ? new Int32Array(lim2) : null;
+
     if(useBitmask){
-      const mask=new Int32Array(lim);
-      for(let i=0;i<lim;i++){ v[i]=src[i].v; mask[i]=src[i].mask|0; flags[i]=src[i].flags|0; }
-      return {len:lim, v, mask, flags};
+      const mask=new Int32Array(lim2);
+      for(let i=0;i<lim2;i++){
+        const it=src[i];
+        v[i]=it.v;mask[i]=it.mask|0;flags[i]=it.flags|0;
+        if(LEAF_ORDER){
+          const o=it.ast?.ord;
+          ordHas[i]=o?.has?1:0;
+          ordOk[i]=o?.ok?1:0;
+          ordMin[i]=o?.mn|0;
+          ordMax[i]=o?.mx|0;
+        }
+      }
+      const layer={len:lim2,v,mask,flags};
+      if(LEAF_ORDER){ layer.ordHas=ordHas; layer.ordOk=ordOk; layer.ordMin=ordMin; layer.ordMax=ordMax; }
+      return layer;
     }else{
       if(noConstraintFast){
-        for(let i=0;i<lim;i++){ v[i]=src[i].v; flags[i]=src[i].flags|0; }
-        return {len:lim, v, flags};
+        for(let i=0;i<lim2;i++){
+          const it=src[i];
+          v[i]=it.v;flags[i]=it.flags|0;
+          if(LEAF_ORDER){
+            const o=it.ast?.ord;
+            ordHas[i]=o?.has?1:0; ordOk[i]=o?.ok?1:0; ordMin[i]=o?.mn|0; ordMax[i]=o?.mx|0;
+          }
+        }
+        const layer={len:lim2,v,flags};
+        if(LEAF_ORDER){ layer.ordHas=ordHas; layer.ordOk=ordOk; layer.ordMin=ordMin; layer.ordMax=ordMax; }
+        return layer;
       }
-      const cnt=new Uint16Array(lim*tCount);
-      for(let i=0;i<lim;i++){
-        v[i]=src[i].v;
-        flags[i]=src[i].flags|0;
+      const cnt=new Uint16Array(lim2*tCount);
+      for(let i=0;i<lim2;i++){
+        const it=src[i];
+        v[i]=it.v;flags[i]=it.flags|0;
         const base=i*tCount;
-        const cvec=src[i].cnt;
-        for(let j=0;j<tCount;j++) cnt[base+j]=cvec[j];
+        const cvec=it.cnt;
+        for(let j=0;j<tCount;j++)cnt[base+j]=cvec[j];
+        if(LEAF_ORDER){
+          const o=it.ast?.ord;
+          ordHas[i]=o?.has?1:0; ordOk[i]=o?.ok?1:0; ordMin[i]=o?.mn|0; ordMax[i]=o?.mx|0;
+        }
       }
-      return {len:lim, v, cnt, flags};
+      const layer={len:lim2,v,cnt,flags};
+      if(LEAF_ORDER){ layer.ordHas=ordHas; layer.ordOk=ordOk; layer.ordMin=ordMin; layer.ordMax=ordMax; }
+      return layer;
     }
   }
   function sendLayerToSubs(cost){
-    if(subWorkers.length===0) return;
+    if(subWorkers.length===0)return;
     const layer=packLayer(cost);
-    for(const w of subWorkers){
-      w.postMessage({type:"setLayer", cost, layer});
-    }
+    for(const w of subWorkers){w.postMessage({type:"setLayer",cost,layer});}
   }
 
-  async function computeLayerMT(c, capUn, capBin){
-    const {bucket, put}=mkBucket(beamF);
-
+  async function computeLayerMT(c,capUn,capBin){
+    const{bucket,put}=mkBucket(beamF,mp.spillMul);
     const W=subWorkers.length+1;
-    const keepMode = mp.keepMode==="goal" ? "goal" : "min";
+    const allowPow=Array.isArray(opsBin)&&opsBin.includes("^");
 
-    // coordinator chunk: i = 0, 0+W, ...
-    // unary
+    // main-thread stripe 0 (simple)
     for(const op of opsUn){
-      const w=wUn(op), sc=c-w;
-      if(sc<1) continue;
-      const src=fwd[sc]; if(!src||!src.length) continue;
-      const lim=Math.min(src.length, capUn);
-      for(let i=0;i<lim;i+=W){
+      const w=wUn(op),sc=c-w;
+      if(sc<1)continue;
+      const src=fwd[sc];if(!src||!src.length)continue;
+      const lim2=Math.min(src.length,capUn);
+      for(let i=0;i<lim2;i+=W){
         const a=src[i];
-        if(pruneEquiv && pruneUn(op,a.flags,a.v)){ pruned++; continue; }
-        const v=applyUn(op,a.v); visited++;
-        if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
-
+        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue;}
+        const v=applyUn(op,a.v);visited++;
+        if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
         const goal=Math.abs(v-T);
-        const bb=bbScore(v, mp.bbD, mp.bbMagA);
-        const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
-        const keep=keepScore(goal, bb, revHit);
-
+        const bb=bbScore(v,mp.bbD,mp.bbMagA);
+        const mk = bidir ? meetPrimaryKey(v) : "";
+        const revHit=bidir?revIdx.has(mk):false;
         const ast=mkU(op,a.ast);
+        if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+
         if(useBitmask){
-          put(vKey(v)+"|"+a.mask,{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags))});
+          const keep=keepScore(goal,bb,revHit,a.mask);
+          put(keyOf(v,a.mask,""),{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
         }else{
-          put(vKey(v)+"|"+a.ck,{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags))});
+          const keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
+          put(keyOf(v,0,a.ck),{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
         }
       }
     }
 
-    // binary coordinator stride by ia
     for(const op of opsBin){
-      const w=wBin(op), rem=c-w;
-      if(rem<2) continue;
+      const w=wBin(op),rem=c-w;
+      if(rem<2)continue;
       const comm=isComm(op);
-      for(let ic=1;ic<=rem-1;ic++){
+      const icMax = comm ? Math.floor(rem/2) : (rem-1);
+      for(let ic=1;ic<=icMax;ic++){
         const jc=rem-ic;
-        const A=fwd[ic], B=fwd[jc];
-        if(!A.length||!B.length) continue;
-        const cA=Math.min(A.length,capBin), cB=Math.min(B.length,capBin);
-        for(let ia=0; ia<cA; ia+=W){
+        const A=fwd[ic],B=fwd[jc];
+        if(!A.length||!B.length)continue;
+        const cA=Math.min(A.length,capBin),cB=Math.min(B.length,capBin);
+        for(let ia=0;ia<cA;ia+=W){
           const a=A[ia];
           const stB=(comm&&ic===jc)?ia:0;
-          for(let ib=stB; ib<cB; ib++){
-            const b=B[ib]; visited++;
-            if(pruneEquiv && pruneBin(op,a.flags,b.flags,a.v,b.v)){ pruned++; continue; }
-
+          for(let ib=stB;ib<cB;ib++){
+            const b=B[ib];
+            if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++;continue;}
+            visited++;
             if(useBitmask){
-              if((a.mask&b.mask)!==0) continue;
+              if((a.mask&b.mask)!==0)continue;
               const mask=a.mask|b.mask;
+              const ast=mkB(op,a.ast,b.ast);
+              if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+
               const v=applyBin(op,a.v,b.v);
-              if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
               const goal=Math.abs(v-T);
-              const bb=bbScore(v, mp.bbD, mp.bbMagA);
-              const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
-              const keep=keepScore(goal, bb, revHit);
-              const key=vKey(v)+"|"+mask;
-              put(key,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),mask,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags))});
+              const bb=bbScore(v,mp.bbD,mp.bbMagA);
+              const mk = bidir ? meetPrimaryKey(v) : "";
+              const revHit=bidir?revIdx.has(mk):false;
+              const keep=keepScore(goal,bb,revHit,mask);
+              put(keyOf(v,mask,""),{v,goal,bb,keep,ast,mask,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
             }else{
               const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
-              if(!cnt) continue;
+              if(!cnt)continue;
+              const ast=mkB(op,a.ast,b.ast);
+              if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+
               const v=applyBin(op,a.v,b.v);
-              if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
               const goal=Math.abs(v-T);
-              const bb=bbScore(v, mp.bbD, mp.bbMagA);
-              const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
-              const keep=keepScore(goal, bb, revHit);
+              const bb=bbScore(v,mp.bbD,mp.bbMagA);
+              const mk = bidir ? meetPrimaryKey(v) : "";
+              const revHit=bidir?revIdx.has(mk):false;
+              const keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
               const ck=ckFromCnt(cnt);
-              const key=vKey(v)+"|"+ck;
-              put(key,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags))});
+              put(keyOf(v,0,ck),{v,goal,bb,keep,ast,cnt,ck,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
             }
           }
         }
       }
     }
 
-    // subworkers tasks
-    const tasks = subWorkers.map((w,idx)=>new Promise((resolve)=>{
+    const tasks=subWorkers.map((w,idx)=>new Promise((resolve)=>{
       const workerId=idx+1;
-      const h=(ev)=>{ if(ev.data?.type==="taskDone"){ w.removeEventListener("message",h); resolve(ev.data.payload); } };
+      const h=(ev)=>{if(ev.data?.type==="taskDone"){w.removeEventListener("message",h);resolve(ev.data.payload);}};
       w.addEventListener("message",h);
       w.postMessage({
-        type:"task",
-        T, c, beam:beamF,
-        capUn, capBin,
-        workerId, workerCount:W,
-        bbD: mp.bbD, bbMagA: mp.bbMagA,
-        keepMode
+        type:"task",T,c,beam:beamF,
+        capUn,capBin,
+        workerId,workerCount:W,
+        bbD:mp.bbD,bbMagA:mp.bbMagA,
+        keepMode: mp.keepMode==="goal" ? "goal" : "min"
       });
     }));
     const results=await Promise.all(tasks);
 
-    // merge
     for(const res of results){
-      visited += res.visited;
-      pruned += res.pruned;
+      visited+=res.visited;
+      pruned+=res.pruned;
       for(const it of res.items){
-        // rebuild ast from refs to keep exact semantics; also apply meet-hit bonus in keep
         const v=it.v;
-        const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
-        const keep=keepScore(it.goal, it.bb, revHit);
+        const mk = bidir ? meetPrimaryKey(v) : "";
+        const revHit=bidir?revIdx.has(mk):false;
 
         if(useBitmask){
-          const key=vKey(v)+"|"+(it.mask|0);
+          const key=keyOf(v,it.mask,"");
           if(it.kind==="u"){
             const a=fwd[it.ac][it.ai];
-            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkU(it.op,a.ast),mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false,extraUnFlags(it.op,a.flags))});
+            const ast=mkU(it.op,a.ast);
+            if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+            const keep=keepScore(it.goal,it.bb,revHit,it.mask);
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast,mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false,extraUnFlags(it.op,a.flags)),mkey:mk});
           }else{
-            const a=fwd[it.ac][it.ai], b=fwd[it.bc][it.bi];
-            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkB(it.op,a.ast,b.ast),mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false,extraBinFlags(a.flags,b.flags))});
+            const a=fwd[it.ac][it.ai],b=fwd[it.bc][it.bi];
+            const ast=mkB(it.op,a.ast,b.ast);
+            if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+            const keep=keepScore(it.goal,it.bb,revHit,it.mask);
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast,mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
           }
         }else{
-          const ck=it.ck;
-          const key=vKey(v)+"|"+ck;
-          const cnt=cntFromCk(ck);
+          const ck=it.ck||"";
+          const key=keyOf(v,0,ck);
+          const cnt=(tCount?cntFromCk(ck):EMPTY);
+          const keep=(mp.keepMode==="goal")?it.goal:Math.min(it.goal,it.bb);
           if(it.kind==="u"){
             const a=fwd[it.ac][it.ai];
-            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkU(it.op,a.ast),cnt,ck,flags:mkFlags(v,opTag(it.op),false,extraUnFlags(it.op,a.flags))});
+            const ast=mkU(it.op,a.ast);
+            if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast,cnt,ck,flags:mkFlags(v,opTag(it.op),false,extraUnFlags(it.op,a.flags)),mkey:mk});
           }else{
-            const a=fwd[it.ac][it.ai], b=fwd[it.bc][it.bi];
-            put(key,{v,goal:it.goal,bb:it.bb,keep,ast:mkB(it.op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(it.op),false,extraBinFlags(a.flags,b.flags))});
+            const a=fwd[it.ac][it.ai],b=fwd[it.bc][it.bi];
+            const ast=mkB(it.op,a.ast,b.ast);
+            if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+            put(key,{v,goal:it.goal,bb:it.bb,keep,ast,cnt,ck,flags:mkFlags(v,opTag(it.op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
           }
         }
       }
     }
 
     const items=Array.from(bucket.values());
-    for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); it.hasFunc = !!(it.ast && it.ast.f); }
-    const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (mp.qFunc||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
-    for(const it of picked){ it.cost=c; }
+    for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
+    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask);
+    for(const it of picked){it.cost=c;}
     return picked;
   }
 
   await initSubWorkers();
 
-  // main loop
   for(let c=2;c<=maxC;c++){
-    if(stopFlag) break;
-    if(performance.now()-t0>lim) break;
+    if(stopFlag)break;
+    if(performance.now()-t0>lim)break;
 
     if(bidir){
       buildRev(c);
+      if(stopFlag)break;
       meetSweepWithNewReverseLayer(c);
+      if(stopFlag)break;
     }
 
-    let capUn=Math.max(80, Math.floor(beamF/8));
-    let capBin=Math.max(60, Math.floor(beamF/14));
-    capUn=Math.max(20, Math.floor(capUn*mp.capMul));
-    capBin=Math.max(20, Math.floor(capBin*mp.capMul));
+    let capUn=Math.max(180,Math.floor(beamF*(mp.capUnMul||2.0)/4/constPenalty));
+    let capBin=Math.max(120,Math.floor(beamF*(mp.capBinMul||1.8)/6/constPenalty));
+    capUn=Math.max(50,Math.floor(capUn*mp.capMul));
+    capBin=Math.max(45,Math.floor(capBin*mp.capMul));
 
     if(subWorkers.length>0){
       fwd[c]=await computeLayerMT(c,capUn,capBin);
     }else{
-      const {bucket, put}=mkBucket(beamF);
+      const{bucket,put}=mkBucket(beamF,mp.spillMul);
+      const allowPow=Array.isArray(opsBin)&&opsBin.includes("^");
 
-      // unary
       for(const op of opsUn){
-        const w=wUn(op), sc=c-w;
-        if(sc<1) continue;
-        const src=fwd[sc]; if(!src||!src.length) continue;
-        const lim=Math.min(src.length, capUn);
-        for(let i=0;i<lim;i++){
+        const w=wUn(op),sc=c-w;
+        if(sc<1)continue;
+        const src=fwd[sc];if(!src||!src.length)continue;
+        const lim2=Math.min(src.length,capUn);
+        for(let i=0;i<lim2;i++){
           const a=src[i];
-          if(pruneEquiv && pruneUn(op,a.flags,a.v)){ pruned++; continue; }
-          const v=applyUn(op,a.v); visited++;
-          if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
-
+          if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue;}
+          const v=applyUn(op,a.v);visited++;
+          if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
           const goal=Math.abs(v-T);
-          const bb=bbScore(v, mp.bbD, mp.bbMagA);
-          const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
-          const keep=keepScore(goal, bb, revHit);
-
+          const bb=bbScore(v,mp.bbD,mp.bbMagA);
+          const mk = bidir ? meetPrimaryKey(v) : "";
+          const revHit=bidir?revIdx.has(mk):false;
           const ast=mkU(op,a.ast);
+          if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+
           if(useBitmask){
-            put(vKey(v)+"|"+a.mask,{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags))});
+            const keep=keepScore(goal,bb,revHit,a.mask);
+            put(keyOf(v,a.mask,""),{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
           }else{
-            put(vKey(v)+"|"+a.ck,{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags))});
+            const keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
+            put(keyOf(v,0,a.ck),{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
           }
-          if((visited&8191)===0) emit(c);
-          if(stopFlag||performance.now()-t0>lim) break;
+
+          if((visited&8191)===0)emit(c);
+          if(stopFlag||performance.now()-t0>lim)break;
         }
       }
 
-      // binary
       for(const op of opsBin){
-        const w=wBin(op), rem=c-w;
-        if(rem<2) continue;
+        const w=wBin(op),rem=c-w;
+        if(rem<2)continue;
         const comm=isComm(op);
-        for(let ic=1;ic<=rem-1;ic++){
+        const icMax = comm ? Math.floor(rem/2) : (rem-1);
+        for(let ic=1;ic<=icMax;ic++){
           const jc=rem-ic;
-          const A=fwd[ic], B=fwd[jc];
-          if(!A.length||!B.length) continue;
-          const cA=Math.min(A.length,capBin), cB=Math.min(B.length,capBin);
-          for(let ia=0; ia<cA; ia++){
+          const A=fwd[ic],B=fwd[jc];
+          if(!A.length||!B.length)continue;
+          const cA=Math.min(A.length,capBin),cB=Math.min(B.length,capBin);
+          for(let ia=0;ia<cA;ia++){
             const a=A[ia];
             const stB=(comm&&ic===jc)?ia:0;
-            for(let ib=stB; ib<cB; ib++){
-              const b=B[ib]; visited++;
-              if(pruneEquiv && pruneBin(op,a.flags,b.flags,a.v,b.v)){ pruned++; continue; }
+            for(let ib=stB;ib<cB;ib++){
+              const b=B[ib];
+              if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++;continue;}
+              visited++;
 
               if(useBitmask){
-                if((a.mask&b.mask)!==0) continue;
+                if((a.mask&b.mask)!==0)continue;
                 const mask=a.mask|b.mask;
+                const ast=mkB(op,a.ast,b.ast);
+                if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+
                 const v=applyBin(op,a.v,b.v);
-                if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+                if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
                 const goal=Math.abs(v-T);
-                const bb=bbScore(v, mp.bbD, mp.bbMagA);
-                const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
-                const keep=keepScore(goal, bb, revHit);
-                put(vKey(v)+"|"+mask,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),mask,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags))});
+                const bb=bbScore(v,mp.bbD,mp.bbMagA);
+                const mk = bidir ? meetPrimaryKey(v) : "";
+                const revHit=bidir?revIdx.has(mk):false;
+                const keep=keepScore(goal,bb,revHit,mask);
+                put(keyOf(v,mask,""),{v,goal,bb,keep,ast,mask,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
               }else{
                 const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
-                if(!cnt) continue;
+                if(!cnt)continue;
+                const ast=mkB(op,a.ast,b.ast);
+                if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+
                 const v=applyBin(op,a.v,b.v);
-                if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+                if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
                 const goal=Math.abs(v-T);
-                const bb=bbScore(v, mp.bbD, mp.bbMagA);
-                const revHit = bidir ? revIdx.has(meetPrimaryKey(v)) : false;
-                const keep=keepScore(goal, bb, revHit);
+                const bb=bbScore(v,mp.bbD,mp.bbMagA);
+                const mk = bidir ? meetPrimaryKey(v) : "";
+                const revHit=bidir?revIdx.has(mk):false;
+                const keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
                 const ck=ckFromCnt(cnt);
-                put(vKey(v)+"|"+ck,{v,goal,bb,keep,ast:mkB(op,a.ast,b.ast),cnt,ck,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags))});
+                put(keyOf(v,0,ck),{v,goal,bb,keep,ast,cnt,ck,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
               }
 
-              if((visited&8191)===0) emit(c);
-              if(stopFlag||performance.now()-t0>lim) break;
+              if((visited&8191)===0)emit(c);
+              if(stopFlag||performance.now()-t0>lim)break;
             }
-            if(stopFlag||performance.now()-t0>lim) break;
+            if(stopFlag||performance.now()-t0>lim)break;
           }
-          if(stopFlag||performance.now()-t0>lim) break;
+          if(stopFlag||performance.now()-t0>lim)break;
         }
       }
 
       const items=Array.from(bucket.values());
-      for(const it of items){ it.hasPow = !!(it.ast && it.ast.p); it.hasFunc = !!(it.ast && it.ast.f); }
-      const picked=selectTop(items, beamF, divRatio, mp.qGoal, mp.qBB, (bidir?mp.qMeet:0), mp.qDiv, (mp.qPow||0), (mp.qFunc||0), (bidir?revIdx:null), Array.isArray(opsBin)&&opsBin.includes("^"));
-      for(const it of picked){ it.cost=c; }
+      for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
+      const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask);
+      for(const it of picked){it.cost=c;}
       fwd[c]=picked;
     }
 
-    // publish layer to subs
     sendLayerToSubs(c);
 
-    // update best + meet
+    addFwdIdx(fwd[c]);
+    tryTargetDecomposition(fwd[c], T);
+
+
     for(const e of fwd[c]){
       pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
-      if(bidir) tryMeet(e);
+      if(stopFlag)break;
+      if(bidir) tryMeetFwdWithRevIdx(e);
+      if(stopFlag)break;
     }
 
     emit(c);
@@ -2629,26 +3134,38 @@ onmessage=async(ev)=>{
 
   termSubWorkers();
 
-  postMessage({type:"done", payload:{
-    elapsed:Math.round(performance.now()-t0), maxC, c:maxC,
-    visited, pruned,
-    meetLookups, meetCandidates, meetConfirmed,
+  postMessage({type:"done",payload:{
+    elapsed:Math.round(performance.now()-t0),maxC,c:maxC,
+    visited,pruned,
+    meetLookups,meetCandidates,meetConfirmed,
     meetDbg,
-    reEvalFixed, dupesKilled,
+    reEvalFixed,dupesKilled,
     mode:runtimeMode,
-    mt:(mt && threads>1)?("ON("+threads+")"):"OFF",
+    mt:(mt&&threads>1)?("ON("+threads+")"):"OFF",
     profile:mode,
-    beamF, beamR,
+    beamF,beamR,
     best:best.slice(0,outN)
   }});
 };
 `;
-  return new Worker(URL.createObjectURL(new Blob([workerSrc],{type:"text/javascript"})));
+  const url=URL.createObjectURL(new Blob([workerSrc],{type:"text/javascript"}));
+  const w=new Worker(url);
+  w.__blobUrl=url;
+  return w;
 }
 
 // ---------- run ----------
 let worker=null;
 let lastT=24;
+let runToken=0;
+
+function killWorkerImmediate(){
+  if(worker){
+    try{ worker.terminate(); }catch(e){}
+    try{ if(worker.__blobUrl) URL.revokeObjectURL(worker.__blobUrl); }catch(e){}
+    worker=null;
+  }
+}
 
 $("btnStart").onclick=()=>{
   const T=parseTarget($("target").value);
@@ -2657,8 +3174,9 @@ $("btnStart").onclick=()=>{
 
   const mode=normalizeMode($("mode").value);
   $("mode").value=mode;
+
   let bidir=$("bidir").checked;
-  if(mode==="normal"||mode==="speed") bidir=true; // 高性能模式强制开启双向
+  if(mode==="normal"||mode==="speed")bidir=true;
 
   const maxC=Math.max(1,Math.min(200,Number($("maxC").value||30)));
   const beam=Math.max(50,Math.min(50000,Number($("beam").value||4000)));
@@ -2675,18 +3193,41 @@ $("btnStart").onclick=()=>{
   const latexMode=$("latexMode").checked;
   const customEnable=$("customEnable").checked;
   const customCode=$("customBox").value||"";
-  if(customEnable) mt=false;
 
+  
+  
+  // 1. 先应用自定义扩展 (原代码位置不变，但要确保这块在 getOps 之前)
+  try{
+    if(customEnable){
+      const scope = safeEvalCustom(customCode);
+      const ext = scope.getExtensions ? normalizeExt(scope.getExtensions()) : {constants:[],unaryOps:[],binaryOps:[]};
+      const st=collectUIState();
+      CONST_LIST = BASE_CONST_LIST.slice();
+      OP_LIST = BASE_OP_LIST.slice();
+      mergeExtensionsToLists(ext);
+      mountConsts(); mountOps();
+      applyUIState(st);
+    }
+  }catch(e){
+    alert("自定义扩展加载失败: "+(e?.message||String(e)));
+    return;
+  }
+
+  // 2. 【关键修改】在扩展加载完毕、UI刷新后，再获取 Ops！
+  // 这样 Worker 才能收到用户新增的函数
   tuneOpsByMode(mode);
-  const {opsUn,opsBin}=getOps();
+  const{opsUn,opsBin}=getOps(); 
   if(!opsUn.length&&!opsBin.length){alert("请至少选择一个运算");return}
 
   let consts;
   try{consts=getConsts()}catch(e){alert(e.message);return}
 
-  try{localStorage.setItem(LS_KEY, JSON.stringify(collectUIState()));}catch(e){}
+  try{localStorage.setItem(LS_KEY,JSON.stringify(collectUIState()));}catch(e){}
 
-  if(worker)worker.terminate();
+  runToken++;
+  const token=runToken;
+
+  killWorkerImmediate();
   worker=buildWorker();
 
   $("btnStart").disabled=true;
@@ -2697,7 +3238,8 @@ $("btnStart").onclick=()=>{
   $("status").style.display="none";
 
   worker.onmessage=async(ev)=>{
-    const {type,payload}=ev.data;
+    if(token!==runToken) return;
+    const{type,payload}=ev.data;
     if(type==="error"){
       alert(payload);
       $("btnStart").disabled=false;
@@ -2707,40 +3249,29 @@ $("btnStart").onclick=()=>{
     if(type==="progress"||type==="done"){
       const rows=payload.best||[];
       const ba=rows.length?Math.abs(rows[0].delta):NaN;
-
       updateRuntimePanel(payload);
-
       const debugOn=$("debugMode").checked;
       if(debugOn){
         $("status").style.display="flex";
         statusPills({
-          T:fmt(lastT),
-          status:type,
-          profile:payload.profile||mode,
-          mode:payload.mode,
-          mt:payload.mt||"OFF",
-          c:(payload.c??0)+"/"+payload.maxC,
-          elapsed_ms:payload.elapsed,
-          visited:payload.visited,
-          pruned:payload.pruned||0,
-          meetLookups:payload.meetLookups||0,
-          meetCand:payload.meetCandidates||0,
-          meetOK:payload.meetConfirmed||0,
-          best_delta:Number.isFinite(ba)?fmt(ba):"n/a"
+          T:fmt(lastT),status:type,profile:payload.profile||mode,mode:payload.mode,
+          mt:payload.mt||"OFF",c:(payload.c??0)+"/"+payload.maxC,
+          elapsed_ms:payload.elapsed,visited:payload.visited,pruned:payload.pruned||0,
+          meetLookups:payload.meetLookups||0,meetCand:payload.meetCandidates||0,
+          meetOK:payload.meetConfirmed||0,best_delta:Number.isFinite(ba)?fmt(ba):"n/a"
         });
-
         const ps=$("pruneStats");
         ps.style.display="block";
-        ps.innerHTML =
+        ps.innerHTML=
           "<b>AST重求值修正：</b>"+(payload.reEvalFixed||0).toLocaleString()+
           " &nbsp;|&nbsp; <b>输出同值合并：</b>"+(payload.dupesKilled||0).toLocaleString();
         if(payload.meetDbg){
           const d=payload.meetDbg;
-          ps.innerHTML +=
-            "<br><b>MEET Debug</b> " +
-            `revIdxKeys=${d.revIdxKeys} revIdxItems=${d.revIdxItems} ` +
-            `keyHits=${d.keyHits} pairsTried=${d.pairsTried}<br>` +
-            `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, probe=${d.rejProbeConfirm}, confirm=${d.rejConfirm}) ` +
+          ps.innerHTML+=
+            "<br><b>MEET Debug</b> "+
+            `revIdxKeys=${d.revIdxKeys} revIdxItems=${d.revIdxItems} fwdIdxKeys=${d.fwdIdxKeys} fwdIdxItems=${d.fwdIdxItems}<br>`+
+            `keyHits=${d.keyHits} pairsTried=${d.pairsTried} rev2fwdPairs=${d.rev2fwdPairs}<br>`+
+            `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, probe=${d.rejProbeConfirm}, confirm=${d.rejConfirm}) `+
             `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}`;
         }
       }else{
@@ -2748,37 +3279,62 @@ $("btnStart").onclick=()=>{
         $("status").innerHTML="";
         $("pruneStats").style.display="none";
       }
-
       await renderResults(rows,showCounts,debugOn,latexMode);
       if(type==="done"){
         $("btnStart").disabled=false;
         $("btnStop").disabled=true;
+        killWorkerImmediate();
       }
     }
   };
 
   worker.postMessage({
     type:"start",
-    T, mode, maxC, beam, divRatio, outN,
-    timeLimit, infiniteTime, emitInterval,
-    opsUn, opsBin, consts,
-    showCounts, bidir,
-    pruneEquiv, excludeExact,
-    mt, threads,
-    customEnable, customCode,
-    subSrc: SUBWORKER_CODE
+    T,mode,maxC,beam,divRatio,outN,
+    timeLimit,infiniteTime,emitInterval,
+    opsUn,opsBin,consts,
+    showCounts,bidir,
+    pruneEquiv,excludeExact,
+    mt,threads,
+    customEnable,customCode,
+    subSrc:SUBWORKER_CODE
   });
 };
 
 $("btnStop").onclick=()=>{
-  if(worker)worker.postMessage({type:"stop"});
+  runToken++;
+  killWorkerImmediate();
   $("btnStop").disabled=true;
+  $("btnStart").disabled=false;
+
+  const debugOn=$("debugMode").checked;
+  if(debugOn){
+    $("status").style.display="flex";
+    statusPills({status:"stopped", T:fmt(lastT)});
+  }
 };
 
 // init
 mountConsts();
 mountOps();
-try{applyUIState(JSON.parse(localStorage.getItem(LS_KEY)||"null"));}catch(e){}
+
+// load saved config first
+try{
+  const st=JSON.parse(localStorage.getItem(LS_KEY)||"null");
+  if(st){
+    // if saved custom enabled, apply its extensions before mounting state
+    if(st.customEnable && st.customBox){
+      try{
+        const scope=safeEvalCustom(st.customBox);
+        const ext=scope.getExtensions?normalizeExt(scope.getExtensions()):{constants:[],unaryOps:[],binaryOps:[]};
+        mergeExtensionsToLists(ext);
+        mountConsts(); mountOps();
+      }catch(e){}
+    }
+    applyUIState(st);
+  }
+}catch(e){}
+
 tuneOpsByMode($("mode").value);
 $("timeLimit").disabled=$("infiniteTime").checked;
 updateMtHint();
