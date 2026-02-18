@@ -2022,10 +2022,10 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nPowBase=Math.max(0,Math.floor(beam*(mp.qPowBase||0)));
   const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
   const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
-  const exploreRatio = mode==="speed" ? 0.06 : (mode==="accuracy" ? 0.20 : 0.18);
+  const exploreRatio = mode==="speed" ? 0.04 : (mode==="accuracy" ? 0.14 : 0.12);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
-  const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.06:0.12)));
+  const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.10)));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
