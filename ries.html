@@ -5,17 +5,31 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>RIES Solver</title>
   <style>
-    :root{color-scheme:light dark}
+    :root{
+      color-scheme:light dark;
+      --bg:color-mix(in srgb,Canvas 96%,#f8fafc 4%);
+      --panel:color-mix(in srgb,Canvas 92%,transparent);
+      --panel-border:rgba(127,127,127,.25);
+      --text-soft:rgba(90,95,110,.9);
+      --accent:#2563eb;
+      --accent-2:#0ea5e9;
+    }
     body{
       font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","PingFang SC","Hiragino Sans GB","Microsoft Yahei",sans-serif;
-      margin:18px;
+      margin:20px;
       overflow-x:hidden;
+      background:radial-gradient(circle at top right,rgba(37,99,235,.08),transparent 42%),var(--bg);
+      color:CanvasText;
+      line-height:1.45;
     }
-    h1{font-size:16px;margin:0 0 12px}
+    h1{font-size:20px;margin:0 0 14px;letter-spacing:.2px}
     .box{
-      border:1px solid rgba(127,127,127,.35);
-      padding:12px;
-      border-radius:10px;
+      border:1px solid var(--panel-border);
+      padding:14px;
+      border-radius:14px;
+      background:var(--panel);
+      backdrop-filter:blur(6px);
+      box-shadow:0 6px 24px rgba(15,23,42,.06);
       max-width:100%;
       overflow-x:auto;
       -webkit-overflow-scrolling:touch;
@@ -23,15 +37,26 @@
     .row{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:end}
     .row > div{flex:1 1 160px;min-width:0;max-width:100%}
     @media(max-width:560px){ .row > div{flex:1 1 100%} }
-    label{display:block;font-size:12px;opacity:.85;margin-bottom:4px}
+    label{display:block;font-size:12px;opacity:.9;margin-bottom:4px;color:var(--text-soft)}
     input[type="text"],input[type="number"],select,textarea{
-      padding:6px 8px;width:100%;max-width:100%;
+      padding:8px 10px;width:100%;max-width:100%;
       box-sizing:border-box;
+      border-radius:10px;
+      border:1px solid var(--panel-border);
+      background:color-mix(in srgb,Canvas 94%,transparent);
     }
     input[type="checkbox"]{transform:translateY(1px)}
-    button{padding:8px 12px;cursor:pointer}
+    button{
+      padding:8px 12px;
+      cursor:pointer;
+      border-radius:10px;
+      border:1px solid var(--panel-border);
+      background:color-mix(in srgb,Canvas 90%,transparent);
+      transition:all .18s ease;
+    }
+    button:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--accent) 40%,var(--panel-border));}
     button:disabled{opacity:.6;cursor:not-allowed}
-    .muted{opacity:.8;font-size:12px}
+    .muted{opacity:.9;font-size:12px;color:var(--text-soft)}
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
     .status{display:flex;flex-wrap:wrap;gap:10px 12px;margin-top:10px}
     .pill{padding:4px 8px;border:1px solid rgba(127,127,127,.35);border-radius:999px;font-size:12px}
@@ -49,10 +74,10 @@
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .warn{color:#b45309}
     .pruneStats{margin-top:8px;padding:8px 12px;background:rgba(127,127,127,.08);border-radius:8px;font-size:12px}
-    .runtimePanel{margin-top:10px;padding:10px;border:1px solid rgba(127,127,127,.25);border-radius:10px}
+    .runtimePanel{margin-top:10px;padding:10px;border:1px solid var(--panel-border);border-radius:12px;background:color-mix(in srgb,Canvas 93%,transparent)}
     .runtimeMeta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px}
     .runtimeBar{height:10px;background:rgba(127,127,127,.2);border-radius:999px;overflow:hidden}
-    .runtimeBarFill{height:100%;width:0%;background:linear-gradient(90deg,#22c55e,#16a34a);transition:width .2s ease}
+    .runtimeBarFill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .2s ease}
     .tableWrap{
       margin-top:12px;border:1px solid rgba(127,127,127,.25);
       border-radius:10px;overflow-x:auto;
@@ -88,6 +113,7 @@
       .tag-meet{background:#064e3b;color:#6ee7b7}
     }
     .copyBtn{padding:6px 10px;font-size:12px}
+    .primaryBtn{background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;border-color:transparent;font-weight:600}
     .copyTiny{padding:4px 8px;font-size:12px}
     .noteBox{margin-top:10px;padding:10px;border:1px dashed rgba(127,127,127,.35);border-radius:10px;font-size:12px;line-height:1.35}
     .noteBox code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:12px}
@@ -99,6 +125,7 @@
 </head>
 <body>
 <h1>RIES Solver</h1>
+<p class="muted" style="margin:0 0 14px">表达式搜索 · KaTeX 渲染 · 多线程加速</p>
 
 <div class="box">
   <div class="row">
@@ -112,7 +139,7 @@
         <option value="accuracy">精确模式</option>
       </select>
       <div class="muted" style="margin-top:6px;line-height:1.25">
-        普通模式：速度优先（speed），用于快速搜索。中等模式：覆盖优先（normal），用于更稳健探索。精确模式：更强调保留构件/覆盖质量（参考 RIES 的“保留重要中间式”策略）。
+        普通模式：快速探索。中等模式：平衡覆盖与速度。精确模式：尽量保留关键构件，提升结果质量。
       </div>
     </div>
 
@@ -182,7 +209,7 @@
   <div class="box">
     <label style="display:flex;gap:8px;align-items:center;margin:0 0 6px 0">
       <input id="customEnable" type="checkbox"/>
-      <span class="muted">自定义约束与扩展</span>
+      <span class="muted">自定义约束与扩展（高级）</span>
     </label>
     <div class="toolbar" style="margin-bottom:8px">
       <button id="btnApplyCustom">应用自定义扩展到UI（新增常数/函数）</button>
@@ -263,7 +290,7 @@ function allowCandidate(ctx){
 
 <!-- Buttons moved here: above results table -->
 <div class="toolbar" style="margin-top:12px; justify-content: flex-start; gap: 15px;">
-  <button id="btnStart" style="min-width: 100px; background: #22c55e; color: white; font-weight: bold;">开始搜索</button>
+  <button id="btnStart" class="primaryBtn" style="min-width: 100px;">开始搜索</button>
   <button id="btnStop" disabled style="min-width: 100px;">停止</button>
 </div>
 
@@ -1730,11 +1757,11 @@ function latexA(n){
   if(!n)return"";
   if(n.t===0){
     const s=String(n.sym||n.val||"0");
-    if(s==="π")return"\\pi";
-    if(s==="φ")return"\\varphi";
-    if(s==="√2")return"\\sqrt{2}";
-    if(s==="√3")return"\\sqrt{3}";
-    if(s==="√5")return"\\sqrt{5}";
+    if(s==="π")return"\\\\pi";
+    if(s==="φ")return"\\\\varphi";
+    if(s==="√2")return"\\\\sqrt{2}";
+    if(s==="√3")return"\\\\sqrt{3}";
+    if(s==="√5")return"\\\\sqrt{5}";
     return s;
   }
   if(n.t===1){
@@ -1742,16 +1769,16 @@ function latexA(n){
     const ch=(n.ch&&n.ch.t!==0)?latexWrap(ch0):ch0;
     switch(n.op){
       case"neg":return"-"+ch;
-      case"sqrt":return"\\sqrt{"+((n.ch&&n.ch.t===2)?latexWrap(ch0):ch0)+"}";
-      case"cbrt":return"\\sqrt[3]{"+ch0+"}";
-      case"inv":return"\\frac{1}{"+ch0+"}";
+      case"sqrt":return"\\\\sqrt{"+((n.ch&&n.ch.t===2)?latexWrap(ch0):ch0)+"}";
+      case"cbrt":return"\\\\sqrt[3]{"+ch0+"}";
+      case"inv":return"\\\\frac{1}{"+ch0+"}";
       case"square":return"{"+ch+"}^{2}";
       case"cube":return"{"+ch+"}^{3}";
       case"fact":return ch+"!";
-      case"gammafn":return"\\Gamma"+latexWrap(ch0);
+      case"gammafn":return"\\\\Gamma"+latexWrap(ch0);
       case"exp":return"e^{"+ch0+"}";
       case"expm1":return"e^{"+ch0+"}-1";
-      default:return"\\mathrm{"+n.op+"}"+latexWrap(ch0);
+      default:return"\\\\mathrm{"+n.op+"}"+latexWrap(ch0);
     }
   }
   if(n.op==="^"){
@@ -1764,16 +1791,16 @@ function latexA(n){
   let l=latexA(n.l), r=latexA(n.r);
   if(needParen(n.l,n.op,"left")) l="("+l+")";
   if(needParen(n.r,n.op,"right")) r="("+r+")";
-  if(n.op==="/" )return"\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  if(n.op==="*")return l+"\\cdot "+r;
+  if(n.op==="/" )return"\\\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
+  if(n.op==="*")return l+"\\\\cdot "+r;
   if(n.op==="+"){
     if(n.r&&n.r.t===1&&n.r.op==="neg") return l+"-"+latexA(n.r.ch);
     if(isNegAtomNode(n.r)) return l+"-"+latexA({t:0,sym:absAtomText(n.r),val:Math.abs(n.r.val)});
     return l+"+"+r;
   }
   if(n.op==="-")return l+"-"+r;
-  if(n.op==="logab")return"\\log_{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  return"\\mathrm{"+n.op+"}"+latexWrap(latexA(n.l)+","+latexA(n.r));
+  if(n.op==="logab")return"\\\\log_{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
+  return"\\\\mathrm{"+n.op+"}"+latexWrap(latexA(n.l)+","+latexA(n.r));
 }
 
 
