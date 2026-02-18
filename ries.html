@@ -198,8 +198,10 @@
 function getConstraints(){
   return {
     leafOrder:"nondecreasing",
-    pruneLevel:"relaxed",
-    forbidBinary:["mod"]
+    pruneLevel:"normal",
+    forbidBinary:["mod"],
+    unaryPrune:(ctx)=> ctx.op==="sqrt" && ctx.v<0.0000001,
+    binaryPrune:(ctx)=> ctx.op==="^" && Math.abs(ctx.bv)>20
   };
 }
 </pre>
@@ -1134,14 +1136,14 @@ function modeParams(mode){
     qGoal:0.40,qBB:0.10,qMeet:0.10,qDiv:0.06,qPow:0.07,qFunc:0.05,qDepth:0.10,qMag:0.08,qIrr:0.06,
     qPowBase:0.10, qPowExp:0.08,
     qReq:0.08,
-    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:8,
+    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:6,
     revBeamMul:1.8, meetHitBonus:0.14,
     candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
     meetSweepMul:0.16, meetSweepPowMul:0.32,
     beamMul:0.82, subLayerCapMul:1.05,
-    revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:220, meetSweepRevCap:240,
-    capUnMul:2.8, capBinMul:2.3, jumpMul:0.85, meetStage2:0
+    revIdxKeyCap:140, fwdIdxKeyCap:140, meetKeyProbeCap:170, meetSweepRevCap:200,
+    capUnMul:2.2, capBinMul:1.8, jumpMul:0.35, meetStage2:0, qSeed:0.02
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"min",
@@ -1156,7 +1158,7 @@ function modeParams(mode){
     meetSweepMul:0.24, meetSweepPowMul:0.42,
     beamMul:1.32, subLayerCapMul:1.85,
     revIdxKeyCap:260, fwdIdxKeyCap:260, meetKeyProbeCap:300, meetSweepRevCap:360,
-    capUnMul:4.0, capBinMul:3.4, jumpMul:1.35, meetStage2:1
+    capUnMul:4.2, capBinMul:3.6, jumpMul:1.6, meetStage2:1, qSeed:0.12
   };
   return {
     keyPrec:12, bestPrec:11, keepMode:"min",
@@ -1171,7 +1173,7 @@ function modeParams(mode){
     meetSweepMul:0.34, meetSweepPowMul:0.60,
     beamMul:1.55, subLayerCapMul:2.05,
     revIdxKeyCap:320, fwdIdxKeyCap:320, meetKeyProbeCap:360, meetSweepRevCap:460,
-    capUnMul:4.2, capBinMul:3.7, jumpMul:1.75, meetStage2:1
+    capUnMul:4.8, capBinMul:4.2, jumpMul:2.0, meetStage2:1, qSeed:0.18
   };
 }
 
@@ -1529,39 +1531,38 @@ function pretty(n,parentOp=null,side=null){
 function strA(n){return pretty(n,null,null);}
 
 // LaTeX
+function latexWrap(s){ return "\\left("+s+"\\right)"; }
 function latexA(n){
   if(!n)return"";
   if(n.t===0){
     const s=String(n.sym||n.val||"0");
-    if(s==="π")return"\\\\pi";
-    if(s==="φ")return"\\\\varphi";
-    if(s==="√2")return"\\\\sqrt{2}";
-    if(s==="√3")return"\\\\sqrt{3}";
-    if(s==="√5")return"\\\\sqrt{5}";
+    if(s==="π")return"\\pi";
+    if(s==="φ")return"\\varphi";
+    if(s==="√2")return"\\sqrt{2}";
+    if(s==="√3")return"\\sqrt{3}";
+    if(s==="√5")return"\\sqrt{5}";
     return s;
   }
   if(n.t===1){
     const ch0=latexA(n.ch);
-    const needP=!!(n.ch&&n.ch.t!==0);
-    const ch=needP?("\\left("+ch0+"\\right)"):ch0;
+    const ch=(n.ch&&n.ch.t!==0)?latexWrap(ch0):ch0;
     switch(n.op){
       case"neg":return"-"+ch;
-      case"sqrt":{const body=(n.ch&&n.ch.t===2)?("\\\\left("+ch0+"\\\\right)"):ch0;return"\\\\sqrt{"+body+"}";}
-      case"cbrt":return"\\\\sqrt[3]{"+ch0+"}";
-      case"inv":return"\\\\frac{1}{"+ch0+"}";
+      case"sqrt":return"\\sqrt{"+((n.ch&&n.ch.t===2)?latexWrap(ch0):ch0)+"}";
+      case"cbrt":return"\\sqrt[3]{"+ch0+"}";
+      case"inv":return"\\frac{1}{"+ch0+"}";
       case"square":return"{"+ch+"}^{2}";
       case"cube":return"{"+ch+"}^{3}";
       case"fact":return ch+"!";
-      case"gammafn":return"\\\\Gamma\\\\left("+ch0+"\\\\right)";
-      default:return"\\\\mathrm{"+n.op+"}\\\\left("+ch0+"\\\\right)";
+      case"gammafn":return"\\Gamma"+latexWrap(ch0);
+      case"exp":return"e^{"+ch0+"}";
+      case"expm1":return"e^{"+ch0+"}-1";
+      default:return"\\mathrm{"+n.op+"}"+latexWrap(ch0);
     }
   }
   if(n.op==="^"){
-    // 修复：如果底数本身也是幂运算（或其他复杂运算），必须强制加括号，避免渲染成幂塔
-    const needParenBase = (n.l && (n.l.t!==0 || n.l.op==="^")); 
-    // 或者更严格：只要底数不是单纯的数字/符号，就加括号，防止 ((a+b)^2)^2 这种歧义
     const baseStr = latexA(n.l);
-    const base = (needParenBase || (n.l && n.l.t===2)) ? ("\\\\left("+baseStr+"\\\\right)") : baseStr;
+    const base = (n.l && n.l.t!==0) ? latexWrap(baseStr) : baseStr;
     const exp  = latexA(n.r);
     return "{"+base+"}^{"+exp+"}";
   }
@@ -1569,8 +1570,8 @@ function latexA(n){
   let l=latexA(n.l), r=latexA(n.r);
   if(needParen(n.l,n.op,"left")) l="("+l+")";
   if(needParen(n.r,n.op,"right")) r="("+r+")";
-  if(n.op==="/" )return"\\\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  if(n.op==="*")return l+"\\\\cdot "+r;
+  if(n.op==="/" )return"\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
+  if(n.op==="*")return l+"\\cdot "+r;
   if(n.op==="+"){
     if(n.r&&n.r.t===1&&n.r.op==="neg") return l+"-"+latexA(n.r.ch);
     if(isNegAtomNode(n.r)) return l+"-"+latexA({t:0,sym:absAtomText(n.r),val:Math.abs(n.r.val)});
@@ -1578,7 +1579,7 @@ function latexA(n){
   }
   if(n.op==="-")return l+"-"+r;
   if(n.op==="logab")return"\\log_{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  return"\\\\mathrm{"+n.op+"}\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
+  return"\\mathrm{"+n.op+"}"+latexWrap(latexA(n.l)+","+latexA(n.r));
 }
 
 const TAG_NONE=0,TAG_NEG=1,TAG_EXP=2,TAG_LOG=3,TAG_SQRT=4,TAG_SQ=5,TAG_INV=6,TAG_ABS=7;
@@ -1859,7 +1860,8 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nPowBase=Math.max(0,Math.floor(beam*(mp.qPowBase||0)));
   const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
   const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
-  const nExplore=Math.max(0, Math.floor(beam*((mode==="speed")?0.0:0.08)));
+  const nExplore=Math.max(0, Math.floor(beam*((mode==="speed")?0.0:0.10)));
+  const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
@@ -1913,6 +1915,11 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   }
 
   take(topK(items,nBB,(x)=>x.bb,true), nBB);
+
+  if(nSeed>0){
+    const seed=topK(items,nSeed,(x)=>((x.cost||0)*0.7 + x.bb*0.25 + x.goal*0.05),true,(x)=>((x.cost||0)<=6)&&!used.has(x.key));
+    take(seed,nSeed);
+  }
 
   if(nExplore>0){
     const ex = topK(items,nExplore,(x)=>((x.goal*0.55)+(x.bb*0.35)-0.03*(x.depth||0)),true,(x)=>!used.has(x.key));
@@ -2606,7 +2613,8 @@ onmessage=async(ev)=>{
   function tryTargetDecomposition(layerItems,T){
     if(!Number.isFinite(T) || fwdIdx.size<8 || !layerItems || !layerItems.length) return;
 
-    const jm=Math.max(0.6, mp.jumpMul||1);
+    const jm=Math.max(0.3, mp.jumpMul||1);
+    if(jm<0.45) return;
     const limItems=Math.min(layerItems.length, Math.max(18,Math.floor(beamF*0.08*jm)));
     const logT=(T>0)?Math.log(T):NaN;
 
