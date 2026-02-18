@@ -715,6 +715,7 @@ let NEED_ZERO=false, NEED_ONE=false;
 let HAS_NEG=true, HAS_DIV=true, HAS_MUL=true, HAS_SUB=true;
 let PRUNE_LEVEL=1;
 let FORBID_UN=new Set(), FORBID_BIN=new Set();
+let CONSTRAINT_UN_FN=null, CONSTRAINT_BIN_FN=null;
 
 // bitmask-coverage retention (fix "bitmask漏解" due to beam fragmentation)
 let REQ_MASK=0, REQ_POP=0;
@@ -886,6 +887,7 @@ function pruneUn(op,cf,cv){
 
   const fn=CUSTOM_PRUNE_UN.get(op);
   if(fn){ try{ if(fn(cf,cv)) return true; }catch(e){} }
+  if(CONSTRAINT_UN_FN){ try{ if(CONSTRAINT_UN_FN({op,flags:cf,v:cv,tag:ct})) return true; }catch(e){} }
 
   return false;
 }
@@ -915,6 +917,7 @@ function pruneBin(op,af,bf,av,bv){
 
   const fn=CUSTOM_PRUNE_BIN.get(op);
   if(fn){ try{ if(fn(af,bf,av,bv)) return true; }catch(e){} }
+  if(CONSTRAINT_BIN_FN){ try{ if(CONSTRAINT_BIN_FN({op,af,bf,av,bv})) return true; }catch(e){} }
 
   return false;
 }
@@ -974,6 +977,11 @@ onmessage=(ev)=>{
     PRUNE_LEVEL = Math.max(0, Math.min(2, msg.pruneLevel|0));
     FORBID_UN = new Set(Array.isArray(msg.forbidUn)?msg.forbidUn:[]);
     FORBID_BIN = new Set(Array.isArray(msg.forbidBin)?msg.forbidBin:[]);
+    CONSTRAINT_UN_FN=null; CONSTRAINT_BIN_FN=null;
+    try{
+      if(msg.constraintUnSrc) CONSTRAINT_UN_FN=new Function("ctx","const f=("+msg.constraintUnSrc+"); return !!f(ctx);");
+      if(msg.constraintBinSrc) CONSTRAINT_BIN_FN=new Function("ctx","const f=("+msg.constraintBinSrc+"); return !!f(ctx);");
+    }catch(e){ CONSTRAINT_UN_FN=null; CONSTRAINT_BIN_FN=null; }
 
     REQ_MASK = (msg.reqMask|0) || 0;
     REQ_POP  = (msg.reqPop|0) || 0;
@@ -1133,7 +1141,7 @@ function modeParams(mode){
     meetSweepMul:0.16, meetSweepPowMul:0.32,
     beamMul:0.82, subLayerCapMul:1.05,
     revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:220, meetSweepRevCap:240,
-    capUnMul:2.8, capBinMul:2.3
+    capUnMul:2.8, capBinMul:2.3, jumpMul:0.85, meetStage2:0
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"min",
@@ -1148,7 +1156,7 @@ function modeParams(mode){
     meetSweepMul:0.24, meetSweepPowMul:0.42,
     beamMul:1.32, subLayerCapMul:1.85,
     revIdxKeyCap:260, fwdIdxKeyCap:260, meetKeyProbeCap:300, meetSweepRevCap:360,
-    capUnMul:4.0, capBinMul:3.4
+    capUnMul:4.0, capBinMul:3.4, jumpMul:1.35, meetStage2:1
   };
   return {
     keyPrec:12, bestPrec:11, keepMode:"min",
@@ -1163,7 +1171,7 @@ function modeParams(mode){
     meetSweepMul:0.34, meetSweepPowMul:0.60,
     beamMul:1.55, subLayerCapMul:2.05,
     revIdxKeyCap:320, fwdIdxKeyCap:320, meetKeyProbeCap:360, meetSweepRevCap:460,
-    capUnMul:4.2, capBinMul:3.7
+    capUnMul:4.2, capBinMul:3.7, jumpMul:1.75, meetStage2:1
   };
 }
 
@@ -1172,6 +1180,7 @@ let ALLOW_ADD=true, NEED_ZERO=false, NEED_ONE=false;
 let HAS_NEG=true, HAS_SUB=true, HAS_DIV=true, HAS_MUL=true;
 let PRUNE_LEVEL=1;
 let FORBID_UN=new Set(), FORBID_BIN=new Set();
+let CONSTRAINT_UN_FN=null, CONSTRAINT_BIN_FN=null;
 
 // bitmask coverage retention (RIES-like: preserve required constructs)
 let REQ_MASK=0, REQ_POP=0;
@@ -1568,6 +1577,7 @@ function latexA(n){
     return l+"+"+r;
   }
   if(n.op==="-")return l+"-"+r;
+  if(n.op==="logab")return"\\log_{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
   return"\\\\mathrm{"+n.op+"}\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
 }
 
@@ -1626,6 +1636,7 @@ function pruneUn(op,cf,cv){
 
   const fn=CUSTOM_PRUNE_UN.get(op);
   if(fn){ try{ if(fn(cf,cv)) return true; }catch(e){} }
+  if(CONSTRAINT_UN_FN){ try{ if(CONSTRAINT_UN_FN({op,flags:cf,v:cv,tag:ct})) return true; }catch(e){} }
 
   return false
 }
@@ -1660,6 +1671,7 @@ function pruneBin(op,af,bf,av,bv){
 
   const fn=CUSTOM_PRUNE_BIN.get(op);
   if(fn){ try{ if(fn(af,bf,av,bv)) return true; }catch(e){} }
+  if(CONSTRAINT_BIN_FN){ try{ if(CONSTRAINT_BIN_FN({op,af,bf,av,bv})) return true; }catch(e){} }
 
   return false
 }
@@ -1803,7 +1815,7 @@ function topK(items,k,scoreFn,lowerBetter=true,filterFn=null){
   return out;
 }
 
-function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask){
+function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const out=[];
   const used=new Set();
   const take=(arr,limit)=>{
@@ -1847,6 +1859,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask){
   const nPowBase=Math.max(0,Math.floor(beam*(mp.qPowBase||0)));
   const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
   const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
+  const nExplore=Math.max(0, Math.floor(beam*((mode==="speed")?0.0:0.08)));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
@@ -1900,6 +1913,11 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask){
   }
 
   take(topK(items,nBB,(x)=>x.bb,true), nBB);
+
+  if(nExplore>0){
+    const ex = topK(items,nExplore,(x)=>((x.goal*0.55)+(x.bb*0.35)-0.03*(x.depth||0)),true,(x)=>!used.has(x.key));
+    take(ex,nExplore);
+  }
 
   if(nDiv>0){
     const bins=new Map();
@@ -1971,6 +1989,12 @@ onmessage=async(ev)=>{
   PRUNE_LEVEL = pruneLevelRaw==="relaxed" ? 0 : (pruneLevelRaw==="aggressive" ? 2 : 1);
   FORBID_UN = new Set(Array.isArray(constraints?.forbidUnary)?constraints.forbidUnary.map(String):[]);
   FORBID_BIN = new Set(Array.isArray(constraints?.forbidBinary)?constraints.forbidBinary.map(String):[]);
+  CONSTRAINT_UN_FN = (typeof constraints?.unaryPrune==="function") ? constraints.unaryPrune : null;
+  CONSTRAINT_BIN_FN = (typeof constraints?.binaryPrune==="function") ? constraints.binaryPrune : null;
+  const CONSTRAINT_UN_SRC = (typeof constraints?.unaryPruneImpl==="string"&&constraints.unaryPruneImpl.trim()) ? constraints.unaryPruneImpl.trim() : (CONSTRAINT_UN_FN ? CONSTRAINT_UN_FN.toString() : "");
+  const CONSTRAINT_BIN_SRC = (typeof constraints?.binaryPruneImpl==="string"&&constraints.binaryPruneImpl.trim()) ? constraints.binaryPruneImpl.trim() : (CONSTRAINT_BIN_FN ? CONSTRAINT_BIN_FN.toString() : "");
+  if(!CONSTRAINT_UN_FN && CONSTRAINT_UN_SRC){ try{ CONSTRAINT_UN_FN = new Function("ctx","const f=("+CONSTRAINT_UN_SRC+"); return !!f(ctx);"); }catch(e){ CONSTRAINT_UN_FN=null; } }
+  if(!CONSTRAINT_BIN_FN && CONSTRAINT_BIN_SRC){ try{ CONSTRAINT_BIN_FN = new Function("ctx","const f=("+CONSTRAINT_BIN_SRC+"); return !!f(ctx);"); }catch(e){ CONSTRAINT_BIN_FN=null; } }
 
   // normalize extensions (ops only; constants are already in 'consts' list passed from UI)
   function normOpDef(d,kind){
@@ -2351,7 +2375,7 @@ onmessage=async(ev)=>{
 
     const items=Array.from(bucket.values());
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask);
+    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask,mode);
     for(const it of picked){it.cost=1;}
     fwd[1]=picked;
     addFwdIdx(fwd[1]);
@@ -2454,14 +2478,28 @@ onmessage=async(ev)=>{
 
   function tryMeetReverseWithFwdIdx(r){
     if(!bidir)return;
+    const limKey=Math.max(8,mp.meetKeyProbeCap|0||120);
+    const pkey=meetPrimaryKey(r.v);
+    const primary=fwdIdx.get(pkey);
+    let hit=false;
+    if(primary){
+      hit=true;
+      meetDbg.keyHits++;
+      const lim2=Math.min(primary.length,limKey);
+      for(let i=0;i<lim2;i++){
+        meetDbg.rev2fwdPairs++;
+        meetDbg.pairsTried++;
+        tryMeetPair(primary[i],r);
+        if(stopFlag) return;
+      }
+    }
+    if(hit && !mp.meetStage2) return;
+
     const keys = meetKeysCached(r);
     meetLookups+=keys.length;
-    let seen=null;
-    if(keys.length>1)seen=new Set();
-    const limKey=Math.max(8,mp.meetKeyProbeCap|0||120);
-
+    const seen=new Set([pkey]);
     for(const k2 of keys){
-      if(seen){if(seen.has(k2))continue;seen.add(k2);}
+      if(seen.has(k2))continue;seen.add(k2);
       const fl=fwdIdx.get(k2);
       if(!fl)continue;
       meetDbg.keyHits++;
@@ -2477,16 +2515,31 @@ onmessage=async(ev)=>{
 
   function tryMeetFwdWithRevIdx(f){
     if(!bidir)return;
+    const lim2Cap=Math.max(8,mp.meetKeyProbeCap|0||120);
+    const pkey=meetPrimaryKey(f.v);
+    const primary=revIdx.get(pkey);
+    let hit=false;
+    if(primary){
+      hit=true;
+      meetDbg.keyHits++;
+      const lim2=Math.min(primary.length,lim2Cap);
+      for(let i=0;i<lim2;i++){
+        meetDbg.pairsTried++;
+        tryMeetPair(f,primary[i]);
+        if(stopFlag) return;
+      }
+    }
+    if(hit && !mp.meetStage2) return;
+
     const keys = meetKeysCached(f);
     meetLookups+=keys.length;
-    let seen=null;
-    if(keys.length>1)seen=new Set();
+    const seen=new Set([pkey]);
     for(const k2 of keys){
-      if(seen){if(seen.has(k2))continue;seen.add(k2);}
+      if(seen.has(k2))continue;seen.add(k2);
       const rl=revIdx.get(k2);
       if(!rl)continue;
       meetDbg.keyHits++;
-      const lim2=Math.min(rl.length,Math.max(8,mp.meetKeyProbeCap|0||120));
+      const lim2=Math.min(rl.length,lim2Cap);
       for(let i=0;i<lim2;i++){
         meetDbg.pairsTried++;
         tryMeetPair(f,rl[i]);
@@ -2553,7 +2606,8 @@ onmessage=async(ev)=>{
   function tryTargetDecomposition(layerItems,T){
     if(!Number.isFinite(T) || fwdIdx.size<8 || !layerItems || !layerItems.length) return;
 
-    const limItems=Math.min(layerItems.length, Math.max(20,Math.floor(beamF*0.08)));
+    const jm=Math.max(0.6, mp.jumpMul||1);
+    const limItems=Math.min(layerItems.length, Math.max(18,Math.floor(beamF*0.08*jm)));
     const logT=(T>0)?Math.log(T):NaN;
 
     for(let i=0;i<limItems;i++){
@@ -2564,9 +2618,9 @@ onmessage=async(ev)=>{
 
       // T = a + x / a - x
       if(HAS_SUB || ALLOW_ADD){
-        for(const b of jumpLookupNear(T-v,14)) pushJumpPair(a,b,"+");
-        for(const b of jumpLookupNear(v-T,10)) pushJumpPair(a,b,"-");
-        for(const b of jumpLookupNear(T+v,10)) pushJumpPair(b,a,"-");
+        for(const b of jumpLookupNear(T-v,Math.max(8,Math.floor(14*jm)))) pushJumpPair(a,b,"+");
+        for(const b of jumpLookupNear(v-T,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"-");
+        for(const b of jumpLookupNear(T+v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(b,a,"-");
       }
 
       // T = a * x, a / x, x / a
@@ -2574,8 +2628,8 @@ onmessage=async(ev)=>{
         for(const b of jumpLookupNear(T/v,20)) pushJumpPair(a,b,"*");
       }
       if(HAS_DIV && av>1e-12){
-        for(const b of jumpLookupNear(v/T,10)) if(Math.abs(T)>1e-12) pushJumpPair(a,b,"/");
-        for(const b of jumpLookupNear(T*v,10)) pushJumpPair(b,a,"/");
+        for(const b of jumpLookupNear(v/T,Math.max(6,Math.floor(10*jm)))) if(Math.abs(T)>1e-12) pushJumpPair(a,b,"/");
+        for(const b of jumpLookupNear(T*v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(b,a,"/");
       }
 
       // T = a^x or x^a (pow-heavy targets)
@@ -2586,7 +2640,7 @@ onmessage=async(ev)=>{
         }
         if(av>1e-12){
           const base=Math.pow(T,1/v);
-          for(const b of jumpLookupNear(base,14)) pushJumpPair(b,a,"^");
+          for(const b of jumpLookupNear(base,Math.max(8,Math.floor(14*jm)))) pushJumpPair(b,a,"^");
         }
       }
 
@@ -2594,7 +2648,7 @@ onmessage=async(ev)=>{
       if(Array.isArray(opsBin) && opsBin.includes("logab") && Number.isFinite(logT) && T!==0){
         if(v>0 && Math.abs(v-1)>1e-12){
           const tx=Math.pow(v,T);
-          for(const b of jumpLookupNear(tx,10)) pushJumpPair(a,b,"logab");
+          for(const b of jumpLookupNear(tx,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"logab");
         }
         if(v>0){
           const base=Math.pow(v,1/T);
@@ -2818,6 +2872,8 @@ onmessage=async(ev)=>{
       pruneLevel:PRUNE_LEVEL,
       forbidUn:Array.from(FORBID_UN),
       forbidBin:Array.from(FORBID_BIN),
+      constraintUnSrc:CONSTRAINT_UN_SRC,
+      constraintBinSrc:CONSTRAINT_BIN_SRC,
       customUnary, customBinary
     };
 
@@ -3040,7 +3096,7 @@ onmessage=async(ev)=>{
 
     const items=Array.from(bucket.values());
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask);
+    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
     for(const it of picked){it.cost=c;}
     return picked;
   }
@@ -3159,7 +3215,7 @@ onmessage=async(ev)=>{
 
       const items=Array.from(bucket.values());
       for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-      const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask);
+      const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
       for(const it of picked){it.cost=c;}
       fwd[c]=picked;
     }
