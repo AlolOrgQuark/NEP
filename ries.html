@@ -193,46 +193,45 @@
 <details class="noteBox" style="cursor:pointer">
       <summary style="font-weight:bold;opacity:.9">自定义脚本</summary>
       <div style="margin-top:8px;cursor:auto">
-<pre class="mono" style="white-space:pre-wrap;margin:0;font-size:11px;opacity:.9">// 示例：只保留“数字常量按非递减顺序出现”的表达式（高效剪枝版）
-// 关键点：把规则尽量写进 getConstraints().binaryPrune / unaryPrune，
-// 这样在搜索扩展阶段就会剪掉大量不可能候选，而不是等到最后 allowCandidate 再过滤。
+<pre class="mono" style="white-space:pre-wrap;margin:0;font-size:11px;opacity:.9">// 示例：要求“所有数字常量必须按指定顺序出现”。
+// 例：SEQ=[1,1,4,5,1,4]，只允许叶子序列恰好为 1,1,4,5,1,4 的表达式。
+// 重点：把“顺序规则”放进 binaryPrune + leafOrder，尽量在扩展期早剪枝。
 
+const SEQ=[1,1,4,5,1,4];
 function isNumberSym(sym){ return /^[-+]?\d+(?:\.\d+)?$/.test(String(sym||"")); }
-function toNum(sym){ return Number(sym); }
 
 function getConstraints(){
   return {
-    leafOrder:"nondecreasing",   // 先用内置叶子顺序约束降低排列爆炸
+    leafOrder:"nondecreasing", // 先做廉价排序剪枝，减少排列爆炸
     pruneLevel:"aggressive",
 
-    // 二元扩展时做“早剪枝”：若两侧最外层就是数字叶子，要求左<=右
-    // 对 +,* 尤其有效，可显著减少对称分支。
+    // 早剪枝：对 +/* 做稳定顺序规范，减少交换律重复
     binaryPrune:(ctx)=>{
-      if(ctx.op!=="+" && ctx.op!=="*") return false;
-      if(Number.isFinite(ctx.av) && Number.isFinite(ctx.bv)){
-        // 值级别近似剪枝：优先保持小->大的构造顺序
-        return ctx.av > ctx.bv;
+      if((ctx.op==="+"||ctx.op==="*") && Number.isFinite(ctx.av) && Number.isFinite(ctx.bv)){
+        if(ctx.av>ctx.bv) return true;
       }
+      // 阻止过大中间值继续膨胀（对 speed/medium 模式很关键）
+      if((ctx.op==="^"||ctx.op==="exp") && (Math.abs(ctx.av)>20 || Math.abs(ctx.bv)>20)) return true;
       return false;
     },
 
-    // 一元示例：避免对超大值继续做指数/阶乘类运算
     unaryPrune:(ctx)=>{
-      if((ctx.op==="exp" || ctx.op==="fact" || ctx.op==="gammafn") && Math.abs(ctx.v)>12) return true;
+      if((ctx.op==="exp"||ctx.op==="fact"||ctx.op==="gammafn") && Math.abs(ctx.v)>12) return true;
       return false;
     }
   };
 }
 
-// 最终结果再兜底过滤一次（防止少量漏网）
 function allowCandidate(ctx){
   const leaves=Array.isArray(ctx.leaves)?ctx.leaves:[];
-  let prev=-Infinity;
+  const nums=[];
   for(const s of leaves){
-    if(!isNumberSym(s)) continue;
-    const x=toNum(s);
-    if(x<prev) return false;
-    prev=x;
+    if(isNumberSym(s)) nums.push(Number(s));
+  }
+  // 这里是完整兜底逻辑：长度必须一致，逐位严格相等。
+  if(nums.length!==SEQ.length) return false;
+  for(let i=0;i<SEQ.length;i++){
+    if(nums[i]!==SEQ[i]) return false;
   }
   return true;
 }
@@ -271,7 +270,7 @@ function allowCandidate(ctx){
   <table>
     <thead>
       <tr>
-        <th style="width:6%" data-sort-key="searchType" class="sortable">type</th>
+        <th id="thType" style="width:6%" data-sort-key="searchType" class="sortable">type</th>
         <th data-sort-key="expr" class="sortable">expression</th>
         <th style="width:12%" data-sort-key="v" class="sortable">value</th>
         <th style="width:10%" data-sort-key="delta" class="sortable">distance</th>
@@ -629,12 +628,19 @@ function getOps(){
 
 function normalizeMode(mode){
   if(mode==="balanced"||mode==="meet") return "normal";
-  if(mode==="free"||mode==="meetfast"||mode==="speed") return "medium";
+  if(mode==="speed") return "normal";
+  if(mode==="free"||mode==="meetfast") return "medium";
   if(mode==="ries") return "accuracy";
   if(mode==="normal"||mode==="medium"||mode==="accuracy") return mode;
   return "normal";
 }
 function tuneOpsByMode(mode){ normalizeMode(mode); }
+function mapUiModeToEngine(mode){
+  const m=normalizeMode(mode);
+  if(m==="normal") return "medium"; // 普通 -> speed profile
+  if(m==="medium") return "normal"; // 中等 -> normal profile
+  return m;
+}
 
 function getConsts(){
   const en=new Set([...document.querySelectorAll(".cstOn")].filter(x=>x.checked).map(x=>x.dataset.key));
@@ -716,6 +722,15 @@ $("btnCopyAllTable").onclick=()=>{
   copyText(lines.join("\n"));
 };
 
+function setTypeColumnVisible(show){
+  const th=$("thType");
+  if(th) th.style.display=show?"":"none";
+  document.querySelectorAll("#tbody tr").forEach((tr)=>{
+    const td=tr.firstElementChild;
+    if(td) td.style.display=show?"":"none";
+  });
+}
+
 async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
   lastRows=(rows||[]).slice();
   const sorted=sortRows(lastRows);
@@ -732,6 +747,7 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
       tg.textContent=tp;
       t1.appendChild(tg);
     }
+    t1.style.display=debugOn?"":"none";
     const t2=document.createElement("td");
     t2.className="mono expr";
     t2.textContent=r.expr;
@@ -765,6 +781,7 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
     frag.appendChild(tr);
   }
   tb.appendChild(frag);
+  setTypeColumnVisible(debugOn);
 }
 
 // ---------- localStorage ----------
@@ -869,6 +886,11 @@ $("mode").addEventListener("change",()=>{
   scheduleSave();
 });
 $("infiniteTime").addEventListener("change",()=>{$("timeLimit").disabled=$("infiniteTime").checked;scheduleSave();});
+$("debugMode").addEventListener("change",()=>{
+  setTypeColumnVisible($("debugMode").checked);
+  renderResults(lastRows,$("showCounts").checked,$("debugMode").checked,$("latexMode").checked);
+  scheduleSave();
+});
 
 // ================= SubWorker code (supports reqMask + custom ops + leafOrder pruning) =================
 const SUBWORKER_CODE = `
@@ -1305,11 +1327,11 @@ function modeParams(mode){
     qGoal:0.46,qBB:0.08,qMeet:0.14,qDiv:0.04,qPow:0.07,qFunc:0.04,qDepth:0.08,qMag:0.05,qIrr:0.04,
     qPowBase:0.10, qPowExp:0.08,
     qReq:0.08,
-    meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:14,
-    revBeamMul:2.3, meetHitBonus:0.18,
+    meetStyle:"bin", meetPrec:10, meetQ:12288, meetR:10,
+    revBeamMul:2.4, meetHitBonus:0.26,
     candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
-    meetSweepMul:0.16, meetSweepPowMul:0.32,
+    meetSweepMul:0.20, meetSweepPowMul:0.36,
     beamMul:0.76, subLayerCapMul:0.95,
     revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:7, idxPerItemCap:56,
     capUnMul:2.8, capBinMul:2.3, jumpMul:0.95, meetStage2:1, qSeed:0.08
@@ -1372,6 +1394,7 @@ let MEET_STYLE="prec";
 let MEETP=10;
 let MEET_Q=8192;
 let MEET_R=2;
+let ADAPTIVE_MEET=true;
 
 function meetKeyPrec(v){if(!Number.isFinite(v))return"NaN";if(Object.is(v,-0))v=0;return v.toPrecision(MEETP)}
 function meetKeyBinPrimary(v){
@@ -1394,44 +1417,40 @@ function meetPrimaryKey(v){
 
 // 预分配数组避免 GC
 const _meetKeyOut = []; 
-function meetKeys(v){
+function meetKeys(v,goalHint=Infinity,depthHint=0){
   if(MEET_STYLE!=="bin") return [meetKeyPrec(v)];
   if(!Number.isFinite(v)) return ["NaN"];
   if(Object.is(v,-0)) v=0;
   if(v===0) return ["0|0|0","0"];
-  
-  // 清空数组而不是新建
+
   _meetKeyOut.length = 0;
-  
+
   const sign=v<0?1:0;
   const a=Math.abs(v);
-  // 快速计算 log2
   const e=Math.floor(Math.log2(a));
   const scale=Math.pow(2,e);
   const x=a/scale;
-  
-  // 核心优化：只在关键区间生成 key
   const q0 = Math.round(x * MEET_Q);
-  
-  // 生成主要 key
+
   _meetKeyOut.push(""+sign+"|"+e+"|"+q0);
-  
-  // 生成邻居 key (减少范围，提升速度，Meet_R 从 2 降为 1 足够了，因为有精度补救)
-  // 如果你需要更宽的容错，保持原来的逻辑，但尽量少 push
-  if(MEET_R > 0) {
-    const rr=Math.max(1,MEET_R|0);
+
+  let rr=Math.max(1,MEET_R|0);
+  if(ADAPTIVE_MEET){
+    const g=Math.abs(Number.isFinite(goalHint)?goalHint:Infinity);
+    const d=Math.max(0, depthHint|0);
+    if(g>1e-2) rr=Math.min(rr,3);
+    if(g>1) rr=Math.min(rr,2);
+    if(d>=7) rr=Math.min(rr,2);
+  }
+  if(rr>0){
     for(let d=1;d<=rr;d++){
       _meetKeyOut.push(""+sign+"|"+e+"|"+(q0-d));
       _meetKeyOut.push(""+sign+"|"+e+"|"+(q0+d));
     }
   }
-  
-  // 总是加入高精度 Key 作为备选
+
   _meetKeyOut.push(meetKeyPrec(v));
-  
-  // 返回副本以防覆盖（因为我们是多处调用），或者确保调用方立即使用
-  // 为了安全起见，这里还是返回 slice，但比之前每次都 new 很多 string 好一点
-  return _meetKeyOut.slice(); 
+  return _meetKeyOut.slice();
 }
 
 function relAcc(v,T){
@@ -2170,8 +2189,8 @@ onmessage=async(ev)=>{
   }=msg;
 
   mode=mode||"normal";
-  mode=(mode==="balanced"||mode==="meet")?"normal":mode;
-  mode=(mode==="free"||mode==="meetfast"||mode==="speed")?"medium":mode;
+  mode=(mode==="balanced"||mode==="meet"||mode==="speed")?"normal":mode;
+  mode=(mode==="free"||mode==="meetfast")?"medium":mode;
   mode=(mode==="ries")?"accuracy":mode;
   const mp=modeParams(mode);
 
@@ -2618,7 +2637,7 @@ function collectLeaves(ast, out){
 
   function meetKeysCached(node){
     if(node.mkeys) return node.mkeys;
-    const ks = meetKeys(node.v);
+    const ks = meetKeys(node.v,node.goal,node.depth);
     node.mkeys = ks;
     return ks;
   }
@@ -2658,13 +2677,24 @@ function collectLeaves(ast, out){
     const hasOp=(op)=> Array.isArray(opsBin) && opsBin.includes(op);
     if(!hasOp('+')||!hasOp('-')||!hasOp('*')||!hasOp('/')||!hasOp('^')) return;
 
-    const atoms=pickInterestingAtoms(9);
-    if(atoms.length<2) return;
-
     const one=getConstNodeByValue(1);
     const two=getConstNodeByValue(2);
     const three=getConstNodeByValue(3);
     const scales=[{k:two,kv:2},{k:three,kv:3}];
+
+    const pushIfNear=(expr, tag='guided')=>{
+      const v=evalA(expr);
+      if(!Number.isFinite(v) || Math.abs(v)>CAP) return;
+      const cst=astCost(expr);
+      const err=Math.abs(v-T);
+      const scale=Math.max(1,Math.abs(T));
+      if(cst<=maxC+3 && err<=Math.max(2e-3,scale*8e-5)){
+        pushBest({v,ast:expr,cost:cst,searchType:tag});
+      }
+    };
+
+    const atoms=pickInterestingAtoms(9);
+    if(atoms.length<2) return;
 
     const pairCap=Math.min(14,atoms.length*atoms.length);
     let pairsTried=0;
@@ -2677,7 +2707,7 @@ function collectLeaves(ast, out){
         const b=mkC(B.s,B.v,ordLeaf(B.s));
         pairsTried++;
 
-        // motif-1: (a-b) + (a^2*b)^(a^(1-a/(b-1)))
+        // generic motif-1: (a-b) + (a^2*b)^(a^(1-a/(b-1)))
         try{
           const bMinus1 = mkB('-', b, one);
           const aDiv = mkB('/', a, bMinus1);
@@ -2688,18 +2718,10 @@ function collectLeaves(ast, out){
           const p1 = mkB('^', base, p2);
           const lhs = mkB('-', a, b);
           const expr = mkB('+', lhs, p1);
-          const v=evalA(expr);
-          if(Number.isFinite(v) && Math.abs(v)<=CAP){
-            const cst=astCost(expr);
-            const err=Math.abs(v-T);
-            const scale=Math.max(1,Math.abs(T));
-            if(cst<=maxC+2 && err<=Math.max(5e-4,scale*2e-5)){
-              pushBest({v,ast:expr,cost:cst,searchType:'guided'});
-            }
-          }
+          pushIfNear(expr,'guided');
         }catch(e){}
 
-        // motif-2 family: (a-n)+m*a^(n-a)*(1+m*a^b)
+        // generic motif-2 family: (a-n)+m*a^(n-a)*(1+m*a^b)
         for(const sc of scales){
           try{
             const n=sc.k;
@@ -2711,14 +2733,7 @@ function collectLeaves(ast, out){
             const onePlus=mkB('+', one, mkB('*', sc.k, aPowB));
             const prod=mkB('*', mPA, onePlus);
             const expr=mkB('+', left, prod);
-            const v=evalA(expr);
-            if(!Number.isFinite(v) || Math.abs(v)>CAP) continue;
-            const cst=astCost(expr);
-            const err=Math.abs(v-T);
-            const scale=Math.max(1,Math.abs(T));
-            if(cst<=maxC+2 && err<=Math.max(8e-4,scale*3e-5)){
-              pushBest({v,ast:expr,cost:cst,searchType:'guided'});
-            }
+            pushIfNear(expr,'guided');
           }catch(e){}
         }
       }
@@ -2955,7 +2970,7 @@ function collectLeaves(ast, out){
   // --- 跳跃式发现（goal-driven jump, inspired by RIES-style target transforms）---
   function jumpLookupNear(targetVal, maxHits){
     if(!Number.isFinite(targetVal) || Math.abs(targetVal)>CAP) return [];
-    const keys=meetKeys(targetVal);
+    const keys=meetKeys(targetVal,Math.abs(targetVal-T),6);
     const out=[];
     const seen=new Set();
     const lim=Math.max(4, maxHits|0||24);
@@ -3710,6 +3725,7 @@ $("btnStart").onclick=()=>{
   lastT=T;
 
   const mode=normalizeMode($("mode").value);
+  const engineMode=mapUiModeToEngine(mode);
   $("mode").value=mode;
 
   let bidir=$("bidir").checked;
@@ -3791,7 +3807,7 @@ $("btnStart").onclick=()=>{
       if(debugOn){
         $("status").style.display="flex";
         statusPills({
-          T:fmt(lastT),status:type,profile:payload.profile||mode,mode:payload.mode,
+          T:fmt(lastT),status:type,profile:mode,mode:payload.mode,
           mt:payload.mt||"OFF",c:(payload.c??0)+"/"+payload.maxC,
           elapsed_ms:payload.elapsed,visited:payload.visited,pruned:payload.pruned||0,
           meetLookups:payload.meetLookups||0,meetCand:payload.meetCandidates||0,
@@ -3827,7 +3843,7 @@ $("btnStart").onclick=()=>{
 
   worker.postMessage({
     type:"start",
-    T,mode,maxC,beam,divRatio,outN,
+    T,mode:engineMode,maxC,beam,divRatio,outN,
     timeLimit,infiniteTime,emitInterval,
     opsUn,opsBin,consts,
     showCounts,bidir,
@@ -3885,6 +3901,7 @@ document.querySelectorAll("thead th.sortable").forEach((th)=>{
     if(sortState.key===key) sortState.dir=(sortState.dir==="asc"?"desc":"asc");
     else { sortState.key=key; sortState.dir="asc"; }
     updateSortHeaders();
+setTypeColumnVisible($("debugMode").checked);
     renderResults(lastRows,$("showCounts").checked,$("debugMode").checked,$("latexMode").checked);
   });
 });
