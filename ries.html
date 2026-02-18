@@ -233,6 +233,13 @@ function allowCandidate(ctx){
   for(let i=0;i<SEQ.length;i++){
     if(nums[i]!==SEQ[i]) return false;
   }
+  // 这里是完整兜底逻辑：长度必须一致，逐位严格相等。
+  if(nums.length!==SEQ.length) return false;
+  for(let i=0;i<SEQ.length;i++){
+    if(nums[i]!==SEQ[i]) return false;
+  }
+  if(nums.length!==SEQ.length) return false;
+  for(let i=0;i<SEQ.length;i++) if(nums[i]!==SEQ[i]) return false;
   return true;
 }
 </pre>
@@ -634,6 +641,12 @@ function normalizeMode(mode){
   return "speed";
 }
 function tuneOpsByMode(mode){ normalizeMode(mode); }
+function mapUiModeToEngine(mode){
+  const m=normalizeMode(mode);
+  if(m==="normal") return "medium"; // 普通 -> speed profile
+  if(m==="medium") return "normal"; // 中等 -> normal profile
+  return m;
+}
 
 function getConsts(){
   const en=new Set([...document.querySelectorAll(".cstOn")].filter(x=>x.checked).map(x=>x.dataset.key));
@@ -3717,6 +3730,7 @@ $("btnStart").onclick=()=>{
   lastT=T;
 
   const mode=normalizeMode($("mode").value);
+  const engineMode=mapUiModeToEngine(mode);
   $("mode").value=mode;
 
   let bidir=$("bidir").checked;
@@ -3834,7 +3848,7 @@ $("btnStart").onclick=()=>{
 
   worker.postMessage({
     type:"start",
-    T,mode,maxC,beam,divRatio,outN,
+    T,mode:engineMode,maxC,beam,divRatio,outN,
     timeLimit,infiniteTime,emitInterval,
     opsUn,opsBin,consts,
     showCounts,bidir,
