@@ -178,41 +178,31 @@
   <div class="box">
     <label style="display:flex;gap:8px;align-items:center;margin:0 0 6px 0">
       <input id="customEnable" type="checkbox"/>
-      <span class="muted">自定义约束 / 扩展（JS，支持新增常数/函数/逆变换，且尽量参与剪枝、多线程与优化）</span>
+      <span class="muted">自定义约束与扩展</span>
     </label>
     <div class="toolbar" style="margin-bottom:8px">
       <button id="btnApplyCustom">应用自定义扩展到UI（新增常数/函数）</button>
-      <span class="muted">提示：启用后会在“常数表/运算表”里出现你新增的项目</span>
+      <span class="muted">启用后新增项会出现在常数表和运算表</span>
     </div>
     <textarea id="customBox" class="mono" style="min-height:160px"></textarea>
 
 <details class="noteBox" style="cursor:pointer">
-      <summary style="font-weight:bold;opacity:.9">📌 点击查看：自定义脚本教程与示例</summary>
+      <summary style="font-weight:bold;opacity:.9">自定义脚本</summary>
       <div style="margin-top:8px;cursor:auto">
-        你可以在脚本里定义以下函数（都可选）：
-        <ul style="margin:6px 0 0 18px;padding:0">
-          <li><code>getExtensions()</code>：返回新增常数/一元/二元函数定义。</li>
-          <li><code>getConstraints()</code>：返回剪枝约束（如 <code>leafOrder:"nondecreasing"</code>）。</li>
-          <li><code>allowCandidate(ctx)</code>：最终结果过滤。</li>
-          <li><code>scoreAdjust(ctx)</code>：给结果调分。</li>
-        </ul>
-        <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(127,127,127,0.2)">
-          <b>示例：</b>新增常数 τ=2π，新增一元 <code>sinc(x)=sin(x)/x</code>：
-<pre class="mono" style="white-space:pre-wrap;margin:5px 0 0;font-size:11px;opacity:.85">
-function getExtensions(){
+<pre class="mono" style="white-space:pre-wrap;margin:0;font-size:11px;opacity:.9">function getExtensions(){
   return {
-    constants: [ {key:"tau", sym:"τ", val:2*Math.PI, on:false} ],
-    unaryOps: [
-      {key:"sinc", label:"sinc", on:false, weight:4,
-       impl:"(x===0?1:Math.sin(x)/x)",
-       // 定义逆变换让双向搜索生效：sinc(x)=r => x=...
-       invImpl:"(r)=>[{v:r===0?0:Math.asin(Math.min(1,Math.max(-1,r)))}]" }
-    ]
+    constants:[{key:"tau",sym:"τ",val:2*Math.PI,on:false}],
+    unaryOps:[{key:"sinc",label:"sinc",on:false,weight:4,impl:"(x===0?1:Math.sin(x)/x)"}]
   };
 }
-function getConstraints(){ return { leafOrder:"nondecreasing" }; }
+function getConstraints(){
+  return {
+    leafOrder:"nondecreasing",
+    pruneLevel:"relaxed",
+    forbidBinary:["mod"]
+  };
+}
 </pre>
-        </div>
       </div>
     </details>
 
@@ -290,6 +280,7 @@ const BASE_CONST_LIST=[
 const BASE_OP_LIST=[
   {key:"+",label:"+",kind:"bin",on:true},{key:"-",label:"-",kind:"bin",on:true},
   {key:"*",label:"*",kind:"bin",on:true},{key:"/",label:"/",kind:"bin",on:true},{key:"^",label:"^",kind:"bin",on:true},
+  {key:"logab",label:"logab(a,b)",kind:"bin",on:false},
   {key:"min",label:"min(a,b)",kind:"bin",on:false},{key:"max",label:"max(a,b)",kind:"bin",on:false},
   {key:"atan2",label:"atan2",kind:"bin",on:false},{key:"hypot",label:"hypot",kind:"bin",on:false},
   {key:"mod",label:"mod",kind:"bin",on:false},{key:"gcd",label:"gcd",kind:"bin",on:false},{key:"lcm",label:"lcm",kind:"bin",on:false},
@@ -722,6 +713,8 @@ let OPS_UN=[], OPS_BIN=[];
 let PRUNE=true;
 let NEED_ZERO=false, NEED_ONE=false;
 let HAS_NEG=true, HAS_DIV=true, HAS_MUL=true, HAS_SUB=true;
+let PRUNE_LEVEL=1;
+let FORBID_UN=new Set(), FORBID_BIN=new Set();
 
 // bitmask-coverage retention (fix "bitmask漏解" due to beam fragmentation)
 let REQ_MASK=0, REQ_POP=0;
@@ -811,6 +804,7 @@ function applyBin(op,a,b){
   switch(op){
     case "+":return a+b;case "-":return a-b;case "*":return a*b;case "/":return b===0?NaN:a/b;
     case "^":return safePowStable(a,b);
+    case "logab":return (a>0&&a!==1&&b>0)?(Math.log(b)/Math.log(a)):NaN;
     case "min":return Math.min(a,b);case "max":return Math.max(a,b);
     case "atan2":return Math.atan2(a,b);case "hypot":return Math.hypot(a,b);
     case "mod":{if(!nearInt(a)||!nearInt(b))return NaN;const bb=Math.round(b);return bb===0?NaN:((Math.round(a)%bb)+bb)%bb;}
@@ -840,6 +834,7 @@ function wBin(op){
   switch(op){
     case "+":case "-":case "*":case "/":return 1;
     case "^":return 3;
+    case "logab":return 4;
     case "min":case "max":return 2;
     case "mod":return 3;
     case "atan2":case "hypot":return 4;
@@ -863,7 +858,13 @@ const F_ZERO=1<<8,F_ONE=1<<9,F_NEGONE=1<<10,F_INT=1<<11,F_NONNEG=1<<12,F_CONST=1
 function getTag(f){return f&0xFF;}
 function has(f,b){return(f&b)!==0;}
 function pruneUn(op,cf,cv){
+  if(FORBID_UN.has(op)) return true;
   const ct=getTag(cf);
+  if(PRUNE_LEVEL===0){
+    if(op==="neg"&&ct===TAG_NEG)return true;
+    if(op==="inv"&&ct===TAG_INV)return true;
+    return false;
+  }
   if(op==="neg"&&ct===TAG_NEG)return true;
   if(op==="abs"&&(ct===TAG_ABS||ct===TAG_NEG))return true;
   if(op==="abs"&&has(cf,F_HAS_ABS))return true;
@@ -889,6 +890,11 @@ function pruneUn(op,cf,cv){
   return false;
 }
 function pruneBin(op,af,bf,av,bv){
+  if(FORBID_BIN.has(op)) return true;
+  if(PRUNE_LEVEL===0){
+    if((op==="+"||op==="*") && has(af,F_CONST) && has(bf,F_CONST) && av > bv) return true;
+    return false;
+  }
   if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO)) && !NEED_ZERO)return true;
   if(op==="-"&&has(bf,F_ZERO))return true;
   if(op==="-"&&Math.abs(av-bv)<1e-15)return true;
@@ -965,6 +971,9 @@ onmessage=(ev)=>{
     NEED_ZERO=!!msg.needZero;
     NEED_ONE=!!msg.needOne;
     HAS_NEG=!!msg.hasNeg; HAS_SUB=!!msg.hasSub; HAS_DIV=!!msg.hasDiv; HAS_MUL=!!msg.hasMul;
+    PRUNE_LEVEL = Math.max(0, Math.min(2, msg.pruneLevel|0));
+    FORBID_UN = new Set(Array.isArray(msg.forbidUn)?msg.forbidUn:[]);
+    FORBID_BIN = new Set(Array.isArray(msg.forbidBin)?msg.forbidBin:[]);
 
     REQ_MASK = (msg.reqMask|0) || 0;
     REQ_POP  = (msg.reqPop|0) || 0;
@@ -1117,14 +1126,14 @@ function modeParams(mode){
     qGoal:0.40,qBB:0.10,qMeet:0.10,qDiv:0.06,qPow:0.07,qFunc:0.05,qDepth:0.10,qMag:0.08,qIrr:0.06,
     qPowBase:0.10, qPowExp:0.08,
     qReq:0.08,
-    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:7,
+    meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:8,
     revBeamMul:1.8, meetHitBonus:0.14,
     candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
     meetSweepMul:0.16, meetSweepPowMul:0.32,
-    beamMul:0.85, subLayerCapMul:0.95,
-    revIdxKeyCap:140, fwdIdxKeyCap:140, meetKeyProbeCap:160, meetSweepRevCap:180,
-    capUnMul:2.2, capBinMul:1.9
+    beamMul:0.82, subLayerCapMul:1.05,
+    revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:220, meetSweepRevCap:240,
+    capUnMul:2.8, capBinMul:2.3
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"min",
@@ -1132,14 +1141,14 @@ function modeParams(mode){
     qGoal:0.20,qBB:0.18,qMeet:0.12,qDiv:0.08,qPow:0.14,qFunc:0.10,qDepth:0.14,qMag:0.09,qIrr:0.07,
     qPowBase:0.16, qPowExp:0.12,
     qReq:0.14,
-    meetStyle:"bin", meetPrec:12, meetQ:16384, meetR:6,
+    meetStyle:"bin", meetPrec:12, meetQ:16384, meetR:12,
     revBeamMul:2.0, meetHitBonus:0.10,
     candEpsMul:1.45, confirmEpsMul:1.0, binSlackMul:0.30, confirmAbsFloor:0.0,
     spillMul:1.6, capMul:1.35, keepMeetDup:false,
     meetSweepMul:0.24, meetSweepPowMul:0.42,
-    beamMul:1.05, subLayerCapMul:1.35,
-    revIdxKeyCap:200, fwdIdxKeyCap:200, meetKeyProbeCap:220, meetSweepRevCap:260,
-    capUnMul:2.9, capBinMul:2.4
+    beamMul:1.32, subLayerCapMul:1.85,
+    revIdxKeyCap:260, fwdIdxKeyCap:260, meetKeyProbeCap:300, meetSweepRevCap:360,
+    capUnMul:4.0, capBinMul:3.4
   };
   return {
     keyPrec:12, bestPrec:11, keepMode:"min",
@@ -1147,20 +1156,22 @@ function modeParams(mode){
     qGoal:0.20,qBB:0.12,qMeet:0.20,qDiv:0.06,qPow:0.12,qFunc:0.08,qDepth:0.14,qMag:0.10,qIrr:0.06,
     qPowBase:0.14, qPowExp:0.10,
     qReq:0.12,
-    meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:10,
+    meetStyle:"bin", meetPrec:11, meetQ:12288, meetR:14,
     revBeamMul:2.8, meetHitBonus:0.22,
     candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.14, confirmAbsFloor:0.0,
     spillMul:1.55, capMul:1.25, keepMeetDup:false,
     meetSweepMul:0.34, meetSweepPowMul:0.60,
-    beamMul:1.0, subLayerCapMul:1.25,
-    revIdxKeyCap:260, fwdIdxKeyCap:260, meetKeyProbeCap:280, meetSweepRevCap:360,
-    capUnMul:2.5, capBinMul:2.1
+    beamMul:1.55, subLayerCapMul:2.05,
+    revIdxKeyCap:320, fwdIdxKeyCap:320, meetKeyProbeCap:360, meetSweepRevCap:460,
+    capUnMul:4.2, capBinMul:3.7
   };
 }
 
 let KEYP=12, BESTP=11;
 let ALLOW_ADD=true, NEED_ZERO=false, NEED_ONE=false;
 let HAS_NEG=true, HAS_SUB=true, HAS_DIV=true, HAS_MUL=true;
+let PRUNE_LEVEL=1;
+let FORBID_UN=new Set(), FORBID_BIN=new Set();
 
 // bitmask coverage retention (RIES-like: preserve required constructs)
 let REQ_MASK=0, REQ_POP=0;
@@ -1228,8 +1239,11 @@ function meetKeys(v){
   // 生成邻居 key (减少范围，提升速度，Meet_R 从 2 降为 1 足够了，因为有精度补救)
   // 如果你需要更宽的容错，保持原来的逻辑，但尽量少 push
   if(MEET_R > 0) {
-      _meetKeyOut.push(""+sign+"|"+e+"|"+(q0-1));
-      _meetKeyOut.push(""+sign+"|"+e+"|"+(q0+1));
+    const rr=Math.max(1,MEET_R|0);
+    for(let d=1;d<=rr;d++){
+      _meetKeyOut.push(""+sign+"|"+e+"|"+(q0-d));
+      _meetKeyOut.push(""+sign+"|"+e+"|"+(q0+d));
+    }
   }
   
   // 总是加入高精度 Key 作为备选
@@ -1327,7 +1341,7 @@ function wUn(op){switch(op){
   }
 }}
 function wBin(op){switch(op){
-  case"+":case"-":case"*":case"/":return 1;case"^":return 3;
+  case"+":case"-":case"*":case"/":return 1;case"^":return 3;case"logab":return 4;
   case"min":case"max":return 2;case"mod":return 3;
   case"atan2":case"hypot":return 4;case"gcd":case"lcm":return 6;default:{
     const m=CUSTOM_META.get(op); if(m&&m.type==="bin"&&Number.isFinite(m.w)) return m.w|0; return 2;
@@ -1376,6 +1390,7 @@ function applyUn(op,v){switch(op){
 }}
 function applyBin(op,a,b){switch(op){
   case"+":return a+b;case"-":return a-b;case"*":return a*b;case"/":return b===0?NaN:a/b;case"^":return safePowStable(a,b);
+  case"logab":return (a>0&&a!==1&&b>0)?(Math.log(b)/Math.log(a)):NaN;
   case"min":return Math.min(a,b);case"max":return Math.max(a,b);
   case"atan2":return Math.atan2(a,b);case"hypot":return Math.hypot(a,b);
   case"mod":{if(!nearInt(a)||!nearInt(b))return NaN;const bb=Math.round(b);return bb===0?NaN:((Math.round(a)%bb)+bb)%bb}
@@ -1452,6 +1467,14 @@ function needParen(child,parentOp,side){
   }
   return false;
 }
+
+function isNegAtomNode(n){
+  return !!(n && n.t===0 && Number.isFinite(n.val) && n.val<0);
+}
+function absAtomText(n){
+  const s=String(n?.sym??"");
+  return s.startsWith("-")?s.slice(1):s;
+}
 function pretty(n,parentOp=null,side=null){
   if(n.t===0)return n.sym;
   if(n.t===1){
@@ -1468,7 +1491,7 @@ function pretty(n,parentOp=null,side=null){
     return name+"("+s+")";
   }
   const op=n.op;
-  if(op==="min"||op==="max"||op==="atan2"||op==="hypot"||op==="mod"||op==="gcd"||op==="lcm"){
+  if(op==="min"||op==="max"||op==="atan2"||op==="hypot"||op==="mod"||op==="gcd"||op==="lcm"||op==="logab"){
     return op+"("+pretty(n.l,null,null)+","+pretty(n.r,null,null)+")";
   }
   const L=n.l,R=n.r;
@@ -1478,6 +1501,11 @@ function pretty(n,parentOp=null,side=null){
     const rout2=needParen(R.ch,op,"right")?"("+rs2+")":rs2;
     const lout2=needParen(L,op,"left")?"("+ls+")":ls;
     return lout2+"-"+rout2;
+  }
+  if(op==="+"&&isNegAtomNode(R)){
+    const rs2=absAtomText(R);
+    const lout2=needParen(L,op,"left")?"("+ls+")":ls;
+    return lout2+"-"+rs2;
   }
   if(op==="-"&&ALLOW_ADD&&R&&R.t===1&&R.op==="neg"){
     const rs2=pretty(R.ch,"+","right");
@@ -1505,11 +1533,11 @@ function latexA(n){
   }
   if(n.t===1){
     const ch0=latexA(n.ch);
-    const needP=(n.ch&&n.ch.t===2);
-    const ch=needP?("("+ch0+")"):ch0;
+    const needP=!!(n.ch&&n.ch.t!==0);
+    const ch=needP?("\\left("+ch0+"\\right)"):ch0;
     switch(n.op){
       case"neg":return"-"+ch;
-      case"sqrt":return"\\\\sqrt{"+ch0+"}";
+      case"sqrt":{const body=(n.ch&&n.ch.t===2)?("\\\\left("+ch0+"\\\\right)"):ch0;return"\\\\sqrt{"+body+"}";}
       case"cbrt":return"\\\\sqrt[3]{"+ch0+"}";
       case"inv":return"\\\\frac{1}{"+ch0+"}";
       case"square":return"{"+ch+"}^{2}";
@@ -1534,7 +1562,11 @@ function latexA(n){
   if(needParen(n.r,n.op,"right")) r="("+r+")";
   if(n.op==="/" )return"\\\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
   if(n.op==="*")return l+"\\\\cdot "+r;
-  if(n.op==="+")return l+"+"+r;
+  if(n.op==="+"){
+    if(n.r&&n.r.t===1&&n.r.op==="neg") return l+"-"+latexA(n.r.ch);
+    if(isNegAtomNode(n.r)) return l+"-"+latexA({t:0,sym:absAtomText(n.r),val:Math.abs(n.r.val)});
+    return l+"+"+r;
+  }
   if(n.op==="-")return l+"-"+r;
   return"\\\\mathrm{"+n.op+"}\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
 }
@@ -1566,7 +1598,13 @@ function opTag(op){switch(op){
   default:return TAG_NONE
 }}
 function pruneUn(op,cf,cv){
+  if(FORBID_UN.has(op)) return true;
   const ct=getTag(cf);
+  if(PRUNE_LEVEL===0){
+    if(op==="neg"&&ct===TAG_NEG)return true;
+    if(op==="inv"&&ct===TAG_INV)return true;
+    return false;
+  }
   if(op==="neg"&&ct===TAG_NEG)return true;
   if(op==="abs"&&(ct===TAG_ABS||ct===TAG_NEG))return true;
   if(op==="abs"&&has(cf,F_HAS_ABS))return true;
@@ -1592,6 +1630,11 @@ function pruneUn(op,cf,cv){
   return false
 }
 function pruneBin(op,af,bf,av,bv){
+  if(FORBID_BIN.has(op)) return true;
+  if(PRUNE_LEVEL===0){
+    if((op==="+"||op==="*") && has(af,F_CONST) && has(bf,F_CONST) && av > bv) return true;
+    return false;
+  }
   if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO))&&!NEED_ZERO)return true;
   if(op==="-"&&has(bf,F_ZERO))return true;
   if(op==="-"&&Math.abs(av-bv)<1e-15)return true;
@@ -1611,24 +1654,8 @@ function pruneBin(op,af,bf,av,bv){
   if(op==="+" && HAS_SUB && (getTag(bf)===TAG_NEG || getTag(af)===TAG_NEG)) return true;
   if(op==="*" && HAS_DIV && (getTag(bf)===TAG_INV || getTag(af)===TAG_INV)) return true;
   if(op==="/" && HAS_MUL && getTag(bf)===TAG_INV) return true;
-    if(op==="+"&&(has(af,F_ZERO)||has(bf,F_ZERO)) && !NEED_ZERO)return true;
-  if(op==="-"&&has(bf,F_ZERO))return true;
-  if(op==="-"&&Math.abs(av-bv)<1e-15)return true;
-  if(op==="*"&&(has(af,F_ZERO)||has(bf,F_ZERO)))return true;
-  
-  // --- 新增严格代数剪枝 ---
-  if(op==="*" && (has(af,F_ONE)||has(bf,F_ONE))) return true; // 禁止 x*1, 1*x
-  if(op==="/" && has(bf,F_ONE)) return true; // 禁止 x/1
-  
-  if(op==="^"){
-    if(has(bf,F_ONE)) return true; // 禁止 x^1 (解决 f 与 f^1 重复)
-    if(has(bf,F_ZERO)) return true; // 禁止 x^0
-    if(has(af,F_ONE)) return true; // 禁止 1^x
-    // 如果启用了一元函数 exp，则禁止二元运算 e^x (解决 e^f 与 exp(f) 重复)
-    if(has(af,F_E) && OPS_UN.includes("exp")) return true; 
-  }
-  
-  // 交换律规范化：如果两个操作数都是常数，强制从小到大排列 (ries 核心优化)
+
+  // 交换律规范化：如果两个操作数都是常数，强制从小到大排列
   if((op==="+"||op==="*") && has(af,F_CONST) && has(bf,F_CONST) && av > bv) return true;
 
   const fn=CUSTOM_PRUNE_BIN.get(op);
@@ -1656,6 +1683,7 @@ function invBinR(op,r,a){switch(op){
   case"+":return r-a;case"-":return a-r;
   case"*":return a===0?NaN:r/a;case"/":return r===0?NaN:a/r;
   case"^":return a<=0||r<=0?NaN:Math.log(r)/Math.log(a);
+  case"logab":return r===0?NaN:Math.pow(a,r);
   default:{
     const fn=CUSTOM_INV_BIN_R.get(op);
     if(fn){ try{ return fn(r,a); }catch(e){ return NaN; } }
@@ -1666,6 +1694,7 @@ function invBinL(op,r,b){switch(op){
   case"+":return r-b;case"-":return r+b;
   case"*":return b===0?NaN:r/b;case"/":return r*b;
   case"^":return b===0||r<=0?NaN:Math.pow(r,1/b);
+  case"logab":return (r!==0&&b>0)?Math.pow(b,1/r):NaN;
   default:{
     const fn=CUSTOM_INV_BIN_L.get(op);
     if(fn){ try{ return fn(r,b); }catch(e){ return NaN; } }
@@ -1937,6 +1966,11 @@ onmessage=async(ev)=>{
   // normalize constraints
   const leafOrder = String(constraints?.leafOrder||"");
   LEAF_ORDER = (leafOrder==="nondecreasing") ? "nondecreasing" : "";
+
+  const pruneLevelRaw = String(constraints?.pruneLevel||"normal").toLowerCase();
+  PRUNE_LEVEL = pruneLevelRaw==="relaxed" ? 0 : (pruneLevelRaw==="aggressive" ? 2 : 1);
+  FORBID_UN = new Set(Array.isArray(constraints?.forbidUnary)?constraints.forbidUnary.map(String):[]);
+  FORBID_BIN = new Set(Array.isArray(constraints?.forbidBinary)?constraints.forbidBinary.map(String):[]);
 
   // normalize extensions (ops only; constants are already in 'consts' list passed from UI)
   function normOpDef(d,kind){
@@ -2463,103 +2497,112 @@ onmessage=async(ev)=>{
   
 // [插入位置：在 tryMeetFwdWithRevIdx 函数结束后，buildRev 函数开始前]
 
-  // --- 核心增强：目标分解 (Target Decomposition) ---
-  // 这让算法能利用已有的正向结果，自我组合出 A^B=T, A*B=T, A+B=T
-  function tryTargetDecomposition(layerItems, T){
-    // 如果正向索引太少，或者目标T无效，跳过
-    if(fwdIdx.size < 10 || !Number.isFinite(T)) return;
-    
-    const absT = Math.abs(T);
-    const logT = (T > 0) ? Math.log(T) : NaN;
-    
-    // 遍历当前层生成的所有新元素
-    for(const item of layerItems){
-      const v = item.v;
-      if(!Number.isFinite(v)) continue;
-      const absV = Math.abs(v);
-
-      // 策略1：寻找乘法伙伴 (v * X = T  =>  X = T/v)
-      // 例如：如果目标是 100，当前算出了 25，我们去历史库里找有没有 4
-      if(HAS_MUL && absV > 1e-9){
-        const targetX = T / v;
-        // 剪枝：如果 targetX 太大或太小，库里肯定没有，跳过
-        if(Math.abs(targetX) <= CAP) {
-          tryMeetDecomp(item, targetX, "*", (a,b)=>mkB("*",a,b));
-        }
+  // --- 跳跃式发现（goal-driven jump, inspired by RIES-style target transforms）---
+  function jumpLookupNear(targetVal, maxHits){
+    if(!Number.isFinite(targetVal) || Math.abs(targetVal)>CAP) return [];
+    const keys=meetKeys(targetVal);
+    const out=[];
+    const seen=new Set();
+    const lim=Math.max(4, maxHits|0||24);
+    for(const k of keys){
+      const arr=fwdIdx.get(k);
+      if(!arr) continue;
+      for(let i=0;i<arr.length && out.length<lim;i++){
+        const it=arr[i];
+        const id=it.ast;
+        if(seen.has(id)) continue;
+        seen.add(id);
+        out.push(it);
       }
+      if(out.length>=lim) break;
+    }
+    return out;
+  }
 
-      // 策略2：寻找幂次伙伴 (A^B = T)
-      if(logT){ // 前提：T必须是正数
-        // 情况A：当前 item 是底数 (v^X = T => X = ln(T)/ln(v))
-        // 要求：v > 0 且 v != 1
-        if(v > 1e-9 && Math.abs(v-1) > 1e-9){
-          const lnV = Math.log(v);
-          const targetX = logT / lnV;
-          if(Math.abs(targetX) <= CAP) {
-            tryMeetDecomp(item, targetX, "^base", (a,b)=>mkB("^",a,b));
-          }
-        }
+  function mergeMaskOrCnt(a,b){
+    if(useBitmask){
+      const m=combMask(a.mask,b.mask);
+      return m>=0?m:null;
+    }
+    return addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
+  }
 
-        // 情况B：当前 item 是指数 (X^v = T => X = T^(1/v))
-        // 要求：v != 0
-        if(absV > 1e-9){
-          // 注意：Math.pow(T, 1/v) 可能会产生复数或NaN，这里只处理实数结果
-          // JS的 pow(正数, 任意数) 总是安全的实数
-          const targetX = Math.pow(T, 1/v);
-          if(Number.isFinite(targetX) && Math.abs(targetX) <= CAP){
-            tryMeetDecomp(item, targetX, "^exp", (a,b)=>mkB("^",b,a)); // 注意顺序：b是底数
-          }
-        }
-      }
-      
-      if(stopFlag) return;
+  function pushJumpPair(a,b,op,swap=false){
+    const L=swap?b:a;
+    const R=swap?a:b;
+    const merged=mergeMaskOrCnt(L,R);
+    if(merged==null) return;
+    const ast=mkB(op,L.ast,R.ast);
+    if(LEAF_ORDER && ast.ord && !ast.ord.ok) return;
+    const v=evalA(ast);
+    if(!Number.isFinite(v) || Math.abs(v)>CAP) return;
+    const opCost=wBin(op);
+    const cost=(L.cost|0)+(R.cost|0)+opCost;
+    if(cost>maxC+2) return;
+    const scale=Math.max(1,Math.abs(T),Math.abs(v));
+    const eps=2.8e-10*scale*(1+cost*0.05);
+    if(Math.abs(v-T)>eps && cost>maxC) return;
+
+    if(useBitmask){
+      pushBest({v,ast,cost,searchType:"meet",mask:merged});
+    }else{
+      pushBest({v,ast,cost,searchType:"meet",cnt:merged});
     }
   }
 
-  // 辅助函数：在正向历史库中模糊查找 targetVal
-  function tryMeetDecomp(itemA, targetVal, type, astBuilder){
-    // 使用 meetKeys 生成模糊键（处理精度误差）
-    const keys = meetKeys(targetVal);
-    
-    for(const k of keys){
-      const matches = fwdIdx.get(k);
-      if(!matches) continue;
-      
-      for(const itemB of matches){
-        // 严格的双重验证：数值必须非常接近
-        if(Math.abs(itemB.v - targetVal) < 1e-7 * Math.max(1, Math.abs(targetVal))){
-           
-           // 避免自身组合 (例如 x^x, x*x)，除非逻辑允许
-           // 一般来说，不同复杂度的项组合更有意义
-           
-           // 构建 AST
-           let ast;
-           if(type === "^exp") ast = astBuilder(itemA.ast, itemB.ast); // itemB is Base, itemA is Exp
-           else ast = astBuilder(itemA.ast, itemB.ast);
-           
-           if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
-           
-           // 估算新成本：两个组件的成本 + 操作符成本
-           const opCost = (type.startsWith("^") ? 3 : (type==="*" ? 2 : 1)); 
-           const newCost = itemA.cost + itemB.cost + opCost;
-           
-           // 只有当总成本不太离谱时才提交
-           if(newCost <= maxC + 3){
-             // 计算精确值
-             const trueVal = evalA(ast);
-             if(!Number.isFinite(trueVal)) continue;
-             
-             // 提交结果 (使用 "meet" 类型)
-             pushBest({
-               v: trueVal, 
-               ast: ast, 
-               cost: newCost, 
-               searchType: "meet", 
-               mask: (itemA.mask | itemB.mask)
-             });
-           }
+  function tryTargetDecomposition(layerItems,T){
+    if(!Number.isFinite(T) || fwdIdx.size<8 || !layerItems || !layerItems.length) return;
+
+    const limItems=Math.min(layerItems.length, Math.max(20,Math.floor(beamF*0.08)));
+    const logT=(T>0)?Math.log(T):NaN;
+
+    for(let i=0;i<limItems;i++){
+      const a=layerItems[i];
+      const v=a.v;
+      if(!Number.isFinite(v)) continue;
+      const av=Math.abs(v);
+
+      // T = a + x / a - x
+      if(HAS_SUB || ALLOW_ADD){
+        for(const b of jumpLookupNear(T-v,14)) pushJumpPair(a,b,"+");
+        for(const b of jumpLookupNear(v-T,10)) pushJumpPair(a,b,"-");
+        for(const b of jumpLookupNear(T+v,10)) pushJumpPair(b,a,"-");
+      }
+
+      // T = a * x, a / x, x / a
+      if(HAS_MUL && av>1e-12){
+        for(const b of jumpLookupNear(T/v,20)) pushJumpPair(a,b,"*");
+      }
+      if(HAS_DIV && av>1e-12){
+        for(const b of jumpLookupNear(v/T,10)) if(Math.abs(T)>1e-12) pushJumpPair(a,b,"/");
+        for(const b of jumpLookupNear(T*v,10)) pushJumpPair(b,a,"/");
+      }
+
+      // T = a^x or x^a (pow-heavy targets)
+      if(Array.isArray(opsBin) && opsBin.includes("^") && T>0){
+        if(v>0 && Math.abs(v-1)>1e-12){
+          const tx=logT/Math.log(v);
+          for(const b of jumpLookupNear(tx,16)) pushJumpPair(a,b,"^");
+        }
+        if(av>1e-12){
+          const base=Math.pow(T,1/v);
+          for(const b of jumpLookupNear(base,14)) pushJumpPair(b,a,"^");
         }
       }
+
+      // T = logab(a,x) or logab(x,a)
+      if(Array.isArray(opsBin) && opsBin.includes("logab") && Number.isFinite(logT) && T!==0){
+        if(v>0 && Math.abs(v-1)>1e-12){
+          const tx=Math.pow(v,T);
+          for(const b of jumpLookupNear(tx,10)) pushJumpPair(a,b,"logab");
+        }
+        if(v>0){
+          const base=Math.pow(v,1/T);
+          for(const b of jumpLookupNear(base,8)) pushJumpPair(b,a,"logab");
+        }
+      }
+
+      if(stopFlag) return;
     }
   }
 
@@ -2772,6 +2815,9 @@ onmessage=async(ev)=>{
       hasNeg:HAS_NEG,hasSub:HAS_SUB,hasDiv:HAS_DIV,hasMul:HAS_MUL,
       reqMask:REQ_MASK, reqPop:REQ_POP,
       leafOrder:LEAF_ORDER,
+      pruneLevel:PRUNE_LEVEL,
+      forbidUn:Array.from(FORBID_UN),
+      forbidBin:Array.from(FORBID_BIN),
       customUnary, customBinary
     };
 
@@ -2849,7 +2895,10 @@ onmessage=async(ev)=>{
 
   async function computeLayerMT(c,capUn,capBin){
     const{bucket,put}=mkBucket(beamF,mp.spillMul);
-    const W=subWorkers.length+1;
+    const estLoad=(capUn*opsUn.length)+(capBin*opsBin.length);
+    const activeSub=Math.min(subWorkers.length, Math.max(1, Math.floor(estLoad/12000)));
+    const workersUse=activeSub>0?subWorkers.slice(0,activeSub):[];
+    const W=workersUse.length+1;
     const allowPow=Array.isArray(opsBin)&&opsBin.includes("^");
 
     // main-thread stripe 0 (simple)
@@ -2932,7 +2981,7 @@ onmessage=async(ev)=>{
       }
     }
 
-    const tasks=subWorkers.map((w,idx)=>new Promise((resolve)=>{
+    const tasks=workersUse.map((w,idx)=>new Promise((resolve)=>{
       const workerId=idx+1;
       const h=(ev)=>{if(ev.data?.type==="taskDone"){w.removeEventListener("message",h);resolve(ev.data.payload);}};
       w.addEventListener("message",h);
