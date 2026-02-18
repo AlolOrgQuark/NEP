@@ -452,7 +452,10 @@ async function ensureLatexRenderer(){
   if(latexScriptLoading) return latexScriptLoading;
 
   window.MathJax = window.MathJax || {
-    tex: { inlineMath: [['\\(','\\)']] },
+    tex: {
+      inlineMath: [['\\(','\\)']],
+      processEscapes: true
+    },
     svg: { fontCache: 'global' },
     options: { renderActions: { addMenu: [] } }
   };
@@ -468,15 +471,116 @@ async function ensureLatexRenderer(){
   return latexScriptLoading;
 }
 
+const SUP_DIGITS={"⁰":"0","¹":"1","²":"2","³":"3","⁴":"4","⁵":"5","⁶":"6","⁷":"7","⁸":"8","⁹":"9"};
+
+function normalizeTargetExpr(src){
+  let s=String(src??"").trim();
+  s=s.replace(/[“”]/g,'"').replace(/[‘’]/g,"'");
+  s=s.replace(/[−﹣－]/g,"-").replace(/[×·]/g,"*").replace(/[÷]/g,"/");
+  s=s.replace(/\s+/g,"");
+  // reduce chained signs: +- => -, -- => +, -+ => -, ++ => +
+  for(let i=0;i<6;i++){
+    const next=s.replace(/\+\+/g,"+").replace(/\+-/g,"-").replace(/-\+/g,"-").replace(/--/g,"+");
+    if(next===s)break;
+    s=next;
+  }
+  s=s.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+/g,m=>"^"+m.split("").map(ch=>SUP_DIGITS[ch]||"").join(""));
+  return s;
+}
+
 function parseTarget(s){
-  s=String(s).trim();
-  if(s==="pi"||s==="π")return Math.PI;
-  if(s==="e")return Math.E;
-  if(s==="phi"||s==="φ")return(1+Math.sqrt(5))/2;
-  if(s==="sqrt2"||s==="√2")return Math.SQRT2;
-  if(s==="sqrt3"||s==="√3")return Math.sqrt(3);
-  if(s==="sqrt5"||s==="√5")return Math.sqrt(5);
-  return Number(s);
+  const src=normalizeTargetExpr(s);
+  if(!src)return NaN;
+  const tokens=[];
+  const isDigit=(ch)=>ch>="0"&&ch<="9";
+  const isAlpha=(ch)=>/[A-Za-z_πφ√]/.test(ch);
+  let i=0;
+  while(i<src.length){
+    const ch=src[i];
+    if(isDigit(ch)||ch==="."){
+      let j=i+1;
+      while(j<src.length&&(isDigit(src[j])||src[j]==="."))j++;
+      tokens.push({t:"num",v:Number(src.slice(i,j))});
+      i=j;continue;
+    }
+    if(isAlpha(ch)){
+      let j=i+1;
+      while(j<src.length&&/[A-Za-z0-9_πφ]/.test(src[j]))j++;
+      const raw=src.slice(i,j).toLowerCase();
+      if(raw==="pi"||raw==="π")tokens.push({t:"num",v:Math.PI});
+      else if(raw==="e")tokens.push({t:"num",v:Math.E});
+      else if(raw==="phi"||raw==="φ")tokens.push({t:"num",v:(1+Math.sqrt(5))/2});
+      else if(raw==="sqrt2"||raw==="√2")tokens.push({t:"num",v:Math.SQRT2});
+      else if(raw==="sqrt3"||raw==="√3")tokens.push({t:"num",v:Math.sqrt(3)});
+      else if(raw==="sqrt5"||raw==="√5")tokens.push({t:"num",v:Math.sqrt(5)});
+      else return NaN;
+      i=j;continue;
+    }
+    if("()+-*/^".includes(ch)){tokens.push({t:ch,v:ch});i++;continue;}
+    return NaN;
+  }
+
+  const out=[]; const ops=[];
+  const prec={"u-":4,"^":3,"*":2,"/":2,"+":1,"-":1};
+  const rightAssoc={"^":true,"u-":true};
+  let prevType="start";
+  for(const tk of tokens){
+    if(tk.t==="num"){
+      if(prevType==="num"||prevType===")") return NaN;
+      out.push(tk); prevType="num"; continue;
+    }
+    if(tk.t==="("){
+      if(prevType==="num"||prevType===")") return NaN;
+      ops.push(tk); prevType="("; continue;
+    }
+    if(tk.t===")"){
+      while(ops.length&&ops[ops.length-1].t!=="(") out.push(ops.pop());
+      if(!ops.length)return NaN;
+      ops.pop(); prevType=")"; continue;
+    }
+    let op=tk.t;
+    if(op==="-"&&(prevType==="start"||prevType==="("||prevType==="op")){
+      ops.push({t:"u-",v:"u-"});
+      prevType="op";
+      continue;
+    }
+    if(op==="+"&&(prevType==="start"||prevType==="("||prevType==="op")) { prevType="op"; continue; }
+    if(prevType==="start"||prevType==="("||prevType==="op") return NaN;
+    while(ops.length){
+      const top=ops[ops.length-1].t;
+      if(top==="(")break;
+      const cond=rightAssoc[op] ? (prec[op]<prec[top]) : (prec[op]<=prec[top]);
+      if(!cond)break;
+      out.push(ops.pop());
+    }
+    ops.push({t:op,v:op}); prevType="op";
+  }
+  if(prevType==="op"||prevType==="(") return NaN;
+  while(ops.length){
+    const op=ops.pop();
+    if(op.t==="(") return NaN;
+    out.push(op);
+  }
+
+  const st=[];
+  for(const tk of out){
+    if(tk.t==="num") st.push(tk.v);
+    else if(tk.t==="u-"){
+      if(st.length<1)return NaN;
+      st.push(-st.pop());
+    }else{
+      if(st.length<2)return NaN;
+      const b=st.pop(),a=st.pop();
+      let v=NaN;
+      if(tk.t==="+")v=a+b;
+      else if(tk.t==="-")v=a-b;
+      else if(tk.t==="*")v=a*b;
+      else if(tk.t==="/")v=a/b;
+      else if(tk.t==="^")v=Math.pow(a,b);
+      st.push(v);
+    }
+  }
+  return st.length===1?st[0]:NaN;
 }
 function parseNNI(r,ie=false){
   const t=String(r??"").trim();
@@ -1133,47 +1237,47 @@ function modeParams(mode){
   if(mode==="speed") return {
     keyPrec:10, bestPrec:10, keepMode:"goal",
     bbD:18, bbMagA:0.032,
-    qGoal:0.40,qBB:0.10,qMeet:0.10,qDiv:0.06,qPow:0.07,qFunc:0.05,qDepth:0.10,qMag:0.08,qIrr:0.06,
+    qGoal:0.46,qBB:0.08,qMeet:0.14,qDiv:0.04,qPow:0.07,qFunc:0.04,qDepth:0.08,qMag:0.05,qIrr:0.04,
     qPowBase:0.10, qPowExp:0.08,
     qReq:0.08,
     meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:8,
-    revBeamMul:1.8, meetHitBonus:0.14,
+    revBeamMul:1.9, meetHitBonus:0.16,
     candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
     meetSweepMul:0.16, meetSweepPowMul:0.32,
-    beamMul:0.82, subLayerCapMul:1.05,
+    beamMul:0.76, subLayerCapMul:0.95,
     revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:180, meetSweepRevCap:240,
-    capUnMul:3.0, capBinMul:2.5, jumpMul:1.00, meetStage2:1, qSeed:0.10
+    capUnMul:2.8, capBinMul:2.3, jumpMul:0.95, meetStage2:1, qSeed:0.08
   };
   if(mode==="accuracy") return {
-    keyPrec:14, bestPrec:12, keepMode:"min",
+    keyPrec:14, bestPrec:12, keepMode:"goal",
     bbD:72, bbMagA:0.018,
-    qGoal:0.20,qBB:0.18,qMeet:0.12,qDiv:0.08,qPow:0.14,qFunc:0.10,qDepth:0.14,qMag:0.09,qIrr:0.07,
+    qGoal:0.30,qBB:0.12,qMeet:0.18,qDiv:0.06,qPow:0.14,qFunc:0.08,qDepth:0.12,qMag:0.07,qIrr:0.05,
     qPowBase:0.16, qPowExp:0.12,
     qReq:0.14,
     meetStyle:"bin", meetPrec:12, meetQ:16384, meetR:12,
     revBeamMul:2.0, meetHitBonus:0.10,
-    candEpsMul:1.45, confirmEpsMul:1.0, binSlackMul:0.30, confirmAbsFloor:0.0,
+    candEpsMul:1.35, confirmEpsMul:1.0, binSlackMul:0.28, confirmAbsFloor:0.0,
     spillMul:1.6, capMul:1.35, keepMeetDup:false,
     meetSweepMul:0.24, meetSweepPowMul:0.42,
-    beamMul:1.32, subLayerCapMul:1.85,
+    beamMul:1.42, subLayerCapMul:2.00,
     revIdxKeyCap:260, fwdIdxKeyCap:260, meetKeyProbeCap:300, meetSweepRevCap:360,
-    capUnMul:5.2, capBinMul:4.5, jumpMul:2.25, meetStage2:1, qSeed:0.24
+    capUnMul:5.6, capBinMul:4.8, jumpMul:2.45, meetStage2:1, qSeed:0.22
   };
   return {
-    keyPrec:12, bestPrec:11, keepMode:"min",
+    keyPrec:12, bestPrec:11, keepMode:"goal",
     bbD:44, bbMagA:0.02,
-    qGoal:0.20,qBB:0.12,qMeet:0.20,qDiv:0.06,qPow:0.12,qFunc:0.08,qDepth:0.14,qMag:0.10,qIrr:0.06,
+    qGoal:0.28,qBB:0.10,qMeet:0.24,qDiv:0.06,qPow:0.12,qFunc:0.08,qDepth:0.12,qMag:0.08,qIrr:0.05,
     qPowBase:0.14, qPowExp:0.10,
     qReq:0.12,
     meetStyle:"bin", meetPrec:11, meetQ:12288, meetR:14,
     revBeamMul:2.8, meetHitBonus:0.22,
-    candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.14, confirmAbsFloor:0.0,
+    candEpsMul:3.2, confirmEpsMul:1.0, binSlackMul:0.14, confirmAbsFloor:0.0,
     spillMul:1.55, capMul:1.25, keepMeetDup:false,
     meetSweepMul:0.34, meetSweepPowMul:0.60,
-    beamMul:1.55, subLayerCapMul:2.05,
+    beamMul:1.64, subLayerCapMul:2.20,
     revIdxKeyCap:320, fwdIdxKeyCap:320, meetKeyProbeCap:360, meetSweepRevCap:460,
-    capUnMul:6.0, capBinMul:5.3, jumpMul:2.55, meetStage2:1, qSeed:0.28
+    capUnMul:6.5, capBinMul:5.7, jumpMul:2.70, meetStage2:1, qSeed:0.24
   };
 }
 
@@ -1861,10 +1965,10 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nPowBase=Math.max(0,Math.floor(beam*(mp.qPowBase||0)));
   const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
   const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
-  const exploreRatio = mode==="speed" ? 0.06 : (mode==="accuracy" ? 0.20 : 0.18);
+  const exploreRatio = mode==="speed" ? 0.04 : (mode==="accuracy" ? 0.14 : 0.12);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
-  const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.06:0.12)));
+  const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.10)));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
@@ -3031,7 +3135,8 @@ function collectLeaves(ast, out){
   async function computeLayerMT(c,capUn,capBin){
     const{bucket,put}=mkBucket(beamF,mp.spillMul);
     const estLoad=(capUn*opsUn.length)+(capBin*opsBin.length);
-    const activeSub=Math.min(subWorkers.length, Math.max(1, Math.ceil(estLoad/9000)));
+    const loadUnit=(mode==="speed")?5600:9000;
+    const activeSub=Math.min(subWorkers.length, Math.max(1, Math.ceil(estLoad/loadUnit)));
     const workersUse=activeSub>0?subWorkers.slice(0,activeSub):[];
     const W=workersUse.length+1;
     const allowPow=Array.isArray(opsBin)&&opsBin.includes("^");
