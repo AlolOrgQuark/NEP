@@ -91,6 +91,10 @@
     .copyTiny{padding:4px 8px;font-size:12px}
     .noteBox{margin-top:10px;padding:10px;border:1px dashed rgba(127,127,127,.35);border-radius:10px;font-size:12px;line-height:1.35}
     .noteBox code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:12px}
+    th.sortable{cursor:pointer;user-select:none}
+    th.sortable::after{content:" ↕";opacity:.35;font-size:11px}
+    th.sortable[data-sort-dir="asc"]::after{content:" ↑";opacity:.85}
+    th.sortable[data-sort-dir="desc"]::after{content:" ↓";opacity:.85}
   </style>
 </head>
 <body>
@@ -208,6 +212,11 @@ function getConstraints(){
       </div>
     </details>
 
+  <div class="status" id="status" style="display:none"></div>
+  <div class="pruneStats" id="pruneStats" style="display:none"></div>
+</div>
+
+<div class="box">
   <div class="runtimePanel" id="runtimePanel">
     <div class="runtimeMeta">
       <span id="rtComplexity">复杂度：0/0</span>
@@ -216,9 +225,6 @@ function getConstraints(){
     </div>
     <div class="runtimeBar"><div class="runtimeBarFill" id="rtBar"></div></div>
   </div>
-
-  <div class="status" id="status" style="display:none"></div>
-  <div class="pruneStats" id="pruneStats" style="display:none"></div>
 </div>
 
 <!-- Buttons moved here: above results table -->
@@ -237,12 +243,12 @@ function getConstraints(){
   <table>
     <thead>
       <tr>
-        <th style="width:6%">type</th>
-        <th>expression</th>
-        <th style="width:12%">value</th>
-        <th style="width:10%">distance</th>
-        <th style="width:10%">accuracy</th>
-        <th class="right" style="width:4%">C</th>
+        <th style="width:6%" data-sort-key="searchType" class="sortable">type</th>
+        <th data-sort-key="expr" class="sortable">expression</th>
+        <th style="width:12%" data-sort-key="v" class="sortable">value</th>
+        <th style="width:10%" data-sort-key="delta" class="sortable">distance</th>
+        <th style="width:10%" data-sort-key="acc" class="sortable">accuracy</th>
+        <th class="right sortable" style="width:4%" data-sort-key="cost">C</th>
         <th style="width:2%">copy</th>
       </tr>
     </thead>
@@ -643,6 +649,38 @@ async function copyText(text){
 }
 
 let lastRows=[];
+const sortState={key:null,dir:"asc"};
+function sortRows(rows){
+  const arr=(rows||[]).slice();
+  const k=sortState.key;
+  if(!k) return arr;
+  const dir=sortState.dir==="asc"?1:-1;
+  const numKeys=new Set(["v","delta","cost"]);
+  arr.sort((a,b)=>{
+    let av=a?.[k], bv=b?.[k];
+    if(k==="searchType") return dir*String(av||"").localeCompare(String(bv||""),"zh-CN",{numeric:true,sensitivity:"base"});
+    if(k==="acc"){
+      av=String(av||"").toLowerCase(); bv=String(bv||"").toLowerCase();
+      const rank=(x)=>x==="exact"?0:(x==="close"?1:2);
+      return dir*(rank(av)-rank(bv));
+    }
+    if(numKeys.has(k)){
+      av=Number(av); bv=Number(bv);
+      if(!Number.isFinite(av)&&!Number.isFinite(bv)) return 0;
+      if(!Number.isFinite(av)) return 1;
+      if(!Number.isFinite(bv)) return -1;
+      return dir*(av-bv);
+    }
+    return dir*String(av??"").localeCompare(String(bv??""),"zh-CN",{numeric:true,sensitivity:"base"});
+  });
+  return arr;
+}
+function updateSortHeaders(){
+  document.querySelectorAll("thead th.sortable").forEach((th)=>{
+    const key=th.dataset.sortKey;
+    th.dataset.sortDir=(key&&sortState.key===key)?sortState.dir:"";
+  });
+}
 $("btnCopyAllExpr").onclick=()=>{ if(!lastRows.length)return; copyText(lastRows.map(r=>r.expr).join("\n")); };
 $("btnCopyAllTable").onclick=()=>{
   if(!lastRows.length)return;
@@ -654,11 +692,12 @@ $("btnCopyAllTable").onclick=()=>{
 };
 
 async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
-  lastRows=rows||[];
+  lastRows=(rows||[]).slice();
+  const sorted=sortRows(lastRows);
   const tb=$("tbody");tb.innerHTML="";
   const frag=document.createDocumentFragment();
   const useLatex = latexMode && await ensureLatexRenderer();
-  for(const r of rows){
+  for(const r of sorted){
     const tr=document.createElement("tr");
     const t1=document.createElement("td");
     const tg=document.createElement("span");
@@ -1842,10 +1881,28 @@ function mkBucket(beam,spillMul){
   const keepSp=Math.max(beam*20,16000);
   const hard=Math.floor(spLim*Math.max(0.35,Math.min(2.0,spillMul||1.0)));
   function spill(){
-    const v=Array.from(bucket.values());
-    v.sort((a,b)=>a.keep-b.keep);
+    if(bucket.size<=keepSp) return;
+    const vals=Array.from(bucket.values());
+    const heap=[];
+    for(const it of vals){
+      if(!Number.isFinite(it.keep)) continue;
+      if(heap.length<keepSp){
+        heapPushMax(heap,it,(x)=>x.keep);
+      }else if(it.keep<heap[0].keep){
+        heap[0]=it;
+        let idx=0;
+        for(;;){
+          let l=idx*2+1,r=l+1,b=idx;
+          if(l<heap.length && heap[l].keep>heap[b].keep)b=l;
+          if(r<heap.length && heap[r].keep>heap[b].keep)b=r;
+          if(b===idx)break;
+          const t=heap[idx];heap[idx]=heap[b];heap[b]=t;
+          idx=b;
+        }
+      }
+    }
     bucket.clear();
-    for(let i=0;i<Math.min(keepSp,v.length);i++)bucket.set(v[i].key,v[i]);
+    for(const it of heap) bucket.set(it.key,it);
   }
   return{
     bucket,
@@ -2063,6 +2120,11 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
 
   if(out.length<beam){
     take(topK(items,beam-out.length,(x)=>x.keep,true), beam-out.length);
+  }
+  for(const it of out){
+    if(it.__sc!==undefined) delete it.__sc;
+    if(it.revHit!==undefined) delete it.revHit;
+    if(it.cov!==undefined) delete it.cov;
   }
   return out;
 }
@@ -3135,7 +3197,8 @@ function collectLeaves(ast, out){
   async function computeLayerMT(c,capUn,capBin){
     const{bucket,put}=mkBucket(beamF,mp.spillMul);
     const estLoad=(capUn*opsUn.length)+(capBin*opsBin.length);
-    const loadUnit=(mode==="speed")?5600:9000;
+    const opDensity=Math.max(1,(opsUn.length*1.4+opsBin.length));
+    const loadUnit=Math.max(3600,Math.floor((mode==="speed"?5200:7600)/Math.sqrt(opDensity/8)));
     const activeSub=Math.min(subWorkers.length, Math.max(1, Math.ceil(estLoad/loadUnit)));
     const workersUse=activeSub>0?subWorkers.slice(0,activeSub):[];
     const W=workersUse.length+1;
@@ -3629,6 +3692,18 @@ $("timeLimit").disabled=$("infiniteTime").checked;
 updateMtHint();
 hookAutoSave();
 updateRuntimePanel({c:0,maxC:Number($("maxC").value||0),elapsed:0,visited:0});
+
+document.querySelectorAll("thead th.sortable").forEach((th)=>{
+  th.addEventListener("click",()=>{
+    const key=th.dataset.sortKey;
+    if(!key) return;
+    if(sortState.key===key) sortState.dir=(sortState.dir==="asc"?"desc":"asc");
+    else { sortState.key=key; sortState.dir="asc"; }
+    updateSortHeaders();
+    renderResults(lastRows,$("showCounts").checked,$("debugMode").checked,$("latexMode").checked);
+  });
+});
+updateSortHeaders();
 })();
 </script>
 </body>
