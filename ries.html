@@ -228,6 +228,11 @@ function allowCandidate(ctx){
   for(const s of leaves){
     if(isNumberSym(s)) nums.push(Number(s));
   }
+  // 这里是完整兜底逻辑：长度必须一致，逐位严格相等。
+  if(nums.length!==SEQ.length) return false;
+  for(let i=0;i<SEQ.length;i++){
+    if(nums[i]!==SEQ[i]) return false;
+  }
   if(nums.length!==SEQ.length) return false;
   for(let i=0;i<SEQ.length;i++) if(nums[i]!==SEQ[i]) return false;
   return true;
@@ -267,7 +272,7 @@ function allowCandidate(ctx){
   <table>
     <thead>
       <tr>
-        <th style="width:6%" data-sort-key="searchType" class="sortable">type</th>
+        <th id="thType" style="width:6%" data-sort-key="searchType" class="sortable">type</th>
         <th data-sort-key="expr" class="sortable">expression</th>
         <th style="width:12%" data-sort-key="v" class="sortable">value</th>
         <th style="width:10%" data-sort-key="delta" class="sortable">distance</th>
@@ -625,12 +630,19 @@ function getOps(){
 
 function normalizeMode(mode){
   if(mode==="balanced"||mode==="meet") return "normal";
-  if(mode==="free"||mode==="meetfast"||mode==="speed") return "medium";
+  if(mode==="speed") return "normal";
+  if(mode==="free"||mode==="meetfast") return "medium";
   if(mode==="ries") return "accuracy";
   if(mode==="normal"||mode==="medium"||mode==="accuracy") return mode;
   return "normal";
 }
 function tuneOpsByMode(mode){ normalizeMode(mode); }
+function mapUiModeToEngine(mode){
+  const m=normalizeMode(mode);
+  if(m==="normal") return "medium"; // 普通 -> speed profile
+  if(m==="medium") return "normal"; // 中等 -> normal profile
+  return m;
+}
 
 function getConsts(){
   const en=new Set([...document.querySelectorAll(".cstOn")].filter(x=>x.checked).map(x=>x.dataset.key));
@@ -712,6 +724,15 @@ $("btnCopyAllTable").onclick=()=>{
   copyText(lines.join("\n"));
 };
 
+function setTypeColumnVisible(show){
+  const th=$("thType");
+  if(th) th.style.display=show?"":"none";
+  document.querySelectorAll("#tbody tr").forEach((tr)=>{
+    const td=tr.firstElementChild;
+    if(td) td.style.display=show?"":"none";
+  });
+}
+
 async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
   lastRows=(rows||[]).slice();
   const sorted=sortRows(lastRows);
@@ -728,6 +749,7 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
       tg.textContent=tp;
       t1.appendChild(tg);
     }
+    t1.style.display=debugOn?"":"none";
     const t2=document.createElement("td");
     t2.className="mono expr";
     t2.textContent=r.expr;
@@ -761,6 +783,7 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
     frag.appendChild(tr);
   }
   tb.appendChild(frag);
+  setTypeColumnVisible(debugOn);
 }
 
 // ---------- localStorage ----------
@@ -865,6 +888,11 @@ $("mode").addEventListener("change",()=>{
   scheduleSave();
 });
 $("infiniteTime").addEventListener("change",()=>{$("timeLimit").disabled=$("infiniteTime").checked;scheduleSave();});
+$("debugMode").addEventListener("change",()=>{
+  setTypeColumnVisible($("debugMode").checked);
+  renderResults(lastRows,$("showCounts").checked,$("debugMode").checked,$("latexMode").checked);
+  scheduleSave();
+});
 
 // ================= SubWorker code (supports reqMask + custom ops + leafOrder pruning) =================
 const SUBWORKER_CODE = `
@@ -2163,8 +2191,8 @@ onmessage=async(ev)=>{
   }=msg;
 
   mode=mode||"normal";
-  mode=(mode==="balanced"||mode==="meet")?"normal":mode;
-  mode=(mode==="free"||mode==="meetfast"||mode==="speed")?"medium":mode;
+  mode=(mode==="balanced"||mode==="meet"||mode==="speed")?"normal":mode;
+  mode=(mode==="free"||mode==="meetfast")?"medium":mode;
   mode=(mode==="ries")?"accuracy":mode;
   const mp=modeParams(mode);
 
@@ -2651,13 +2679,24 @@ function collectLeaves(ast, out){
     const hasOp=(op)=> Array.isArray(opsBin) && opsBin.includes(op);
     if(!hasOp('+')||!hasOp('-')||!hasOp('*')||!hasOp('/')||!hasOp('^')) return;
 
-    const atoms=pickInterestingAtoms(9);
-    if(atoms.length<2) return;
-
     const one=getConstNodeByValue(1);
     const two=getConstNodeByValue(2);
     const three=getConstNodeByValue(3);
     const scales=[{k:two,kv:2},{k:three,kv:3}];
+
+    const pushIfNear=(expr, tag='guided')=>{
+      const v=evalA(expr);
+      if(!Number.isFinite(v) || Math.abs(v)>CAP) return;
+      const cst=astCost(expr);
+      const err=Math.abs(v-T);
+      const scale=Math.max(1,Math.abs(T));
+      if(cst<=maxC+3 && err<=Math.max(2e-3,scale*8e-5)){
+        pushBest({v,ast:expr,cost:cst,searchType:tag});
+      }
+    };
+
+    const atoms=pickInterestingAtoms(9);
+    if(atoms.length<2) return;
 
     const pairCap=Math.min(14,atoms.length*atoms.length);
     let pairsTried=0;
@@ -2670,7 +2709,7 @@ function collectLeaves(ast, out){
         const b=mkC(B.s,B.v,ordLeaf(B.s));
         pairsTried++;
 
-        // motif-1: (a-b) + (a^2*b)^(a^(1-a/(b-1)))
+        // generic motif-1: (a-b) + (a^2*b)^(a^(1-a/(b-1)))
         try{
           const bMinus1 = mkB('-', b, one);
           const aDiv = mkB('/', a, bMinus1);
@@ -2681,18 +2720,10 @@ function collectLeaves(ast, out){
           const p1 = mkB('^', base, p2);
           const lhs = mkB('-', a, b);
           const expr = mkB('+', lhs, p1);
-          const v=evalA(expr);
-          if(Number.isFinite(v) && Math.abs(v)<=CAP){
-            const cst=astCost(expr);
-            const err=Math.abs(v-T);
-            const scale=Math.max(1,Math.abs(T));
-            if(cst<=maxC+2 && err<=Math.max(5e-4,scale*2e-5)){
-              pushBest({v,ast:expr,cost:cst,searchType:'guided'});
-            }
-          }
+          pushIfNear(expr,'guided');
         }catch(e){}
 
-        // motif-2 family: (a-n)+m*a^(n-a)*(1+m*a^b)
+        // generic motif-2 family: (a-n)+m*a^(n-a)*(1+m*a^b)
         for(const sc of scales){
           try{
             const n=sc.k;
@@ -2704,14 +2735,7 @@ function collectLeaves(ast, out){
             const onePlus=mkB('+', one, mkB('*', sc.k, aPowB));
             const prod=mkB('*', mPA, onePlus);
             const expr=mkB('+', left, prod);
-            const v=evalA(expr);
-            if(!Number.isFinite(v) || Math.abs(v)>CAP) continue;
-            const cst=astCost(expr);
-            const err=Math.abs(v-T);
-            const scale=Math.max(1,Math.abs(T));
-            if(cst<=maxC+2 && err<=Math.max(8e-4,scale*3e-5)){
-              pushBest({v,ast:expr,cost:cst,searchType:'guided'});
-            }
+            pushIfNear(expr,'guided');
           }catch(e){}
         }
       }
@@ -3703,6 +3727,7 @@ $("btnStart").onclick=()=>{
   lastT=T;
 
   const mode=normalizeMode($("mode").value);
+  const engineMode=mapUiModeToEngine(mode);
   $("mode").value=mode;
 
   let bidir=$("bidir").checked;
@@ -3784,7 +3809,7 @@ $("btnStart").onclick=()=>{
       if(debugOn){
         $("status").style.display="flex";
         statusPills({
-          T:fmt(lastT),status:type,profile:payload.profile||mode,mode:payload.mode,
+          T:fmt(lastT),status:type,profile:mode,mode:payload.mode,
           mt:payload.mt||"OFF",c:(payload.c??0)+"/"+payload.maxC,
           elapsed_ms:payload.elapsed,visited:payload.visited,pruned:payload.pruned||0,
           meetLookups:payload.meetLookups||0,meetCand:payload.meetCandidates||0,
@@ -3820,7 +3845,7 @@ $("btnStart").onclick=()=>{
 
   worker.postMessage({
     type:"start",
-    T,mode,maxC,beam,divRatio,outN,
+    T,mode:engineMode,maxC,beam,divRatio,outN,
     timeLimit,infiniteTime,emitInterval,
     opsUn,opsBin,consts,
     showCounts,bidir,
@@ -3878,6 +3903,7 @@ document.querySelectorAll("thead th.sortable").forEach((th)=>{
     if(sortState.key===key) sortState.dir=(sortState.dir==="asc"?"desc":"asc");
     else { sortState.key=key; sortState.dir="asc"; }
     updateSortHeaders();
+setTypeColumnVisible($("debugMode").checked);
     renderResults(lastRows,$("showCounts").checked,$("debugMode").checked,$("latexMode").checked);
   });
 });
