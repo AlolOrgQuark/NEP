@@ -107,12 +107,12 @@
     <div>
       <label>模式</label>
       <select id="mode">
-        <option value="normal" selected>普通模式</option>
-        <option value="medium">中等模式</option>
+        <option value="speed" selected>普通模式</option>
+        <option value="normal">中等模式</option>
         <option value="accuracy">精确模式</option>
       </select>
       <div class="muted" style="margin-top:6px;line-height:1.25">
-        普通模式：覆盖优先，探索最广。中等模式：在速度与覆盖之间平衡。精确模式：更强调保留构件/覆盖质量（参考 RIES 的“保留重要中间式”策略）。
+        普通模式：速度优先（speed），用于快速搜索。中等模式：覆盖优先（normal），用于更稳健探索。精确模式：更强调保留构件/覆盖质量（参考 RIES 的“保留重要中间式”策略）。
       </div>
     </div>
 
@@ -208,15 +208,15 @@ function getConstraints(){
     // 早剪枝：对 +/* 做稳定顺序规范，减少交换律重复
     binaryPrune:(ctx)=>{
       if((ctx.op==="+"||ctx.op==="*") && Number.isFinite(ctx.av) && Number.isFinite(ctx.bv)){
-        if(ctx.av>ctx.bv) return true;
+        if(ctx.av&gt;ctx.bv) return true;
       }
       // 阻止过大中间值继续膨胀（对 speed/medium 模式很关键）
-      if((ctx.op==="^"||ctx.op==="exp") && (Math.abs(ctx.av)>20 || Math.abs(ctx.bv)>20)) return true;
+      if((ctx.op==="^"||ctx.op==="exp") && (Math.abs(ctx.av)&gt;20 || Math.abs(ctx.bv)&gt;20)) return true;
       return false;
     },
 
     unaryPrune:(ctx)=>{
-      if((ctx.op==="exp"||ctx.op==="fact"||ctx.op==="gammafn") && Math.abs(ctx.v)>12) return true;
+      if((ctx.op==="exp"||ctx.op==="fact"||ctx.op==="gammafn") && Math.abs(ctx.v)&gt;12) return true;
       return false;
     }
   };
@@ -227,6 +227,11 @@ function allowCandidate(ctx){
   const nums=[];
   for(const s of leaves){
     if(isNumberSym(s)) nums.push(Number(s));
+  }
+  // 这里是完整兜底逻辑：长度必须一致，逐位严格相等。
+  if(nums.length!==SEQ.length) return false;
+  for(let i=0;i<SEQ.length;i++){
+    if(nums[i]!==SEQ[i]) return false;
   }
   // 这里是完整兜底逻辑：长度必须一致，逐位严格相等。
   if(nums.length!==SEQ.length) return false;
@@ -629,12 +634,11 @@ function getOps(){
 }
 
 function normalizeMode(mode){
-  if(mode==="balanced"||mode==="meet") return "normal";
-  if(mode==="speed") return "normal";
-  if(mode==="free"||mode==="meetfast") return "medium";
+  if(mode==="balanced"||mode==="meet"||mode==="free"||mode==="meetfast") return "normal";
+  if(mode==="medium") return "normal"; // 兼容旧存档
   if(mode==="ries") return "accuracy";
-  if(mode==="normal"||mode==="medium"||mode==="accuracy") return mode;
-  return "normal";
+  if(mode==="speed"||mode==="normal"||mode==="accuracy") return mode;
+  return "speed";
 }
 function tuneOpsByMode(mode){ normalizeMode(mode); }
 function mapUiModeToEngine(mode){
@@ -884,7 +888,7 @@ $("mode").addEventListener("change",()=>{
   const mode=normalizeMode($("mode").value);
   $("mode").value=mode;
   tuneOpsByMode(mode);
-  if(["normal","medium","accuracy"].includes(mode)) $("bidir").checked=true;
+  if(["speed","normal","accuracy"].includes(mode)) $("bidir").checked=true;
   scheduleSave();
 });
 $("infiniteTime").addEventListener("change",()=>{$("timeLimit").disabled=$("infiniteTime").checked;scheduleSave();});
@@ -1323,20 +1327,20 @@ let stopFlag=false;
 const CAP=1e12, EXACT_EPS=5e-15, INF=65535;
 
 function modeParams(mode){
-  if(mode==="medium") return {
+  if(mode==="speed") return {
     keyPrec:10, bestPrec:10, keepMode:"goal",
     bbD:18, bbMagA:0.032,
-    qGoal:0.46,qBB:0.08,qMeet:0.14,qDiv:0.04,qPow:0.07,qFunc:0.04,qDepth:0.08,qMag:0.05,qIrr:0.04,
+    qGoal:0.52,qBB:0.06,qMeet:0.12,qDiv:0.03,qPow:0.06,qFunc:0.03,qDepth:0.07,qMag:0.04,qIrr:0.03,
     qPowBase:0.10, qPowExp:0.08,
     qReq:0.08,
     meetStyle:"bin", meetPrec:10, meetQ:12288, meetR:10,
     revBeamMul:2.4, meetHitBonus:0.26,
     candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
-    meetSweepMul:0.20, meetSweepPowMul:0.36,
-    beamMul:0.76, subLayerCapMul:0.95,
-    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:7, idxPerItemCap:56,
-    capUnMul:2.8, capBinMul:2.3, jumpMul:0.95, meetStage2:1, qSeed:0.08
+    meetSweepMul:0.16, meetSweepPowMul:0.30,
+    beamMul:0.70, subLayerCapMul:0.86,
+    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:6, idxPerItemCap:40,
+    capUnMul:2.5, capBinMul:2.0, jumpMul:0.85, meetStage2:1, qSeed:0.05
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"goal",
@@ -2069,10 +2073,10 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nPowBase=Math.max(0,Math.floor(beam*(mp.qPowBase||0)));
   const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
   const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
-  const exploreRatio = mode==="medium" ? 0.06 : (mode==="accuracy" ? 0.20 : 0.18);
+  const exploreRatio = mode==="speed" ? 0.035 : (mode==="accuracy" ? 0.20 : 0.18);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
-  const nNovel=Math.max(0, Math.floor(beam*(mode==="medium"?0.06:0.12)));
+  const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.12)));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
@@ -2190,9 +2194,8 @@ onmessage=async(ev)=>{
     customEnable,customCode
   }=msg;
 
-  mode=mode||"normal";
-  mode=(mode==="balanced"||mode==="meet"||mode==="speed")?"normal":mode;
-  mode=(mode==="free"||mode==="meetfast")?"medium":mode;
+  mode=mode||"speed";
+  mode=(mode==="balanced"||mode==="meet"||mode==="free"||mode==="meetfast"||mode==="medium")?"normal":mode;
   mode=(mode==="ries")?"accuracy":mode;
   const mp=modeParams(mode);
 
@@ -2294,7 +2297,7 @@ onmessage=async(ev)=>{
   threads=Math.max(1,Math.min(64,(threads|0)||1));
 
   // Do NOT shrink forward beam just because bidir is on (prevents missing hard constructions)
-  const bidirMul = (bidir && mode==="medium") ? 0.90 : 1.0;
+  const bidirMul = (bidir && mode==="speed") ? 0.90 : 1.0;
 
   const beamF=Math.max(50,Math.floor(beam*(mp.beamMul||1)*bidirMul));
   const beamR=Math.max(50,Math.floor(beam*(mp.revBeamMul||1)));
@@ -2325,8 +2328,8 @@ onmessage=async(ev)=>{
     if((consts[i].min??0)>1||(consts[i].max??INF)>1){useBitmask=false;break}
   }
 
-  // Reduce "constPenalty" only in medium mode; keep breadth in normal/accuracy
-  const constPenalty = (mode==="medium" && noConstraintFast) ? Math.max(1, Math.sqrt(Math.max(1,consts.length)/48)) : 1;
+  // Reduce "constPenalty" only in speed mode; keep breadth in normal/accuracy
+  const constPenalty = (mode==="speed" && noConstraintFast) ? Math.max(1, Math.sqrt(Math.max(1,consts.length)/48)) : 1;
 
   const k=constrainedIdx.length;
   const idx2bit=new Int16Array(nC);idx2bit.fill(-1);
@@ -2485,7 +2488,7 @@ function collectLeaves(ast, out){
 
     // leafOrder constraint final check too
     if(LEAF_ORDER && obj.ast && obj.ast.ord && !obj.ast.ord.ok) return;
-    if(mode!=="medium" && obj.ast && isTinyTailClone(obj.ast,T)) return;
+    if(mode!=="speed" && obj.ast && isTinyTailClone(obj.ast,T)) return;
 
     const expr=obj.ast?strA(obj.ast):(obj.s||"?");
     const latex=obj.ast?latexA(obj.ast):expr;
@@ -3027,8 +3030,8 @@ function collectLeaves(ast, out){
 
     const jm=Math.max(0.3, mp.jumpMul||1);
     if(jm<0.45) return;
-    const limItems=Math.min(layerItems.length, Math.max(14,Math.floor(beamF*((mode==="medium")?0.05:0.08)*jm)));
-    if(mode==="medium" && (layerItems[0]?.cost||0)<4) return;
+    const limItems=Math.min(layerItems.length, Math.max(14,Math.floor(beamF*((mode==="speed")?0.05:0.08)*jm)));
+    if(mode==="speed" && (layerItems[0]?.cost||0)<4) return;
     const logT=(T>0)?Math.log(T):NaN;
     const jumpCache=new Map();
     const J=(tv,h)=>{
@@ -3400,7 +3403,7 @@ function collectLeaves(ast, out){
     const{bucket,put}=mkBucket(beamF,mp.spillMul);
     const estLoad=(capUn*opsUn.length)+(capBin*opsBin.length);
     const opDensity=Math.max(1,(opsUn.length*1.4+opsBin.length));
-    const loadUnit=Math.max(3000,Math.floor((mode==="medium"?4700:7000)/Math.sqrt(opDensity/8)));
+    const loadUnit=Math.max(3000,Math.floor((mode==="speed"?6200:7000)/Math.sqrt(opDensity/8)));
     const activeSub=Math.min(subWorkers.length, Math.max(1, Math.ceil(estLoad/loadUnit)));
     const workersUse=activeSub>0?subWorkers.slice(0,activeSub):[];
     const W=workersUse.length+1;
@@ -3731,7 +3734,7 @@ $("btnStart").onclick=()=>{
   $("mode").value=mode;
 
   let bidir=$("bidir").checked;
-  if(mode==="normal"||mode==="medium")bidir=true;
+  if(mode==="normal"||mode==="speed")bidir=true;
 
   const maxC=Math.max(1,Math.min(200,Number($("maxC").value||30)));
   const beam=Math.max(50,Math.min(50000,Number($("beam").value||4000)));
