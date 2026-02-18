@@ -478,31 +478,28 @@ function updateRuntimePanel(payload){
   $("rtBar").style.width=`${pct.toFixed(1)}%`;
 }
 
-// ---------- LaTeX render (MathJax) ----------
-let latexScriptLoading=null;
+// ---------- LaTeX render (KaTeX) ----------
+let katexLoading=null;
 async function ensureLatexRenderer(){
-  if(window.MathJax?.typesetPromise) return true;
+  if(window.katex) return true;
   if(!navigator.onLine) return false;
-  if(latexScriptLoading) return latexScriptLoading;
+  if(katexLoading) return katexLoading;
 
-  window.MathJax = window.MathJax || {
-    tex: {
-      inlineMath: [['\\(','\\)']],
-      processEscapes: true
-    },
-    svg: { fontCache: 'global' },
-    options: { renderActions: { addMenu: [] } }
-  };
-
-  latexScriptLoading = new Promise((resolve)=>{
+  katexLoading = new Promise((resolve)=>{
+    // 先加载 CSS
+    const link=document.createElement('link');
+    link.rel='stylesheet';
+    link.href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css';
+    document.head.appendChild(link);
+    // 再加载 JS
     const sc=document.createElement('script');
-    sc.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
+    sc.src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js';
     sc.async=true;
-    sc.onload=()=>resolve(!!window.MathJax?.typesetPromise);
+    sc.onload=()=>resolve(!!window.katex);
     sc.onerror=()=>resolve(false);
     document.head.appendChild(sc);
   });
-  return latexScriptLoading;
+  return katexLoading;
 }
 
 const SUP_DIGITS={"⁰":"0","¹":"1","²":"2","³":"3","⁴":"4","⁵":"5","⁶":"6","⁷":"7","⁸":"8","⁹":"9"};
@@ -742,7 +739,11 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
     if(useLatex && r.latex){
       const lx=document.createElement("div");
       lx.className="countsLine";
-      lx.textContent=`\\(${r.latex}\\)`;
+      try{
+        lx.innerHTML=window.katex.renderToString(r.latex,{throwOnError:false,displayMode:false,output:'html'});
+      }catch(e){
+        lx.textContent=r.latex;
+      }
       t2.appendChild(lx);
     }
 
@@ -764,9 +765,6 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
     frag.appendChild(tr);
   }
   tb.appendChild(frag);
-  if(useLatex && window.MathJax?.typesetPromise){
-    try{ await window.MathJax.typesetPromise([tb]); }catch(e){}
-  }
 }
 
 // ---------- localStorage ----------
