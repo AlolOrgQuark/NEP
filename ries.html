@@ -1143,7 +1143,7 @@ function modeParams(mode){
     meetSweepMul:0.16, meetSweepPowMul:0.32,
     beamMul:0.82, subLayerCapMul:1.05,
     revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:180, meetSweepRevCap:240,
-    capUnMul:2.8, capBinMul:2.3, jumpMul:0.85, meetStage2:1, qSeed:0.08
+    capUnMul:3.0, capBinMul:2.5, jumpMul:1.00, meetStage2:1, qSeed:0.10
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"min",
@@ -1158,7 +1158,7 @@ function modeParams(mode){
     meetSweepMul:0.24, meetSweepPowMul:0.42,
     beamMul:1.32, subLayerCapMul:1.85,
     revIdxKeyCap:260, fwdIdxKeyCap:260, meetKeyProbeCap:300, meetSweepRevCap:360,
-    capUnMul:4.8, capBinMul:4.1, jumpMul:2.05, meetStage2:1, qSeed:0.20
+    capUnMul:5.2, capBinMul:4.5, jumpMul:2.25, meetStage2:1, qSeed:0.24
   };
   return {
     keyPrec:12, bestPrec:11, keepMode:"min",
@@ -1173,7 +1173,7 @@ function modeParams(mode){
     meetSweepMul:0.34, meetSweepPowMul:0.60,
     beamMul:1.55, subLayerCapMul:2.05,
     revIdxKeyCap:320, fwdIdxKeyCap:320, meetKeyProbeCap:360, meetSweepRevCap:460,
-    capUnMul:5.5, capBinMul:4.9, jumpMul:2.35, meetStage2:1, qSeed:0.24
+    capUnMul:6.0, capBinMul:5.3, jumpMul:2.55, meetStage2:1, qSeed:0.28
   };
 }
 
@@ -1531,7 +1531,7 @@ function pretty(n,parentOp=null,side=null){
 function strA(n){return pretty(n,null,null);}
 
 // LaTeX
-function latexWrap(s){ return "\\left("+s+"\\right)"; }
+function latexWrap(s){ return "("+s+")"; }
 function latexA(n){
   if(!n)return"";
   if(n.t===0){
@@ -1864,6 +1864,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const exploreRatio = mode==="speed" ? 0.06 : (mode==="accuracy" ? 0.20 : 0.18);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
+  const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.06:0.12)));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
@@ -1926,6 +1927,22 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   if(nExplore>0){
     const ex = topK(items,nExplore,(x)=>((x.goal*0.55)+(x.bb*0.35)-0.03*(x.depth||0)),true,(x)=>!used.has(x.key));
     take(ex,nExplore);
+  }
+
+  if(nNovel>0){
+    const bins=new Map();
+    for(const it of items){
+      if(used.has(it.key)) continue;
+      const root=(it.ast&&it.ast.t===2)?it.ast.op:((it.ast&&it.ast.t===1)?("u:"+it.ast.op):"c");
+      const d=(it.depth||0);
+      const db=d<3?d:(d<6?6:9);
+      const mb=Math.floor(Math.log2(Math.abs(it.v)+1e-30));
+      const sig=root+"|"+db+"|"+mb;
+      const old=bins.get(sig);
+      if(!old || it.keep<old.keep) bins.set(sig,it);
+    }
+    const arr=Array.from(bins.values()).sort((a,b)=>a.keep-b.keep);
+    take(arr,nNovel);
   }
 
   if(nDiv>0){
