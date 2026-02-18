@@ -91,6 +91,10 @@
     .copyTiny{padding:4px 8px;font-size:12px}
     .noteBox{margin-top:10px;padding:10px;border:1px dashed rgba(127,127,127,.35);border-radius:10px;font-size:12px;line-height:1.35}
     .noteBox code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:12px}
+    th.sortable{cursor:pointer;user-select:none}
+    th.sortable::after{content:" ↕";opacity:.35;font-size:11px}
+    th.sortable[data-sort-dir="asc"]::after{content:" ↑";opacity:.85}
+    th.sortable[data-sort-dir="desc"]::after{content:" ↓";opacity:.85}
   </style>
 </head>
 <body>
@@ -208,6 +212,11 @@ function getConstraints(){
       </div>
     </details>
 
+  <div class="status" id="status" style="display:none"></div>
+  <div class="pruneStats" id="pruneStats" style="display:none"></div>
+</div>
+
+<div class="box">
   <div class="runtimePanel" id="runtimePanel">
     <div class="runtimeMeta">
       <span id="rtComplexity">复杂度：0/0</span>
@@ -216,9 +225,6 @@ function getConstraints(){
     </div>
     <div class="runtimeBar"><div class="runtimeBarFill" id="rtBar"></div></div>
   </div>
-
-  <div class="status" id="status" style="display:none"></div>
-  <div class="pruneStats" id="pruneStats" style="display:none"></div>
 </div>
 
 <!-- Buttons moved here: above results table -->
@@ -237,12 +243,12 @@ function getConstraints(){
   <table>
     <thead>
       <tr>
-        <th style="width:6%">type</th>
-        <th>expression</th>
-        <th style="width:12%">value</th>
-        <th style="width:10%">distance</th>
-        <th style="width:10%">accuracy</th>
-        <th class="right" style="width:4%">C</th>
+        <th style="width:6%" data-sort-key="searchType" class="sortable">type</th>
+        <th data-sort-key="expr" class="sortable">expression</th>
+        <th style="width:12%" data-sort-key="v" class="sortable">value</th>
+        <th style="width:10%" data-sort-key="delta" class="sortable">distance</th>
+        <th style="width:10%" data-sort-key="acc" class="sortable">accuracy</th>
+        <th class="right sortable" style="width:4%" data-sort-key="cost">C</th>
         <th style="width:2%">copy</th>
       </tr>
     </thead>
@@ -452,7 +458,10 @@ async function ensureLatexRenderer(){
   if(latexScriptLoading) return latexScriptLoading;
 
   window.MathJax = window.MathJax || {
-    tex: { inlineMath: [['\\(','\\)']] },
+    tex: {
+      inlineMath: [['\\(','\\)']],
+      processEscapes: true
+    },
     svg: { fontCache: 'global' },
     options: { renderActions: { addMenu: [] } }
   };
@@ -468,15 +477,116 @@ async function ensureLatexRenderer(){
   return latexScriptLoading;
 }
 
+const SUP_DIGITS={"⁰":"0","¹":"1","²":"2","³":"3","⁴":"4","⁵":"5","⁶":"6","⁷":"7","⁸":"8","⁹":"9"};
+
+function normalizeTargetExpr(src){
+  let s=String(src??"").trim();
+  s=s.replace(/[“”]/g,'"').replace(/[‘’]/g,"'");
+  s=s.replace(/[−﹣－]/g,"-").replace(/[×·]/g,"*").replace(/[÷]/g,"/");
+  s=s.replace(/\s+/g,"");
+  // reduce chained signs: +- => -, -- => +, -+ => -, ++ => +
+  for(let i=0;i<6;i++){
+    const next=s.replace(/\+\+/g,"+").replace(/\+-/g,"-").replace(/-\+/g,"-").replace(/--/g,"+");
+    if(next===s)break;
+    s=next;
+  }
+  s=s.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+/g,m=>"^"+m.split("").map(ch=>SUP_DIGITS[ch]||"").join(""));
+  return s;
+}
+
 function parseTarget(s){
-  s=String(s).trim();
-  if(s==="pi"||s==="π")return Math.PI;
-  if(s==="e")return Math.E;
-  if(s==="phi"||s==="φ")return(1+Math.sqrt(5))/2;
-  if(s==="sqrt2"||s==="√2")return Math.SQRT2;
-  if(s==="sqrt3"||s==="√3")return Math.sqrt(3);
-  if(s==="sqrt5"||s==="√5")return Math.sqrt(5);
-  return Number(s);
+  const src=normalizeTargetExpr(s);
+  if(!src)return NaN;
+  const tokens=[];
+  const isDigit=(ch)=>ch>="0"&&ch<="9";
+  const isAlpha=(ch)=>/[A-Za-z_πφ√]/.test(ch);
+  let i=0;
+  while(i<src.length){
+    const ch=src[i];
+    if(isDigit(ch)||ch==="."){
+      let j=i+1;
+      while(j<src.length&&(isDigit(src[j])||src[j]==="."))j++;
+      tokens.push({t:"num",v:Number(src.slice(i,j))});
+      i=j;continue;
+    }
+    if(isAlpha(ch)){
+      let j=i+1;
+      while(j<src.length&&/[A-Za-z0-9_πφ]/.test(src[j]))j++;
+      const raw=src.slice(i,j).toLowerCase();
+      if(raw==="pi"||raw==="π")tokens.push({t:"num",v:Math.PI});
+      else if(raw==="e")tokens.push({t:"num",v:Math.E});
+      else if(raw==="phi"||raw==="φ")tokens.push({t:"num",v:(1+Math.sqrt(5))/2});
+      else if(raw==="sqrt2"||raw==="√2")tokens.push({t:"num",v:Math.SQRT2});
+      else if(raw==="sqrt3"||raw==="√3")tokens.push({t:"num",v:Math.sqrt(3)});
+      else if(raw==="sqrt5"||raw==="√5")tokens.push({t:"num",v:Math.sqrt(5)});
+      else return NaN;
+      i=j;continue;
+    }
+    if("()+-*/^".includes(ch)){tokens.push({t:ch,v:ch});i++;continue;}
+    return NaN;
+  }
+
+  const out=[]; const ops=[];
+  const prec={"u-":4,"^":3,"*":2,"/":2,"+":1,"-":1};
+  const rightAssoc={"^":true,"u-":true};
+  let prevType="start";
+  for(const tk of tokens){
+    if(tk.t==="num"){
+      if(prevType==="num"||prevType===")") return NaN;
+      out.push(tk); prevType="num"; continue;
+    }
+    if(tk.t==="("){
+      if(prevType==="num"||prevType===")") return NaN;
+      ops.push(tk); prevType="("; continue;
+    }
+    if(tk.t===")"){
+      while(ops.length&&ops[ops.length-1].t!=="(") out.push(ops.pop());
+      if(!ops.length)return NaN;
+      ops.pop(); prevType=")"; continue;
+    }
+    let op=tk.t;
+    if(op==="-"&&(prevType==="start"||prevType==="("||prevType==="op")){
+      ops.push({t:"u-",v:"u-"});
+      prevType="op";
+      continue;
+    }
+    if(op==="+"&&(prevType==="start"||prevType==="("||prevType==="op")) { prevType="op"; continue; }
+    if(prevType==="start"||prevType==="("||prevType==="op") return NaN;
+    while(ops.length){
+      const top=ops[ops.length-1].t;
+      if(top==="(")break;
+      const cond=rightAssoc[op] ? (prec[op]<prec[top]) : (prec[op]<=prec[top]);
+      if(!cond)break;
+      out.push(ops.pop());
+    }
+    ops.push({t:op,v:op}); prevType="op";
+  }
+  if(prevType==="op"||prevType==="(") return NaN;
+  while(ops.length){
+    const op=ops.pop();
+    if(op.t==="(") return NaN;
+    out.push(op);
+  }
+
+  const st=[];
+  for(const tk of out){
+    if(tk.t==="num") st.push(tk.v);
+    else if(tk.t==="u-"){
+      if(st.length<1)return NaN;
+      st.push(-st.pop());
+    }else{
+      if(st.length<2)return NaN;
+      const b=st.pop(),a=st.pop();
+      let v=NaN;
+      if(tk.t==="+")v=a+b;
+      else if(tk.t==="-")v=a-b;
+      else if(tk.t==="*")v=a*b;
+      else if(tk.t==="/")v=a/b;
+      else if(tk.t==="^")v=Math.pow(a,b);
+      st.push(v);
+    }
+  }
+  return st.length===1?st[0]:NaN;
 }
 function parseNNI(r,ie=false){
   const t=String(r??"").trim();
@@ -539,6 +649,38 @@ async function copyText(text){
 }
 
 let lastRows=[];
+const sortState={key:null,dir:"asc"};
+function sortRows(rows){
+  const arr=(rows||[]).slice();
+  const k=sortState.key;
+  if(!k) return arr;
+  const dir=sortState.dir==="asc"?1:-1;
+  const numKeys=new Set(["v","delta","cost"]);
+  arr.sort((a,b)=>{
+    let av=a?.[k], bv=b?.[k];
+    if(k==="searchType") return dir*String(av||"").localeCompare(String(bv||""),"zh-CN",{numeric:true,sensitivity:"base"});
+    if(k==="acc"){
+      av=String(av||"").toLowerCase(); bv=String(bv||"").toLowerCase();
+      const rank=(x)=>x==="exact"?0:(x==="close"?1:2);
+      return dir*(rank(av)-rank(bv));
+    }
+    if(numKeys.has(k)){
+      av=Number(av); bv=Number(bv);
+      if(!Number.isFinite(av)&&!Number.isFinite(bv)) return 0;
+      if(!Number.isFinite(av)) return 1;
+      if(!Number.isFinite(bv)) return -1;
+      return dir*(av-bv);
+    }
+    return dir*String(av??"").localeCompare(String(bv??""),"zh-CN",{numeric:true,sensitivity:"base"});
+  });
+  return arr;
+}
+function updateSortHeaders(){
+  document.querySelectorAll("thead th.sortable").forEach((th)=>{
+    const key=th.dataset.sortKey;
+    th.dataset.sortDir=(key&&sortState.key===key)?sortState.dir:"";
+  });
+}
 $("btnCopyAllExpr").onclick=()=>{ if(!lastRows.length)return; copyText(lastRows.map(r=>r.expr).join("\n")); };
 $("btnCopyAllTable").onclick=()=>{
   if(!lastRows.length)return;
@@ -550,11 +692,12 @@ $("btnCopyAllTable").onclick=()=>{
 };
 
 async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
-  lastRows=rows||[];
+  lastRows=(rows||[]).slice();
+  const sorted=sortRows(lastRows);
   const tb=$("tbody");tb.innerHTML="";
   const frag=document.createDocumentFragment();
   const useLatex = latexMode && await ensureLatexRenderer();
-  for(const r of rows){
+  for(const r of sorted){
     const tr=document.createElement("tr");
     const t1=document.createElement("td");
     const tg=document.createElement("span");
@@ -1133,47 +1276,47 @@ function modeParams(mode){
   if(mode==="speed") return {
     keyPrec:10, bestPrec:10, keepMode:"goal",
     bbD:18, bbMagA:0.032,
-    qGoal:0.40,qBB:0.10,qMeet:0.10,qDiv:0.06,qPow:0.07,qFunc:0.05,qDepth:0.10,qMag:0.08,qIrr:0.06,
+    qGoal:0.46,qBB:0.08,qMeet:0.14,qDiv:0.04,qPow:0.07,qFunc:0.04,qDepth:0.08,qMag:0.05,qIrr:0.04,
     qPowBase:0.10, qPowExp:0.08,
     qReq:0.08,
     meetStyle:"bin", meetPrec:10, meetQ:4096, meetR:8,
-    revBeamMul:1.8, meetHitBonus:0.14,
+    revBeamMul:1.9, meetHitBonus:0.16,
     candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
     meetSweepMul:0.16, meetSweepPowMul:0.32,
-    beamMul:0.82, subLayerCapMul:1.05,
+    beamMul:0.76, subLayerCapMul:0.95,
     revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:180, meetSweepRevCap:240,
-    capUnMul:3.0, capBinMul:2.5, jumpMul:1.00, meetStage2:1, qSeed:0.10
+    capUnMul:2.8, capBinMul:2.3, jumpMul:0.95, meetStage2:1, qSeed:0.08
   };
   if(mode==="accuracy") return {
-    keyPrec:14, bestPrec:12, keepMode:"min",
+    keyPrec:14, bestPrec:12, keepMode:"goal",
     bbD:72, bbMagA:0.018,
-    qGoal:0.20,qBB:0.18,qMeet:0.12,qDiv:0.08,qPow:0.14,qFunc:0.10,qDepth:0.14,qMag:0.09,qIrr:0.07,
+    qGoal:0.30,qBB:0.12,qMeet:0.18,qDiv:0.06,qPow:0.14,qFunc:0.08,qDepth:0.12,qMag:0.07,qIrr:0.05,
     qPowBase:0.16, qPowExp:0.12,
     qReq:0.14,
     meetStyle:"bin", meetPrec:12, meetQ:16384, meetR:12,
     revBeamMul:2.0, meetHitBonus:0.10,
-    candEpsMul:1.45, confirmEpsMul:1.0, binSlackMul:0.30, confirmAbsFloor:0.0,
+    candEpsMul:1.35, confirmEpsMul:1.0, binSlackMul:0.28, confirmAbsFloor:0.0,
     spillMul:1.6, capMul:1.35, keepMeetDup:false,
     meetSweepMul:0.24, meetSweepPowMul:0.42,
-    beamMul:1.32, subLayerCapMul:1.85,
+    beamMul:1.42, subLayerCapMul:2.00,
     revIdxKeyCap:260, fwdIdxKeyCap:260, meetKeyProbeCap:300, meetSweepRevCap:360,
-    capUnMul:5.2, capBinMul:4.5, jumpMul:2.25, meetStage2:1, qSeed:0.24
+    capUnMul:5.6, capBinMul:4.8, jumpMul:2.45, meetStage2:1, qSeed:0.22
   };
   return {
-    keyPrec:12, bestPrec:11, keepMode:"min",
+    keyPrec:12, bestPrec:11, keepMode:"goal",
     bbD:44, bbMagA:0.02,
-    qGoal:0.20,qBB:0.12,qMeet:0.20,qDiv:0.06,qPow:0.12,qFunc:0.08,qDepth:0.14,qMag:0.10,qIrr:0.06,
+    qGoal:0.28,qBB:0.10,qMeet:0.24,qDiv:0.06,qPow:0.12,qFunc:0.08,qDepth:0.12,qMag:0.08,qIrr:0.05,
     qPowBase:0.14, qPowExp:0.10,
     qReq:0.12,
     meetStyle:"bin", meetPrec:11, meetQ:12288, meetR:14,
     revBeamMul:2.8, meetHitBonus:0.22,
-    candEpsMul:3.6, confirmEpsMul:1.0, binSlackMul:0.14, confirmAbsFloor:0.0,
+    candEpsMul:3.2, confirmEpsMul:1.0, binSlackMul:0.14, confirmAbsFloor:0.0,
     spillMul:1.55, capMul:1.25, keepMeetDup:false,
     meetSweepMul:0.34, meetSweepPowMul:0.60,
-    beamMul:1.55, subLayerCapMul:2.05,
+    beamMul:1.64, subLayerCapMul:2.20,
     revIdxKeyCap:320, fwdIdxKeyCap:320, meetKeyProbeCap:360, meetSweepRevCap:460,
-    capUnMul:6.0, capBinMul:5.3, jumpMul:2.55, meetStage2:1, qSeed:0.28
+    capUnMul:6.5, capBinMul:5.7, jumpMul:2.70, meetStage2:1, qSeed:0.24
   };
 }
 
@@ -1738,10 +1881,28 @@ function mkBucket(beam,spillMul){
   const keepSp=Math.max(beam*20,16000);
   const hard=Math.floor(spLim*Math.max(0.35,Math.min(2.0,spillMul||1.0)));
   function spill(){
-    const v=Array.from(bucket.values());
-    v.sort((a,b)=>a.keep-b.keep);
+    if(bucket.size<=keepSp) return;
+    const vals=Array.from(bucket.values());
+    const heap=[];
+    for(const it of vals){
+      if(!Number.isFinite(it.keep)) continue;
+      if(heap.length<keepSp){
+        heapPushMax(heap,it,(x)=>x.keep);
+      }else if(it.keep<heap[0].keep){
+        heap[0]=it;
+        let idx=0;
+        for(;;){
+          let l=idx*2+1,r=l+1,b=idx;
+          if(l<heap.length && heap[l].keep>heap[b].keep)b=l;
+          if(r<heap.length && heap[r].keep>heap[b].keep)b=r;
+          if(b===idx)break;
+          const t=heap[idx];heap[idx]=heap[b];heap[b]=t;
+          idx=b;
+        }
+      }
+    }
     bucket.clear();
-    for(let i=0;i<Math.min(keepSp,v.length);i++)bucket.set(v[i].key,v[i]);
+    for(const it of heap) bucket.set(it.key,it);
   }
   return{
     bucket,
@@ -1959,6 +2120,11 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
 
   if(out.length<beam){
     take(topK(items,beam-out.length,(x)=>x.keep,true), beam-out.length);
+  }
+  for(const it of out){
+    if(it.__sc!==undefined) delete it.__sc;
+    if(it.revHit!==undefined) delete it.revHit;
+    if(it.cov!==undefined) delete it.cov;
   }
   return out;
 }
@@ -3031,7 +3197,9 @@ function collectLeaves(ast, out){
   async function computeLayerMT(c,capUn,capBin){
     const{bucket,put}=mkBucket(beamF,mp.spillMul);
     const estLoad=(capUn*opsUn.length)+(capBin*opsBin.length);
-    const activeSub=Math.min(subWorkers.length, Math.max(1, Math.ceil(estLoad/9000)));
+    const opDensity=Math.max(1,(opsUn.length*1.4+opsBin.length));
+    const loadUnit=Math.max(3600,Math.floor((mode==="speed"?5200:7600)/Math.sqrt(opDensity/8)));
+    const activeSub=Math.min(subWorkers.length, Math.max(1, Math.ceil(estLoad/loadUnit)));
     const workersUse=activeSub>0?subWorkers.slice(0,activeSub):[];
     const W=workersUse.length+1;
     const allowPow=Array.isArray(opsBin)&&opsBin.includes("^");
@@ -3524,6 +3692,18 @@ $("timeLimit").disabled=$("infiniteTime").checked;
 updateMtHint();
 hookAutoSave();
 updateRuntimePanel({c:0,maxC:Number($("maxC").value||0),elapsed:0,visited:0});
+
+document.querySelectorAll("thead th.sortable").forEach((th)=>{
+  th.addEventListener("click",()=>{
+    const key=th.dataset.sortKey;
+    if(!key) return;
+    if(sortState.key===key) sortState.dir=(sortState.dir==="asc"?"desc":"asc");
+    else { sortState.key=key; sortState.dir="asc"; }
+    updateSortHeaders();
+    renderResults(lastRows,$("showCounts").checked,$("debugMode").checked,$("latexMode").checked);
+  });
+});
+updateSortHeaders();
 })();
 </script>
 </body>
