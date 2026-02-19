@@ -3338,6 +3338,11 @@ onmessage=async(ev)=>{
     keyHits:0,pairsTried:0,rev2fwdPairs:0,
     rejMaskOverlap:0,rejCntLimit:0,rejEpsCand:0,rejEvalNaN:0,
     rejProbeConfirm:0,rejConfirm:0,revInvBad:0,maxConfirmErr:0,
+    pairTcSum:0,pairTcHigh:0,skipProbeCount:0,
+    probeEvals:0,trueEvals:0,probeEvalMs:0,trueEvalMs:0,
+    pairBudgetStops:0,meetTimeCapStops:0,
+    meetSetRaw:0,meetSetFinal:0,meetSetTrimmed:0,
+    shortKeyModeHits:0,longKeyModeHits:0,
   };
   let dynamicCandMul=1.0, dynamicConfirmMul=1.0;
   const strategyStats={adaptiveBoosts:0,pruneRelax:0,meetJitter:0,extraDecomp:0,stagnationLayers:0,forcedBoost:0,pressureScore:0};
@@ -4268,6 +4273,8 @@ function collectLeaves(ast, out){
 
   function tryMeetPair(f,r){
     const tc=f.cost+r.cost;
+    meetDbg.pairTcSum+=(Number.isFinite(tc)?tc:0);
+    if(tc>=10) meetDbg.pairTcHigh++;
     if(tc>maxC)return;
 
     if(useBitmask){if((f.mask&r.mask)!==0){meetDbg.rejMaskOverlap++;return;}}
@@ -4361,9 +4368,13 @@ function collectLeaves(ast, out){
       ((mode!=="speed") && forceDeeperConfirm && matchGap<=epsCand*0.22);
 
     let probeVal=f.v;
+    if(skipProbe) meetDbg.skipProbeCount++;
     if(!skipProbe){
       const probeAST=r.wA?r.wA(mkC("#",f.v,ordLeaf("#"))):mkC("#",f.v,ordLeaf("#"));
+      const _tp0=performance.now();
       probeVal=evalA(probeAST);
+      meetDbg.probeEvals++;
+      meetDbg.probeEvalMs+=performance.now()-_tp0;
       if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){meetDbg.rejEvalNaN++;return;}
 
       const epsProbeBase=(8e-10*mp.confirmEpsMul*dynamicConfirmMul)*Math.max(1,Math.abs(T),Math.abs(probeVal))*(1+tc*0.03);
@@ -4379,7 +4390,10 @@ function collectLeaves(ast, out){
       }
     }
 
+    const _tt0=performance.now();
     const trueVal=evalA(combinedAST);
+    meetDbg.trueEvals++;
+    meetDbg.trueEvalMs+=performance.now()-_tt0;
     if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){meetDbg.rejEvalNaN++;return;}
 
     if(!skipProbe){
@@ -4493,13 +4507,15 @@ function collectLeaves(ast, out){
 
   function tryMeetReverseWithFwdIdx(r){
     if(!bidir)return;
-    const limKey=Math.max(8,mp.meetKeyProbeCap|0||120);
+    const baseLimKey=Math.max(8,mp.meetKeyProbeCap|0||120);
+    const stressMul=((strategyStats.pressureScore||0)>=3||meetDbg.maxConfirmErr>1e7)?0.55:1.0;
+    const limKey=Math.max(8,Math.floor(baseLimKey*stressMul));
     // Speed模式: 对非pow/func的rev项只用短键(主键+邻域), 减少buildRev的meet开销
     // pow/func相关的rev项仍用完整键确保质量
     const isPowOrFunc = (r.srcOp==="^"||r.srcOp==="square"||r.srcOp==="cube"||
                           r.srcOp==="exp"||r.srcOp==="log"||r.srcOp==="sqrt"||
                           r.srcOp==="cbrt");
-    const skipTransform = !!(mp.speedRevMeetPrimaryOnly) && !isPowOrFunc;
+    const skipTransform = ((!!(mp.speedRevMeetPrimaryOnly) || stressMul<1.0) && !isPowOrFunc);
     // Speed模式: 每个rev项最多尝试N对
     const maxPairsPerItem = mp.speedMeetMaxPairsPerItem ? (mp.speedMeetMaxPairsPerItem|0) : 99999;
     let totalPairsThisItem = 0;
@@ -4512,7 +4528,7 @@ function collectLeaves(ast, out){
       meetDbg.keyHits++;
       const lim2=Math.min(primary.length,limKey);
       for(let i=0;i<lim2;i++){
-        if(totalPairsThisItem>=maxPairsPerItem) return;
+        if(totalPairsThisItem>=maxPairsPerItem){meetDbg.pairBudgetStops++;return;}
         const cand=primary[i];
         if(seenNode.has(cand)) continue;
         seenNode.add(cand);
@@ -4525,18 +4541,19 @@ function collectLeaves(ast, out){
     }
     if(hit && !mp.meetStage2) return;
 
+    if(skipTransform) meetDbg.shortKeyModeHits++; else meetDbg.longKeyModeHits++;
     const keys = meetKeysCached(r, skipTransform);
     meetLookups+=keys.length;
     const seen=new Set([pkey]);
     for(const k2 of keys){
-      if(totalPairsThisItem>=maxPairsPerItem) return;
+      if(totalPairsThisItem>=maxPairsPerItem){meetDbg.pairBudgetStops++;return;}
       if(seen.has(k2))continue;seen.add(k2);
       const fl=fwdIdx.get(k2);
       if(!fl)continue;
       meetDbg.keyHits++;
       const lim2=Math.min(fl.length,limKey);
       for(let i=0;i<lim2;i++){
-        if(totalPairsThisItem>=maxPairsPerItem) return;
+        if(totalPairsThisItem>=maxPairsPerItem){meetDbg.pairBudgetStops++;return;}
         const cand=fl[i];
         if(seenNode.has(cand)) continue;
         seenNode.add(cand);
@@ -4549,7 +4566,7 @@ function collectLeaves(ast, out){
     }
     if(!stopFlag && !hit && totalPairsThisItem<maxPairsPerItem){
       const bandHits=tryBandProbe(r,fwdBandIdx,limKey,seenNode,(cand)=>{
-        if(totalPairsThisItem>=maxPairsPerItem) return;
+        if(totalPairsThisItem>=maxPairsPerItem){meetDbg.pairBudgetStops++;return;}
         meetDbg.rev2fwdPairs++;
         meetDbg.pairsTried++;
         totalPairsThisItem++;
@@ -4589,11 +4606,13 @@ function collectLeaves(ast, out){
 
   function tryMeetFwdWithRevIdx(f){
     if(!bidir)return;
-    const lim2Cap=Math.max(8,mp.meetKeyProbeCap|0||120);
+    const baseLim2Cap=Math.max(8,mp.meetKeyProbeCap|0||120);
+    const stressMul=((strategyStats.pressureScore||0)>=3||meetDbg.maxConfirmErr>1e7)?0.55:1.0;
+    const lim2Cap=Math.max(8,Math.floor(baseLim2Cap*stressMul));
     // Speed模式: 每个fwd项最多尝试N对，防止单项消耗过多时间(原来无限制)
     const maxPairsPerItem = mp.speedMeetMaxPairsPerItem ? (mp.speedMeetMaxPairsPerItem|0) : 99999;
     // Speed模式: 使用短键列表(主键+邻域, 跳过变换域键L/S/Q/C等)
-    const skipTransform = !!(mp.speedRevMeetPrimaryOnly);
+    const skipTransform = (!!(mp.speedRevMeetPrimaryOnly) || stressMul<1.0);
     let totalPairsThisItem = 0;
     const pkey=meetPrimaryKey(f.v);
     const primary=revIdx.get(pkey);
@@ -4616,6 +4635,7 @@ function collectLeaves(ast, out){
     }
     if(hit && !mp.meetStage2) return;
 
+    if(skipTransform) meetDbg.shortKeyModeHits++; else meetDbg.longKeyModeHits++;
     const keys = meetKeysCached(f, skipTransform);
     meetLookups+=keys.length;
     const seen=new Set([pkey]);
@@ -6750,6 +6770,7 @@ function collectLeaves(ast, out){
       if(bidir && !stopFlag){
         const sorted = fwd[c].slice().sort((a,b)=>(a.goal||0)-(b.goal||0));
         const meetSet = new Set();
+        const forceShortMeetKeys=((strategyStats.pressureScore||0)>=3||meetDbg.maxConfirmErr>1e7);
         const sampleRatio2 = mp.meetFwdSampleRatio != null ? mp.meetFwdSampleRatio : 0.50;
         const meetFwdCap2 = Math.max(88, Math.floor(beamF * sampleRatio2));
         const topK3 = Math.min(sorted.length, meetFwdCap2);
@@ -6760,7 +6781,7 @@ function collectLeaves(ast, out){
             const mk2 = e.mkey || (e.mkey = meetPrimaryKey(e.v));
             if(revIdx.has(mk2)){
               meetSet.add(e);
-            } else if(!mp.speedMeetScanPrimaryOnly) {
+            } else if(!mp.speedMeetScanPrimaryOnly && !forceShortMeetKeys) {
               // 非speed模式: 检查全部变换域键(代价高但召回率高)
               const ks = meetKeysCached(e);
               for(let ki=1;ki<ks.length;ki++){
@@ -6804,11 +6825,14 @@ function collectLeaves(ast, out){
           }
         }
 
+        meetDbg.meetSetRaw+=meetSet.size;
         if(mode==="speed" && meetSet.size>220){
           const trimmed=Array.from(meetSet).sort((a,b)=>(a.goal||0)-(b.goal||0)).slice(0,220);
           meetSet.clear();
           for(const it of trimmed) meetSet.add(it);
+          meetDbg.meetSetTrimmed += 1;
         }
+        meetDbg.meetSetFinal+=meetSet.size;
         // Speed模式: 整个meetFwd阶段的总对数预算, 防止整层meet时间失控
         const meetFwdTotalBudget = mp.speedMeetMaxPairsPerItem ?
           Math.max(900, (meetSet.size * (mp.speedMeetMaxPairsPerItem|0))) : Infinity;
@@ -6818,8 +6842,8 @@ function collectLeaves(ast, out){
         const meetLayerStart=performance.now();
         const meetLayerCap=(mode==="speed"?(mp.speedMeetLayerTimeCapMs||26):Infinity);
         for(const e of meetSetArr){
-          if(meetFwdTotalPairs >= meetFwdTotalBudget) break;
-          if((performance.now()-meetLayerStart)>meetLayerCap) break;
+          if(meetFwdTotalPairs >= meetFwdTotalBudget){ meetDbg.pairBudgetStops++; break; }
+          if((performance.now()-meetLayerStart)>meetLayerCap){ meetDbg.meetTimeCapStops++; break; }
           const pairsBefore = meetDbg.pairsTried;
           tryMeetFwdWithRevIdx(e);
           meetFwdTotalPairs += (meetDbg.pairsTried - pairsBefore);
@@ -7014,7 +7038,12 @@ $("btnStart").onclick=()=>{
             `revIdxKeys=${d.revIdxKeys} revIdxItems=${d.revIdxItems} fwdIdxKeys=${d.fwdIdxKeys} fwdIdxItems=${d.fwdIdxItems}<br>`+
             `keyHits=${d.keyHits} pairsTried=${d.pairsTried} rev2fwdPairs=${d.rev2fwdPairs}<br>`+
             `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, probe=${d.rejProbeConfirm}, confirm=${d.rejConfirm}) `+
-            `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}`;
+            `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}<br>`+
+            `tcAvg=${((d.pairTcSum||0)/Math.max(1,d.pairsTried||0)).toFixed(2)} tcHigh=${d.pairTcHigh||0} skipProbe=${d.skipProbeCount||0} `+
+            `probeEval=${d.probeEvals||0}/${(d.probeEvalMs||0).toFixed(1)}ms trueEval=${d.trueEvals||0}/${(d.trueEvalMs||0).toFixed(1)}ms<br>`+
+            `budgetStops=${d.pairBudgetStops||0} timeCapStops=${d.meetTimeCapStops||0} `+
+            `meetSet(raw=${d.meetSetRaw||0},final=${d.meetSetFinal||0},trimmed=${d.meetSetTrimmed||0}) `+
+            `keyMode(short=${d.shortKeyModeHits||0},long=${d.longKeyModeHits||0})`;
         }
         if(payload.phaseTiming){
           const pt=payload.phaseTiming;
