@@ -1720,15 +1720,15 @@ function modeParams(mode){
     meetStyle:"bin", meetPrec:13, meetQ:24576, meetR:10,
     revBeamMul:1.4, meetHitBonus:0.22,
     // 关键修复: 收紧candEps减少无效confirm, confirmEps同步收紧
-    candEpsMul:0.72, confirmEpsMul:0.90, binSlackMul:0.12, confirmAbsFloor:0.0,
+    candEpsMul:0.50, confirmEpsMul:0.65, binSlackMul:0.12, confirmAbsFloor:0.0,
     spillMul:1.0, capMul:1.0, keepMeetDup:false,
     meetSweepMul:0.12, meetSweepPowMul:0.20,
     beamMul:0.90, subLayerCapMul:1.0,
     // 增大索引容量: 提高召回
-    revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:200, meetSweepRevCap:140, idxKeysPerItem:10, idxPerItemCap:48,
-    capUnMul:2.0, capBinMul:1.6, jumpMul:1.20, meetStage2:1, qSeed:0.10,
+    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:140, idxKeysPerItem:14, idxPerItemCap:64,
+    capUnMul:2.4, capBinMul:2.0, jumpMul:1.60, meetStage2:1, qSeed:0.10,
     // 关键: 降低meetFwd采样比例, 释放76%时间占用
-    meetFwdSampleRatio:0.30
+    meetFwdSampleRatio:0.18
   };
 }
 
@@ -1916,6 +1916,21 @@ function meetKeys(v,goalHint=Infinity,depthHint=0){
     if(k)_meetKeyOut.push(k);
   }
 
+  if(av>1e-12 && av<1e8){
+    for(const n of [2,3,4,5]){
+      const pn=Math.pow(av,1/n);
+      if(Number.isFinite(pn)&&pn>1e-12&&pn<1e8){
+        const k=_bk("P"+n,pn); if(k)_meetKeyOut.push(k);
+        if(n%2===1){ const kn=_bk("P"+n+"N",-pn); if(kn)_meetKeyOut.push(kn); }
+      }
+    }
+  }
+  for(const c of [Math.PI,Math.E]){
+    const vm=v*c, vd=v/c;
+    if(Number.isFinite(vm)&&Math.abs(vm)<1e10){ const k=_bk("M",vm); if(k)_meetKeyOut.push(k); }
+    if(Number.isFinite(vd)&&Math.abs(vd)<1e10){ const k=_bk("D",vd); if(k)_meetKeyOut.push(k); }
+  }
+
   return _meetKeyOut.slice();
 }
 
@@ -2019,6 +2034,16 @@ function isComm(op){
 
 function mkC(sym,val,ord){return{t:0,sym,val,p:0,f:0,d:0,ord:ord||{has:0,ok:1,mn:0,mx:0}}}
 function mkU(op,ch){
+  // normalize exp/expm1 to canonical forms
+  if(op==="exp" && ch){
+    const eNode=mkC("e",Math.E,ordLeaf("e"));
+    return mkB("^",eNode,ch);
+  }
+  if(op==="expm1" && ch){
+    const eNode=mkC("e",Math.E,ordLeaf("e"));
+    const oneNode=mkC("1",1,ordLeaf("1"));
+    return mkB("-",mkB("^",eNode,ch),oneNode);
+  }
   const isFunc=op!=="neg"&&op!=="abs";
   return{t:1,op,ch,p:(ch&&ch.p)?1:0,f:(isFunc||((ch&&ch.f)?1:0))?1:0,d:(ch?ch.d:0)+1,ord:ordUn(ch.ord)};
 }
@@ -2155,55 +2180,77 @@ function pretty(n,parentOp=null,side=null){
     if(op==="square"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_POSTFIX;return(need?"("+s+")":s)+"²";}
     if(op==="cube"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_POSTFIX;return(need?"("+s+")":s)+"³";}
     if(op==="fact"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_POSTFIX;return(need?"("+s+")":s)+"!";}
+    if(op==="exp"){
+      const s=pretty(ch,null,null);
+      const need=prec(ch)<PREC_POW || (ch&&ch.t===2);
+      return "e^"+(need?"("+s+")":s);
+    }
+    if(op==="expm1"){
+      const s=pretty(ch,null,null);
+      const need=prec(ch)<PREC_POW || (ch&&ch.t===2);
+      return "(e^"+(need?"("+s+")":s)+"−1)";
+    }
     const s=pretty(ch,null,null);
     const name=(op==="gammafn")?"Γ":op;
     return name+"("+s+")";
   }
-  const op=n.op;
-  if(op==="min"||op==="max"||op==="atan2"||op==="hypot"||op==="mod"||op==="gcd"||op==="lcm"||op==="logab"){
-    return op+"("+pretty(n.l,null,null)+","+pretty(n.r,null,null)+")";
+  let l=pretty(n.l,n.op,"left"), r=pretty(n.r,n.op,"right");
+  if(needParen(n.l,n.op,"left")) l="("+l+")";
+  if(needParen(n.r,n.op,"right")) r="("+r+")";
+  if(n.op==="/")return l+"/"+r;
+  if(n.op==="*")return l+"*"+r;
+  if(n.op==="+"){
+    if(n.r&&n.r.t===1&&n.r.op==="neg") return l+"−"+pretty(n.r.ch,n.op,"right");
+    if(isNegAtomNode(n.r)) return l+"−"+absAtomText(n.r);
+    return l+"+"+r;
   }
-  const L=n.l,R=n.r;
-  const ls=pretty(L,op,"left"),rs=pretty(R,op,"right");
-  if(op==="+"&&R&&R.t===1&&R.op==="neg"){
-    const rs2=pretty(R.ch,op,"right");
-    const rout2=needParen(R.ch,op,"right")?"("+rs2+")":rs2;
-    const lout2=needParen(L,op,"left")?"("+ls+")":ls;
-    return lout2+"-"+rout2;
-  }
-  if(op==="+"&&isNegAtomNode(R)){
-    const rs2=absAtomText(R);
-    const lout2=needParen(L,op,"left")?"("+ls+")":ls;
-    return lout2+"-"+rs2;
-  }
-  if(op==="-"&&ALLOW_ADD&&R&&R.t===1&&R.op==="neg"){
-    const rs2=pretty(R.ch,"+","right");
-    const rout2=needParen(R.ch,"+","right")?"("+rs2+")":rs2;
-    const lout2=needParen(L,"+","left")?"("+ls+")":ls;
-    return lout2+"+"+rout2;
-  }
-  if(op==="-"&&isNegAtomNode(R)){
-    const rs2=absAtomText(R);
-    const lout2=needParen(L,"+","left")?"("+ls+")":ls;
-    return lout2+"+"+rs2;
-  }
-  const lout=needParen(L,op,"left")?"("+ls+")":ls;
-  const rout=needParen(R,op,"right")?"("+rs+")":rs;
-  return lout+op+rout;
+  if(n.op==="-")return l+"−"+r;
+  if(n.op==="^")return l+"^"+r;
+  return n.op+"("+l+","+r+")";
 }
 function strA(n){return pretty(n,null,null);}
+
+function normalizeAST(n){
+  if(!n) return n;
+  if(n.t===0) return n;
+  if(n.t===1){
+    const ch=normalizeAST(n.ch);
+    if(n.op==="exp"){
+      const eNode=mkC("e",Math.E,ordLeaf("e"));
+      return mkB("^",eNode,ch);
+    }
+    if(n.op==="expm1"){
+      const eNode=mkC("e",Math.E,ordLeaf("e"));
+      const oneNode=mkC("1",1,ordLeaf("1"));
+      return mkB("-",mkB("^",eNode,ch),oneNode);
+    }
+    if(n.op==="log10"){
+      const ln10Node=mkC("ln(10)",Math.LN10,ordLeaf("ln(10)"));
+      return mkB("/",mkU("log",ch),ln10Node);
+    }
+    if(ch===n.ch) return n;
+    return mkU(n.op,ch);
+  }
+  if(n.t===2){
+    const l=normalizeAST(n.l), r=normalizeAST(n.r);
+    if(l===n.l && r===n.r) return n;
+    return mkB(n.op,l,r);
+  }
+  return n;
+}
 
 // LaTeX
 function latexWrap(s){ return "("+s+")"; }
 function latexA(n){
+  n = normalizeAST(n);
   if(!n)return"";
   if(n.t===0){
     const s=String(n.sym||n.val||"0");
-    if(s==="π")return"\\\\pi";
-    if(s==="φ")return"\\\\varphi";
-    if(s==="√2")return"\\\\sqrt{2}";
-    if(s==="√3")return"\\\\sqrt{3}";
-    if(s==="√5")return"\\\\sqrt{5}";
+    if(s==="π")return"\\pi";
+    if(s==="φ")return"\\varphi";
+    if(s==="√2")return"\\sqrt{2}";
+    if(s==="√3")return"\\sqrt{3}";
+    if(s==="√5")return"\\sqrt{5}";
     return s;
   }
   if(n.t===1){
@@ -2211,16 +2258,16 @@ function latexA(n){
     const ch=(n.ch&&n.ch.t!==0)?latexWrap(ch0):ch0;
     switch(n.op){
       case"neg":return"-"+ch;
-      case"sqrt":return"\\\\sqrt{"+((n.ch&&n.ch.t===2)?latexWrap(ch0):ch0)+"}";
-      case"cbrt":return"\\\\sqrt[3]{"+ch0+"}";
-      case"inv":return"\\\\frac{1}{"+ch0+"}";
+      case"sqrt":return"\\sqrt{"+((n.ch&&n.ch.t===2)?latexWrap(ch0):ch0)+"}";
+      case"cbrt":return"\\sqrt[3]{"+ch0+"}";
+      case"inv":return"\\frac{1}{"+ch0+"}";
       case"square":return"{"+ch+"}^{2}";
       case"cube":return"{"+ch+"}^{3}";
       case"fact":return ch+"!";
-      case"gammafn":return"\\\\Gamma"+latexWrap(ch0);
+      case"gammafn":return"\\Gamma"+latexWrap(ch0);
       case"exp":return"e^{"+ch0+"}";
       case"expm1":return"e^{"+ch0+"}-1";
-      default:return"\\\\mathrm{"+n.op+"}"+latexWrap(ch0);
+      default:return"\\mathrm{"+n.op+"}"+latexWrap(ch0);
     }
   }
   if(n.op==="^"){
@@ -2233,16 +2280,16 @@ function latexA(n){
   let l=latexA(n.l), r=latexA(n.r);
   if(needParen(n.l,n.op,"left")) l="("+l+")";
   if(needParen(n.r,n.op,"right")) r="("+r+")";
-  if(n.op==="/" )return"\\\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  if(n.op==="*")return l+"\\\\cdot "+r;
+  if(n.op==="/" )return"\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
+  if(n.op==="*")return l+"\\cdot "+r;
   if(n.op==="+"){
     if(n.r&&n.r.t===1&&n.r.op==="neg") return l+"-"+latexA(n.r.ch);
     if(isNegAtomNode(n.r)) return l+"-"+latexA({t:0,sym:absAtomText(n.r),val:Math.abs(n.r.val)});
     return l+"+"+r;
   }
   if(n.op==="-")return l+"-"+r;
-  if(n.op==="logab")return"\\\\log_{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  return"\\\\mathrm{"+n.op+"}"+latexWrap(latexA(n.l)+","+latexA(n.r));
+  if(n.op==="logab")return"\\log_{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
+  return"\\mathrm{"+n.op+"}"+latexWrap(latexA(n.l)+","+latexA(n.r));
 }
 
 
@@ -2874,6 +2921,59 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
     take(topK(quotaPool,beam-out.length,(x)=>(x.keep-opPriorityAdj(x)*0.12),true), beam-out.length);
   }
 
+  if(Number.isFinite(T_target)){
+    const absT=Math.abs(T_target);
+    const subExprTargets=[];
+    if(absT>0) subExprTargets.push({val:Math.sqrt(absT),w:0.18});
+    if(absT>0) subExprTargets.push({val:-Math.sqrt(absT),w:0.12});
+    if(absT>0){
+      const sqT=Math.sqrt(absT);
+      for(const c of [Math.PI, Math.E, 2, 3, Math.SQRT2]){
+        if(c>1e-12){
+          subExprTargets.push({val:sqT/c,w:0.10});
+          subExprTargets.push({val:sqT*c,w:0.06});
+          subExprTargets.push({val:sqT-c,w:0.06});
+          subExprTargets.push({val:sqT+c,w:0.04});
+        }
+      }
+    }
+    if(absT>0){
+      const sqT=Math.sqrt(absT);
+      const targets1=[sqT/Math.PI, sqT/Math.E, sqT/2, sqT/3];
+      for(const t1 of targets1){
+        if(!Number.isFinite(t1)||Math.abs(t1)>1e8) continue;
+        const t2=Math.E-t1; if(Number.isFinite(t2)&&Math.abs(t2)<1e6) subExprTargets.push({val:t2,w:0.08});
+        const t3=Math.PI-t1; if(Number.isFinite(t3)&&Math.abs(t3)<1e6) subExprTargets.push({val:t3,w:0.06});
+        if(t1>0){ const lt=Math.log(t1); if(Number.isFinite(lt)) subExprTargets.push({val:lt,w:0.05}); }
+      }
+    }
+    for(const c of [Math.PI, Math.E, 2, 3, 4, 5, 6, Math.PI*Math.PI, Math.E*Math.E]){
+      const v1=T_target/c; if(Number.isFinite(v1)&&Math.abs(v1)<1e8) subExprTargets.push({val:v1,w:0.04});
+      const v2=T_target*c; if(Number.isFinite(v2)&&Math.abs(v2)<1e8) subExprTargets.push({val:v2,w:0.03});
+    }
+    if(T_target>0){
+      subExprTargets.push({val:Math.log(T_target),w:0.08});
+      subExprTargets.push({val:Math.log(T_target)/2,w:0.05});
+    }
+    for(let n=2;n<=6;n++){
+      const r=Math.pow(absT,1/n);
+      if(Number.isFinite(r)) subExprTargets.push({val:r,w:0.06});
+      if(Number.isFinite(r)&&r>1e-9) subExprTargets.push({val:-r,w:0.03});
+    }
+    const nSubExpr=Math.max(0,Math.floor(beam*(mode==="speed"?0.06:0.14)));
+    if(nSubExpr>0 && subExprTargets.length>0){
+      for(const st of subExprTargets){
+        const tv=st.val;
+        if(!Number.isFinite(tv)) continue;
+        const nThis=Math.max(2,Math.floor(nSubExpr*st.w));
+        take(topK(quotaPool,nThis,(x)=>{
+          const d=Math.abs(x.v-tv)/(1e-12+Math.abs(tv)+1);
+          return d - 0.02*(x.bb<0.1?1:0);
+        },true), nThis);
+      }
+    }
+  }
+
   if(out.length<beam){
     // Fallback to full set for safety so precision does not regress when pool is too narrow.
     take(topK(items,beam-out.length,(x)=>x.keep,true), beam-out.length);
@@ -3132,11 +3232,12 @@ onmessage=async(ev)=>{
 
   function astSig(ast){
     if(!ast) return "na";
-    const d=astDepth(ast);
+    const n = normalizeAST(ast);
+    const d=astDepth(n);
     const db=d<=2?2:(d<=4?4:(d<=7?7:10));
-    if(ast.t===0) return "c|"+String(ast.sym);
-    if(ast.t===1) return "u|"+ast.op+"|"+db;
-    return "b|"+ast.op+"|"+db+"|"+(ast.p?"p":"np")+"|"+(ast.f?"f":"nf");
+    if(n.t===0) return "c|"+String(n.sym);
+    if(n.t===1) return "u|"+n.op+"|"+db;
+    return "b|"+n.op+"|"+db+"|"+(n.p?"p":"np")+"|"+(n.f?"f":"nf");
   }
 
   function rebuildBestCaches(){
@@ -3266,8 +3367,9 @@ function collectLeaves(ast, out){
     const needCustom = !!(customAllow || customScoreAdjust);
     let expr=null, latex=null, leaves=null;
     if(needCustom){
-      expr=obj.ast?strA(obj.ast):(obj.s||"?");
-      latex=obj.ast?latexA(obj.ast):expr;
+      const nast2=obj.ast?normalizeAST(obj.ast):null;
+      expr=nast2?strA(nast2):(obj.s||"?");
+      latex=nast2?latexA(nast2):expr;
       leaves = obj.ast ? collectLeaves(obj.ast, []) : [];
     }
 
@@ -3303,8 +3405,9 @@ function collectLeaves(ast, out){
         dupesKilled++;return;
       }
       if(!expr){
-        expr=obj.ast?strA(obj.ast):(obj.s||"?");
-        latex=obj.ast?latexA(obj.ast):expr;
+        const nast=obj.ast?normalizeAST(obj.ast):null;
+        expr=nast?strA(nast):(obj.s||"?");
+        latex=nast?latexA(nast):expr;
       }
       best.splice(idx,1);
       bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow,sig});
@@ -3329,8 +3432,9 @@ function collectLeaves(ast, out){
     }
 
     if(!expr){
-      expr=obj.ast?strA(obj.ast):(obj.s||"?");
-      latex=obj.ast?latexA(obj.ast):expr;
+      const nast=obj.ast?normalizeAST(obj.ast):null;
+      expr=nast?strA(nast):(obj.s||"?");
+      latex=nast?latexA(nast):expr;
     }
     bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow,sig});
     if(best.length>BEST_POOL_CAP*1.2)best.length=BEST_POOL_CAP;
@@ -3471,9 +3575,8 @@ function collectLeaves(ast, out){
     let keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
     if(revHit)keep*=(1.0-(mp.meetHitBonus||0));
     if(useBitmask && REQ_POP>0) keep *= reqAdj(mask|0);
-    // Rationality bonus
     if(bb<0.08 && goal>1e-4) keep -= 0.04*bb;
-    // Power-decomposition bonus: values near T^(1/n) are crucial building blocks
+
     if(Number.isFinite(v) && goal>1e-6){
       if(Number.isFinite(_sqrtT)){
         const proxSq=Math.abs(v-_sqrtT)/(1e-9+_sqrtT);
@@ -3487,20 +3590,62 @@ function collectLeaves(ast, out){
         if(proxCb<0.02) keep -= 0.14*(1-proxCb/0.02);
         else if(proxCb<0.12) keep -= 0.05*(1-proxCb/0.12);
       }
-      // 深层联系: T^(1/4) 对于 ((expr)^2)^2=T 类结构至关重要
       if(Number.isFinite(_T4th) && _T4th>1e-9){
         const prox4=Math.abs(v-_T4th)/(1e-9+_T4th);
         if(prox4<0.02) keep -= 0.10*(1-prox4/0.02);
       }
-      // 深层联系: log(T) 对于 exp(expr)=T 类结构, expr≈log(T) 必须保留
       if(Number.isFinite(_logT)){
         const proxL=Math.abs(v-_logT)/(1e-9+Math.abs(_logT)+1);
         if(proxL<0.02) keep -= 0.12*(1-proxL/0.02);
       }
-      // 深层联系: 1/T 对于 inv(expr)=T 类结构, 或 T=a/expr → expr=a/T
       if(Number.isFinite(_invT) && Math.abs(_invT)<1e8){
         const proxInv=Math.abs(v-_invT)/(1e-9+Math.abs(_invT)+1);
         if(proxInv<0.02) keep -= 0.08*(1-proxInv/0.02);
+      }
+
+      const absV=Math.abs(v);
+      const absT2=Math.abs(T);
+      if(Number.isFinite(_sqrtT) && _sqrtT>1e-9){
+        for(const c of [Math.PI, Math.E, 2, 3, Math.SQRT2]){
+          const vc=v*c;
+          const proxMul=Math.abs(vc-_sqrtT)/(1e-9+_sqrtT);
+          if(proxMul<0.03) keep -= 0.20*(1-proxMul/0.03);
+          else if(proxMul<0.12) keep -= 0.06*(1-proxMul/0.12);
+          const vSub=Math.abs(c-v);
+          if(vSub<10 && vSub>1e-12){
+            const sq=vSub*vSub;
+            if(Math.abs(sq-absT2)<absT2*0.05) keep -= 0.12;
+          }
+        }
+      }
+      if(absV>0.01 && absV<1e5){
+        const vsq=v*v;
+        const proxSqV=Math.abs(vsq-absT2)/(1e-9+absT2);
+        if(proxSqV<0.01) keep -= 0.30*(1-proxSqV/0.01);
+        else if(proxSqV<0.08) keep -= 0.10*(1-proxSqV/0.08);
+        for(const c of [Math.PI, Math.E, 2]){
+          const target=absT2/c;
+          const prox=Math.abs(vsq-target)/(1e-9+target);
+          if(prox<0.02) keep -= 0.12*(1-prox/0.02);
+        }
+      }
+      if(absV>0.1 && absV<200){
+        const vcb=v*v*v;
+        const proxCbV=Math.abs(vcb-T)/(1e-9+absT2);
+        if(proxCbV<0.02) keep -= 0.15*(1-proxCbV/0.02);
+      }
+      if(absV<20){
+        const ev=Math.exp(v);
+        if(Number.isFinite(ev)){
+          const proxExp=Math.abs(ev-absT2)/(1e-9+absT2);
+          if(proxExp<0.02) keep -= 0.14*(1-proxExp/0.02);
+        }
+      }
+      if(absV>0.1 && absV<12){
+        for(const frac of [0.5, 1/3, 2/3, 0.25, 0.75, 1/5, 1/6, 1/7]){
+          if(Math.abs(v-frac)<0.015) keep -= 0.08;
+          if(Math.abs(v+frac)<0.015) keep -= 0.05;
+        }
       }
     }
     return keep;
@@ -3533,17 +3678,11 @@ function collectLeaves(ast, out){
   function revScore(v){
     const ab=Math.abs(v);
     const mag=Math.log1p(ab);
-    // Prefer trig-output range [-1,1]: needed for sin/cos/tanh chains.
     const trigOutBonus=(ab<=1.0&&ab>1e-15)?0.22:0;
-    // Prefer small-angle argument range: useful for composed trig forms.
     const trigArgBonus=(ab<=Math.PI*2+0.1)?0.10:0;
-    // Prefer rational-looking values to retain good bases/exponents.
     const rbb=bbScore(v,18,0.012);
     const ratBonus=rbb<0.06?0.18:(rbb<0.18?0.07:0);
-    // 深层联系: rev层的值v是fwd层的"逆目标"
-    // 如果v ≈ T的各种变换值(√T, log(T), T^(1/3), 1/T)
-    // 则这个rev节点极可能在meetSweep中与fwd层成功配对
-    // 给予额外bonus使其更易被beam保留
+
     let tTransformBonus=0;
     if(Number.isFinite(_sqrtT) && _sqrtT>1e-9){
       const d=Math.abs(v-_sqrtT)/(1e-9+_sqrtT);
@@ -3561,6 +3700,33 @@ function collectLeaves(ast, out){
       const d=Math.abs(v-_T4th)/(1e-9+_T4th);
       if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.12*(1-d/0.05));
     }
+
+    if(Number.isFinite(_sqrtT) && _sqrtT>1e-9){
+      for(const c of [Math.PI, Math.E, 2, 3]){
+        const tv=_sqrtT/c;
+        if(Number.isFinite(tv)){
+          const d=Math.abs(v-tv)/(1e-9+Math.abs(tv)+1);
+          if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.22*(1-d/0.05));
+        }
+      }
+      for(const c of [Math.PI, Math.E, 2]){
+        const tv=_sqrtT/c;
+        if(Number.isFinite(tv)){
+          const sub=Math.E-tv;
+          if(Number.isFinite(sub)){
+            const d=Math.abs(v-sub)/(1e-9+Math.abs(sub)+1);
+            if(d<0.08) tTransformBonus=Math.max(tTransformBonus,0.16*(1-d/0.08));
+          }
+        }
+      }
+    }
+    if(ab>0.01 && ab<100){
+      for(let n=-3;n<=5;n++){
+        const en=Math.exp(n);
+        if(Math.abs(v-en)<0.1*en) tTransformBonus=Math.max(tTransformBonus,0.08);
+      }
+    }
+
     return Math.max(0.001, mag - trigOutBonus - trigArgBonus - ratBonus - tTransformBonus);
   }
 
@@ -3779,6 +3945,100 @@ function collectLeaves(ast, out){
       }
     }
 
+    {
+      const deepHintBudget=80;
+      let deepUsed=0;
+      const level1Targets=[];
+      if(T>0){
+        level1Targets.push({v:Math.sqrt(T),op:"square",wA:(a)=>mkU("square",a)});
+        level1Targets.push({v:-Math.sqrt(T),op:"square",wA:(a)=>mkU("square",mkU("neg",a))});
+      }
+      level1Targets.push({v:Math.cbrt(T),op:"cube",wA:(a)=>mkU("cube",a)});
+      if(T>0) level1Targets.push({v:Math.log(T),op:"exp",wA:(a)=>mkU("exp",a)});
+
+      for(const l1 of level1Targets){
+        if(!Number.isFinite(l1.v)||Math.abs(l1.v)>CAP||deepUsed>=deepHintBudget) continue;
+        for(const cst of favAtoms){
+          if(deepUsed>=deepHintBudget) break;
+          const cv=Number(cst.v);
+          if(!Number.isFinite(cv)||Math.abs(cv)<1e-12) continue;
+          const cAst=mkC(cst.s,cst.v,ordLeaf(cst.s));
+          if(Array.isArray(opsBin)){
+            if(opsBin.includes("*")){
+              const y=l1.v/cv;
+              if(Number.isFinite(y)&&Math.abs(y)<CAP){
+                const totalCost=wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":"exp"))+wBin("*");
+                const wA2=(a)=>l1.wA(mkB("*",cAst,a));
+                pushRevHint(y,totalCost,wA2,"deep2_mul_"+l1.op);
+                deepUsed++;
+
+                for(const cst2 of favAtoms){
+                  if(deepUsed>=deepHintBudget) break;
+                  const cv2=Number(cst2.v);
+                  if(!Number.isFinite(cv2)) continue;
+                  const cAst2=mkC(cst2.s,cst2.v,ordLeaf(cst2.s));
+                  if(opsBin.includes("-")){
+                    const z=cv2-y;
+                    if(Number.isFinite(z)&&Math.abs(z)<CAP){
+                      const tc3=totalCost+wBin("-");
+                      const wA3=(a)=>l1.wA(mkB("*",cAst,mkB("-",cAst2,a)));
+                      pushRevHint(z,tc3,wA3,"deep3_sub_"+l1.op);
+                      deepUsed++;
+                    }
+                  }
+                  if(opsBin.includes("+")){
+                    const z=y-cv2;
+                    if(Number.isFinite(z)&&Math.abs(z)<CAP){
+                      const tc3=totalCost+wBin("+");
+                      const wA3=(a)=>l1.wA(mkB("*",cAst,mkB("+",cAst2,a)));
+                      pushRevHint(z,tc3,wA3,"deep3_add_"+l1.op);
+                      deepUsed++;
+                    }
+                  }
+                  if(opsBin.includes("/")&&Math.abs(cv2)>1e-12){
+                    const z=y*cv2;
+                    if(Number.isFinite(z)&&Math.abs(z)<CAP){
+                      const tc3=totalCost+wBin("/");
+                      const wA3=(a)=>l1.wA(mkB("*",cAst,mkB("/",a,cAst2)));
+                      pushRevHint(z,tc3,wA3,"deep3_div_"+l1.op);
+                      deepUsed++;
+                    }
+                  }
+                }
+              }
+            }
+            if(opsBin.includes("+")){
+              const y=l1.v-cv;
+              if(Number.isFinite(y)&&Math.abs(y)<CAP){
+                const totalCost=wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":"exp"))+wBin("+");
+                const wA2=(a)=>l1.wA(mkB("+",cAst,a));
+                pushRevHint(y,totalCost,wA2,"deep2_add_"+l1.op);
+                deepUsed++;
+              }
+            }
+            if(opsBin.includes("-")){
+              const y=cv-l1.v;
+              if(Number.isFinite(y)&&Math.abs(y)<CAP){
+                const totalCost=wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":"exp"))+wBin("-");
+                const wA2=(a)=>l1.wA(mkB("-",cAst,a));
+                pushRevHint(y,totalCost,wA2,"deep2_sub_"+l1.op);
+                deepUsed++;
+              }
+            }
+            if(opsBin.includes("^")&&Math.abs(cv)>0.1&&Math.abs(cv)<20){
+              const base=Math.pow(l1.v, 1/cv);
+              if(Number.isFinite(base)&&Math.abs(base)<CAP&&base>0){
+                const totalCost=wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":"exp"))+wBin("^");
+                const wA2=(a)=>l1.wA(mkB("^",a,cAst));
+                pushRevHint(base,totalCost,wA2,"deep2_pow_"+l1.op);
+                deepUsed++;
+              }
+            }
+          }
+        }
+      }
+    }
+
     for(let c=0;c<=maxC;c++){
       if(Array.isArray(rev[c]) && rev[c].length) addRevIdx(rev[c]);
     }
@@ -3805,6 +4065,19 @@ function collectLeaves(ast, out){
     const ultraClose = (matchGap <= ultraCloseGap);
 
     const isPowRelated = (r.srcOp==="^") || (f.hasPow) || (r.wA && r.srcOp==="pow");
+    if(meetDbg.maxConfirmErr > 100 && isPowRelated){
+      const fMag=Math.abs(f.v), rMag=Math.abs(r.v);
+      if(fMag>10 && rMag>10 && matchGap > 1e-9*scale){
+        meetDbg.rejEpsCand++;
+        return;
+      }
+    }
+    if(meetDbg.maxConfirmErr > 1000){
+      if(isPowRelated && matchGap > 3e-11*scale){
+        meetDbg.rejEpsCand++;
+        return;
+      }
+    }
     // FIXED: for pow-related candidates, apply much stricter initial reject to avoid
     // runaway evaluation of e.g. base^exponent that produces astronomically large errors
     // (maxConfirmErr was ~1e12 indicating this was a real problem)
@@ -4517,6 +4790,12 @@ function collectLeaves(ast, out){
           for(let jf=0;jf<cF;jf++){
             const f=fs[jf];visited++;
 
+            // Pre-filter: skip inverse when operands are extreme
+            const rAbs=Math.abs(r.v), fAbs=Math.abs(f.v);
+            if(rAbs>1e8 && fAbs>1e8) continue;
+            if(op==="^" && (fAbs<1e-12 || fAbs>50 || rAbs>1e6)) continue;
+            if(op==="/" && fAbs<1e-14) continue;
+
             const x1=invBinR(op,r.v,f.v);
             if(Number.isFinite(x1)&&Math.abs(x1)<=CAP){
               const out1=applyBin(op,f.v,x1);
@@ -5014,8 +5293,17 @@ function collectLeaves(ast, out){
 
     const explorePressure=1+Math.min(2.6, pressureScore*0.42 + (forcedBoost?0.70:0));
     const stagnationBoost=(1+Math.min(1.9,stagnationLayers*0.22))*explorePressure;
-    dynamicCandMul=1+Math.min(0.95,stagnationLayers*0.09 + pressureScore*0.16 + (forcedBoost?0.24:0));
-    dynamicConfirmMul=1+Math.min(2.0,stagnationLayers*0.14 + pressureScore*0.30 + (forcedBoost?0.45:0));
+    const confirmRejectRate = (meetCandidates>100) ? (meetDbg.rejConfirm||0)/meetCandidates : 0;
+    if(confirmRejectRate > 0.90){
+      dynamicCandMul = Math.max(0.4, 1.0 - Math.min(0.5, (confirmRejectRate-0.90)*5.0));
+      dynamicConfirmMul = Math.max(0.5, 1.0 - Math.min(0.4, (confirmRejectRate-0.90)*4.0));
+    } else if(stagnationLayers >= 2 && confirmRejectRate < 0.50){
+      dynamicCandMul=1+Math.min(0.95,stagnationLayers*0.09 + pressureScore*0.16 + (forcedBoost?0.24:0));
+      dynamicConfirmMul=1+Math.min(2.0,stagnationLayers*0.14 + pressureScore*0.30 + (forcedBoost?0.45:0));
+    } else {
+      dynamicCandMul=1+Math.min(0.6,stagnationLayers*0.05 + pressureScore*0.08);
+      dynamicConfirmMul=1+Math.min(1.2,stagnationLayers*0.08 + pressureScore*0.15);
+    }
 
     let capUn=Math.max(180,Math.floor(beamF*(mp.capUnMul||2.0)/4/constPenalty*stagnationBoost));
     let capBin=Math.max(120,Math.floor(beamF*(mp.capBinMul||1.8)/6/constPenalty*stagnationBoost));
@@ -5144,11 +5432,15 @@ function collectLeaves(ast, out){
     if(stagnationLayers>=2 || strategyStats.pressureScore>=2){
       // ▼ 节流：每2层才触发一次，避免 extraDecomp 在每层都消耗大量时间(原16180次)
       // 当 pressureScore >= 3 时仍每层触发(高压力下需要更激进)
-      const doExtraDecomp = strategyStats.pressureScore>=3 || (c%2===0);
+      const doExtraDecomp = strategyStats.pressureScore>=4 || (c%3===0);
       if(doExtraDecomp){
         const prev=fwd[Math.max(1,c-1)]||[];
         if(prev.length){
-          tryTargetDecomposition(prev.slice(0,Math.min(prev.length,Math.max(16,Math.floor(beamF*0.08)))), T, Math.max(1,c-1));
+          const extraCap=Math.max(8,Math.min(
+            Math.floor(beamF*0.04),
+            Math.floor(prev.length*0.15)
+          ));
+          tryTargetDecomposition(prev.slice(0,extraCap), T, Math.max(1,c-1));
           strategyStats.extraDecomp++;
         }
       }
@@ -5161,28 +5453,24 @@ function collectLeaves(ast, out){
     {
       const sampleRatio = mp.meetFwdSampleRatio != null ? mp.meetFwdSampleRatio : 0.50;
       const meetFwdCap = Math.max(250, Math.floor(beamF * sampleRatio));
-      // 先全部 pushBest
       for(const e of fwd[c]){
         pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
         if(stopFlag)break;
       }
-      // 按 goal(距T距离)升序排，取 top-K
       if(bidir && !stopFlag){
         const sorted = fwd[c].slice().sort((a,b)=>(a.goal||0)-(b.goal||0));
         const meetSet = new Set();
-        const topK2 = Math.min(sorted.length, meetFwdCap);
-        for(let i=0;i<topK2;i++) meetSet.add(sorted[i]);
-        // 也纳入已在 revIdx 中命中的项（包括transform-domain键命中）
-        // 深层联系: fwd[f(x)]需要匹配rev[g(y)]，f和g可以是互逆变换
-        // 不只检查primaryKey，还检查所有transform-domain键（L/S/Q/E等）
+        const sampleRatio2 = mp.meetFwdSampleRatio != null ? mp.meetFwdSampleRatio : 0.50;
+        const meetFwdCap2 = Math.max(200, Math.floor(beamF * sampleRatio2));
+        const topK3 = Math.min(sorted.length, meetFwdCap2);
+        for(let i=0;i<topK3;i++) meetSet.add(sorted[i]);
+
         for(const e of fwd[c]){
           if(!meetSet.has(e)){
             const mk2 = e.mkey || (e.mkey = meetPrimaryKey(e.v));
             if(revIdx.has(mk2)){
               meetSet.add(e);
             } else {
-              // 检查transform-domain键是否命中 (召回扩展)
-              // 只在beam的后50%中检查，避免对top-K重复检查
               const ks = meetKeysCached(e);
               for(let ki=1;ki<ks.length;ki++){
                 if(revIdx.has(ks[ki])){ meetSet.add(e); break; }
@@ -5190,6 +5478,35 @@ function collectLeaves(ast, out){
             }
           }
         }
+
+        if(Number.isFinite(T)){
+          const subTargets2=[];
+          const absT3=Math.abs(T);
+          if(absT3>0){
+            subTargets2.push(Math.sqrt(absT3));
+            subTargets2.push(-Math.sqrt(absT3));
+            subTargets2.push(Math.cbrt(T));
+            if(T>0) subTargets2.push(Math.log(T));
+            for(const cc of [Math.PI,Math.E,2,3]){
+              subTargets2.push(Math.sqrt(absT3)/cc);
+              subTargets2.push(T/cc);
+            }
+          }
+
+          for(const sv of subTargets2){
+            if(!Number.isFinite(sv)||Math.abs(sv)>1e8) continue;
+            let bestDist=Infinity, bestItem=null;
+            const scanLim=Math.min(sorted.length, Math.floor(meetFwdCap2*1.5));
+            for(let i=0;i<scanLim;i++){
+              const d=Math.abs(sorted[i].v-sv);
+              if(d<bestDist){bestDist=d;bestItem=sorted[i];}
+            }
+            if(bestItem && bestDist<Math.abs(sv)*0.05+0.01){
+              meetSet.add(bestItem);
+            }
+          }
+        }
+
         for(const e of meetSet){
           tryMeetFwdWithRevIdx(e);
           if(stopFlag)break;
