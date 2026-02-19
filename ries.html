@@ -3199,6 +3199,10 @@ function collectLeaves(ast, out){
   const rev=Array.from({length:maxC+1},()=>[]);
   const revIdx=new Map();
   const fwdIdx=new Map();
+  // coarse band index: key ignores mantissa quantization (sign|exp|domain prefix)
+  // and stores a tiny hot-list. It is used as a breadth fallback when precise meet keys miss.
+  const revBandIdx=new Map();
+  const fwdBandIdx=new Map();
 
   function idxBetter(a,b){
     const ac=a?.cost??INF, bc=b?.cost??INF;
@@ -3236,19 +3240,43 @@ function collectLeaves(ast, out){
     }
   }
 
+  function keyBand(k){
+    if(typeof k!=="string" || !k.length) return "";
+    if(k==="NaN") return "";
+    const p=k.split("|");
+    if(p.length===3){
+      // base key: sign|exp|q
+      return p[0]+"|"+p[1];
+    }
+    if(p.length>=4){
+      // transformed key: prefix|sign|exp|q
+      return p[0]+"|"+p[1]+"|"+p[2];
+    }
+    return "";
+  }
+
+  function idxInsertBand(map,key,it,cap){
+    const bk=keyBand(key);
+    if(!bk) return;
+    idxInsert(map,bk,it,cap);
+  }
+
   function addRevIdx(items){
     const cap=Math.max(8,mp.revIdxKeyCap|0||120);
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
+    const bandCap=Math.max(6, Math.floor(cap*0.35));
     for(const it of items){
       const p=it.mkey || (it.mkey = meetPrimaryKey(it.v));
       idxInsert(revIdx,p,it,cap);
+      idxInsertBand(revBandIdx,p,it,bandCap);
       const ks=meetKeysCached(it);
       let used=0;
       for(let i=0;i<ks.length&&used<maxKeys;i++){
         const k2=ks[i];
         if(k2===p) continue;
         idxInsert(revIdx,k2,it,perItemCap);
+        idxInsertBand(revBandIdx,k2,it,bandCap);
         used++;
       }
     }
@@ -3261,15 +3289,18 @@ function collectLeaves(ast, out){
     const cap=Math.max(8,mp.fwdIdxKeyCap|0||120);
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
+    const bandCap=Math.max(6, Math.floor(cap*0.35));
     for(const it of items){
       const p=it.mkey || (it.mkey = meetPrimaryKey(it.v));
       idxInsert(fwdIdx,p,it,cap);
+      idxInsertBand(fwdBandIdx,p,it,bandCap);
       const ks=meetKeysCached(it);
       let used=0;
       for(let i=0;i<ks.length&&used<maxKeys;i++){
         const k2=ks[i];
         if(k2===p) continue;
         idxInsert(fwdIdx,k2,it,perItemCap);
+        idxInsertBand(fwdBandIdx,k2,it,bandCap);
         used++;
       }
     }
@@ -3594,6 +3625,30 @@ function collectLeaves(ast, out){
     }
   }
 
+  function tryBandProbe(target, bandMap, lim2Cap, seenNode, pairCb){
+    const keys=meetKeysCached(target);
+    const seenBand=new Set();
+    let hitCount=0;
+    for(const k of keys){
+      const bk=keyBand(k);
+      if(!bk || seenBand.has(bk)) continue;
+      seenBand.add(bk);
+      const arr=bandMap.get(bk);
+      if(!arr) continue;
+      meetDbg.keyHits++;
+      const lim=Math.min(arr.length,Math.max(6,Math.floor(lim2Cap*0.5)));
+      for(let i=0;i<lim;i++){
+        const cand=arr[i];
+        if(seenNode.has(cand)) continue;
+        seenNode.add(cand);
+        pairCb(cand);
+        hitCount++;
+        if(stopFlag) return hitCount;
+      }
+    }
+    return hitCount;
+  }
+
   function tryMeetReverseWithFwdIdx(r){
     if(!bidir)return;
     const limKey=Math.max(8,mp.meetKeyProbeCap|0||120);
@@ -3635,6 +3690,14 @@ function collectLeaves(ast, out){
         tryMeetPair(cand,r);
         if(stopFlag) return;
       }
+    }
+    if(!stopFlag && !hit){
+      const bandHits=tryBandProbe(r,fwdBandIdx,limKey,seenNode,(cand)=>{
+        meetDbg.rev2fwdPairs++;
+        meetDbg.pairsTried++;
+        tryMeetPair(cand,r);
+      });
+      if(bandHits>0) strategyStats.extraDecomp++;
     }
     if(!stopFlag && strategyStats.stagnationLayers>=3) jitterMeetProbeReverse(r,limKey,seenNode);
   }
@@ -3705,6 +3768,13 @@ function collectLeaves(ast, out){
         tryMeetPair(f,cand);
         if(stopFlag) return;
       }
+    }
+    if(!stopFlag && !hit){
+      const bandHits=tryBandProbe(f,revBandIdx,lim2Cap,seenNode,(cand)=>{
+        meetDbg.pairsTried++;
+        tryMeetPair(f,cand);
+      });
+      if(bandHits>0) strategyStats.extraDecomp++;
     }
     if(!stopFlag && strategyStats.stagnationLayers>=3) jitterMeetProbeForward(f,lim2Cap,seenNode);
   }
