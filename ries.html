@@ -1686,14 +1686,14 @@ function modeParams(mode){
     qGoal:0.16,qBB:0.10,qMeet:0.14,qDiv:0.04,qPow:0.12,qFunc:0.07,qDepth:0.08,qMag:0.09,qIrr:0.04,
     qPowBase:0.18, qPowExp:0.14, qFrac:0.10,
     qReq:0.10,
-    meetStyle:"bin", meetPrec:13, meetQ:24576, meetR:22,
-    revBeamMul:2.6, meetHitBonus:0.10,
+    meetStyle:"bin", meetPrec:13, meetQ:24576, meetR:12,
+    revBeamMul:1.8, meetHitBonus:0.10,
     candEpsMul:0.85, confirmEpsMul:1.0, binSlackMul:0.30, confirmAbsFloor:0.0,
-    spillMul:1.6, capMul:1.35, keepMeetDup:false,
-    meetSweepMul:0.26, meetSweepPowMul:0.50,
-    beamMul:1.42, subLayerCapMul:2.00,
-    revIdxKeyCap:380, fwdIdxKeyCap:380, meetKeyProbeCap:520, meetSweepRevCap:680, idxKeysPerItem:22, idxPerItemCap:140,
-    capUnMul:5.6, capBinMul:4.8, jumpMul:3.20, meetStage2:1, qSeed:0.18
+    spillMul:1.1, capMul:1.0, keepMeetDup:false,
+    meetSweepMul:0.07, meetSweepPowMul:0.13,
+    beamMul:1.0, subLayerCapMul:1.1,
+    revIdxKeyCap:150, fwdIdxKeyCap:150, meetKeyProbeCap:200, meetSweepRevCap:100, idxKeysPerItem:8, idxPerItemCap:40,
+    capUnMul:2.5, capBinMul:1.8, jumpMul:1.5, meetStage2:1, qSeed:0.12
   };
   return {
     keyPrec:12, bestPrec:12, keepMode:"goal",
@@ -1701,14 +1701,14 @@ function modeParams(mode){
     qGoal:0.16,qBB:0.08,qMeet:0.18,qDiv:0.04,qPow:0.12,qFunc:0.06,qDepth:0.08,qMag:0.09,qIrr:0.03,
     qPowBase:0.16, qPowExp:0.12, qFrac:0.08,
     qReq:0.10,
-    meetStyle:"bin", meetPrec:12, meetQ:16384, meetR:16,
-    revBeamMul:3.0, meetHitBonus:0.18,
+    meetStyle:"bin", meetPrec:12, meetQ:16384, meetR:8,
+    revBeamMul:1.2, meetHitBonus:0.18,
     candEpsMul:1.40, confirmEpsMul:1.0, binSlackMul:0.15, confirmAbsFloor:0.0,
-    spillMul:1.55, capMul:1.25, keepMeetDup:false,
-    meetSweepMul:0.28, meetSweepPowMul:0.55,
-    beamMul:1.64, subLayerCapMul:2.20,
-    revIdxKeyCap:380, fwdIdxKeyCap:380, meetKeyProbeCap:540, meetSweepRevCap:700, idxKeysPerItem:22, idxPerItemCap:160,
-    capUnMul:6.5, capBinMul:5.7, jumpMul:3.50, meetStage2:1, qSeed:0.18
+    spillMul:1.0, capMul:1.0, keepMeetDup:false,
+    meetSweepMul:0.05, meetSweepPowMul:0.09,
+    beamMul:0.85, subLayerCapMul:0.95,
+    revIdxKeyCap:100, fwdIdxKeyCap:100, meetKeyProbeCap:120, meetSweepRevCap:60, idxKeysPerItem:6, idxPerItemCap:25,
+    capUnMul:2.0, capBinMul:1.5, jumpMul:1.0, meetStage2:1, qSeed:0.10
   };
 }
 
@@ -1854,38 +1854,17 @@ function meetKeys(v,goalHint=Infinity,depthHint=0){
     }
   }
 
-  // --- Trig-output range key: for v ∈ [-1,1] add arcsin/arccos keys ---
-  // Helps rev[arcsin(T)] ↔ fwd[arcsin(T)] without depending on perfect primary-key match
+  // Trig/exp cross-domain keys: only include when the result range is useful.
+  // PERF FIX: these added 6-8 extra keys per value causing massive index bloat.
+  // Only include asin/acos if in [-1,1] range (for trig-output meets)
   if(av<=1.0+1e-9){
     const as=Math.asin(Math.max(-1,Math.min(1,v)));
-    const ac=Math.acos(Math.max(-1,Math.min(1,v)));
     if(Number.isFinite(as)){const k=_bk("AS",as);if(k)_meetKeyOut.push(k);}
-    if(Number.isFinite(ac)){const k=_bk("AC",ac);if(k)_meetKeyOut.push(k);}
   }
-
-  // --- Arctan key: for any v, add atan(v) key ---
-  // Helps cos(tan(e)) style: fwd builds tan(e), rev from T through cos(?) has arccos(T)
-  // atan range is [-π/2, π/2]; adds cross-domain linkage for tan-based meets
-  if(av<1e8){
-    const at=Math.atan(v);
-    const k=_bk("AT",at);
-    if(k)_meetKeyOut.push(k);
-  }
-
-  // --- Exp/sinh/cosh-domain keys ---
-  // For small |v| (in trig argument range), add sin(v) and cos(v) keys
-  // so that fwd[v] and rev[sin(v)] (from rev applying sin-inverse) can meet
-  if(av<=Math.PI*2+0.5 && av>0){
-    const sv2=Math.sin(v), cv2=Math.cos(v);
-    if(Number.isFinite(sv2)){const k=_bk("SN",sv2);if(k)_meetKeyOut.push(k);}
-    if(Number.isFinite(cv2)){const k=_bk("CS",cv2);if(k)_meetKeyOut.push(k);}
-  }
-
-  // --- Exp key: for v in modest range, add exp(v) ---
-  // Lets fwd[v] share a key with rev[exp(v)] (from rev's log-inverse)
-  if(av<10){
+  // Only include exp key for small values (high probability of being log-inverse meet)
+  if(av<6){
     const ev=Math.exp(v);
-    if(Number.isFinite(ev)&&ev<1e10){
+    if(Number.isFinite(ev)&&ev<1e8){
       const k=_bk("E",ev);
       if(k)_meetKeyOut.push(k);
     }
@@ -2293,7 +2272,12 @@ function pruneBin(op,af,bf,av,bv){
   if(op==="^"&&has(af,F_ONE)&&!NEED_ONE)return true;
   if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
 
-  if(op==="+" && HAS_SUB && (getTag(bf)===TAG_NEG || getTag(af)===TAG_NEG)) return true;
+  // Only prune a + neg(x) if neg(x) is NOT a constant literal (constants can be negative)
+  if(op==="+" && HAS_SUB && (getTag(bf)===TAG_NEG||getTag(af)===TAG_NEG)){
+    // Allow: constant literals can have negative values (e.g. -3 is leaf, not neg(3))
+    const isConstLit=(f)=>has(f,F_CONST);
+    if(!isConstLit(af) && !isConstLit(bf)) return true;
+  }
   if(op==="*" && HAS_DIV && (getTag(bf)===TAG_INV || getTag(af)===TAG_INV)) return true;
   if(op==="/" && HAS_MUL && getTag(bf)===TAG_INV) return true;
 
@@ -2450,7 +2434,9 @@ function mkBucket(beam,spillMul){
   function dn(i){for(;;){let b=i,l=i*2+1,r=l+1;if(l<h.length&&h[l].keep>h[b].keep)b=l;if(r<h.length&&h[r].keep>h[b].keep)b=r;if(b===i)break;sw(i,b);i=b;}}
   const bucket={
     get size(){return h.length;},
-    values(){return h;}
+    values(){return h;},
+    isFull(){return h.length>=cap;},
+    worstKeep(){return h.length>0?h[0].keep:Infinity;}
   };
   function put(key,pack){
     const i=kidx.get(key);
@@ -2530,8 +2516,10 @@ function topK(items,k,scoreFn,lowerBetter=true,filterFn=null){
 function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const out=[];
   const used=new Set();
-  const keepPoolMul = mode==="speed" ? 8 : (mode==="accuracy" ? 18 : 14);
-  const keepPoolFloor = mode==="speed" ? 2200 : 3200;
+  // PERF FIX: reduced keepPoolMul to prevent O(n^2) topK calls on huge pools
+  // Old: accuracy=18x beam (117K items) causing slow topK ops for 20+ quota categories
+  const keepPoolMul = mode==="speed" ? 4 : (mode==="accuracy" ? 6 : 5);
+  const keepPoolFloor = mode==="speed" ? 1200 : 2000;
   const keepPoolSize = Math.min(items.length, Math.max(beam*keepPoolMul, keepPoolFloor));
   const quotaPool = keepPoolSize<items.length ? topK(items,keepPoolSize,(x)=>x.keep,true) : items;
 
@@ -3017,6 +3005,11 @@ onmessage=async(ev)=>{
   };
   let dynamicCandMul=1.0, dynamicConfirmMul=1.0;
   const strategyStats={adaptiveBoosts:0,pruneRelax:0,meetJitter:0,extraDecomp:0,stagnationLayers:0,forcedBoost:0,pressureScore:0};
+  // Phase timing debug (accumulated milliseconds per major phase per layer)
+  const phaseTiming={buildFwd:0,buildRev:0,meetSweep:0,selectTop:0,decompose:0,meetFwd:0,totalLayers:0};
+  function emitPhaseTimingLog(c){
+    if(typeof console!=="undefined") console.log(\`[c=\${c}] Phase timing (ms): buildFwd=\${phaseTiming.buildFwd.toFixed(0)} buildRev=\${phaseTiming.buildRev.toFixed(0)} meetSweep=\${phaseTiming.meetSweep.toFixed(0)} selectTop=\${phaseTiming.selectTop.toFixed(0)} decompose=\${phaseTiming.decompose.toFixed(0)} meetFwd=\${phaseTiming.meetFwd.toFixed(0)} layers=\${phaseTiming.totalLayers}\`);
+  }
 
   const best=[];
   let bestDeltaSoFar=Infinity;
@@ -3054,7 +3047,7 @@ onmessage=async(ev)=>{
         bestCount:best.length,
         bestDeltaSoFar,
         dynamicCandMul,dynamicConfirmMul,
-        strategyStats,
+        strategyStats,phaseTiming,
         best:best.slice(0,outN)
       }});
     }
@@ -3478,6 +3471,10 @@ function collectLeaves(ast, out){
     const matchGap=Math.abs(f.v-r.v);
 
     const isPowRelated = (r.srcOp==="^") || (f.hasPow) || (r.wA && r.srcOp==="pow");
+    // FIXED: for pow-related candidates, apply much stricter initial reject to avoid
+    // runaway evaluation of e.g. base^exponent that produces astronomically large errors
+    // (maxConfirmErr was ~1e12 indicating this was a real problem)
+    if(isPowRelated && Math.abs(f.v)>50 && Math.abs(r.v)>50) { meetDbg.rejEpsCand++; return; }
     // isTrigRelated: if either side involves trig ops, allow slightly larger cand epsilon
     // because trig functions have larger float sensitivity near extrema
     const isTrigRelated = (f.ast && f.ast.f) ||
@@ -4031,9 +4028,9 @@ function collectLeaves(ast, out){
 
         const base=Math.floor(Math.sqrt(beamR));
         const isPow = (op==="^");
-        // For ^ op: probe much wider - power base/exponent combos need high recall
-        const laneMul=isPow?10.0:3.0;
-        const laneMin=isPow?600:140;
+        // FIXED: reduced lane caps to prevent O(n^2) explosion in buildRev
+        const laneMul=isPow?2.0:1.2;
+        const laneMin=isPow?80:40;
         const cR=Math.min(rs.length,Math.max(laneMin,Math.floor(base*laneMul)));
         const cF=Math.min(fs.length,Math.max(laneMin,Math.floor(base*laneMul)));
 
@@ -4350,14 +4347,17 @@ function collectLeaves(ast, out){
               const mask=a.mask|b.mask;
               const v=applyBin(op,a.v,b.v);
               if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
-              if(Math.abs(v-T)>pruneGoalThresh)continue;
-              const ast=mkB(op,a.ast,b.ast);
-              if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
               const goal=Math.abs(v-T);
+              // PERF: fast pre-filter before expensive mkB/bbScore
+              if(goal>pruneGoalThresh)continue;
               const bb=bbScore(v,mp.bbD,mp.bbMagA);
               const mk = bidir ? meetPrimaryKey(v) : "";
               const revHit=bidir?revIdx.has(mk):false;
               const keep=keepScore(goal,bb,revHit,mask);
+              // PERF: skip if bucket full and this item is definitely worse
+              if(bucket.isFull() && keep>=bucket.worstKeep() && !revHit) continue;
+              const ast=mkB(op,a.ast,b.ast);
+              if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
               put(keyOf(v,mask,""),{v,goal,bb,keep,ast,mask,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
             }else{
               const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
@@ -4455,7 +4455,7 @@ function collectLeaves(ast, out){
   // Updated each complexity level; starts at Infinity
   // pruneGoalThresh: start at 2×|T| scale. Values within this range OR with low bb (rational)
   // are kept. Updated each layer. See tFloor logic below that prevents it going too tight.
-  let pruneGoalThresh=Math.max(Math.abs(T)*2.0, 2.0);
+  let pruneGoalThresh=Infinity; // Start with no goal pruning; tighten after first solutions found
   let stagnationLayers=0;
   let prevLayerBest=Infinity;
   let prevVisited=0, prevMeetCand=0, prevMeetOK=0, prevProbeRej=0;
@@ -4463,11 +4463,18 @@ function collectLeaves(ast, out){
     if(stopFlag)break;
     if(performance.now()-t0>lim)break;
 
+    phaseTiming.totalLayers++;
+    const _t0Rev=performance.now();
     if(bidir){
       buildRev(c);
+      phaseTiming.buildRev+=performance.now()-_t0Rev;
       if(stopFlag)break;
+      const _t0Sweep=performance.now();
       meetSweepWithNewReverseLayer(c);
+      phaseTiming.meetSweep+=performance.now()-_t0Sweep;
       if(stopFlag)break;
+    } else {
+      phaseTiming.buildRev+=performance.now()-_t0Rev;
     }
 
     const bestNow=Math.max(1e-18,Math.abs(bestDeltaSoFar));
@@ -4519,15 +4526,20 @@ function collectLeaves(ast, out){
           const bb=bbScore(v,mp.bbD,mp.bbMagA);
           const mk = bidir ? meetPrimaryKey(v) : "";
           const revHit=bidir?revIdx.has(mk):false;
-          const ast=mkU(op,a.ast);
-          if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
 
           if(useBitmask){
             const keep=keepScore(goal,bb,revHit,a.mask);
+            // PERF: skip AST creation if bucket full and item is definitely worse
+            if(bucket.isFull() && keep>=bucket.worstKeep() && !revHit) continue;
+            const ast=mkU(op,a.ast);
+            if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
             put(keyOf(v,a.mask,""),{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
           }else{
             const rBonus=(bb<0.08&&goal>0.001)?0.04*bb:0;
             const keep=(mp.keepMode==="goal")?(goal-rBonus):Math.min(goal,bb)-rBonus;
+            if(bucket.isFull() && keep>=bucket.worstKeep() && !revHit) continue;
+            const ast=mkU(op,a.ast);
+            if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
             put(keyOf(v,0,a.ck),{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
           }
 
@@ -4594,9 +4606,11 @@ function collectLeaves(ast, out){
         }
       }
 
+      const _t0ST=performance.now();
       const items=Array.from(bucket.values());
       for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
       const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
+      phaseTiming.selectTop+=performance.now()-_t0ST;
       for(const it of picked){it.cost=c;}
       fwd[c]=picked;
     }
@@ -4606,7 +4620,9 @@ function collectLeaves(ast, out){
     addFwdIdx(fwd[c]);
     // Free cached mkeys after indexing
     for(const it of fwd[c]){if(it.mkeys)it.mkeys=null;}
+    const _t0Dec=performance.now();
     tryTargetDecomposition(fwd[c], T);
+    phaseTiming.decompose+=performance.now()-_t0Dec;
     if(stagnationLayers>=2 || strategyStats.pressureScore>=2){
       const prev=fwd[Math.max(1,c-1)]||[];
       if(prev.length){
@@ -4615,21 +4631,27 @@ function collectLeaves(ast, out){
       }
     }
 
+    const _t0MeetFwd=performance.now();
     for(const e of fwd[c]){
       pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
       if(stopFlag)break;
       if(bidir) tryMeetFwdWithRevIdx(e);
       if(stopFlag)break;
     }
+    phaseTiming.meetFwd+=performance.now()-_t0MeetFwd;
 
     emit(c);
     // Update goal prune threshold: allow up to relax×best_delta BUT never below T-scale floor.
     // CRITICAL: building blocks like π, e, √2 may be far from T but needed for f^g compositions.
     // Floor = max(|T|, 1) × 0.5 ensures values within T's order of magnitude are ALWAYS kept.
-    const tFloor = Math.max(Math.abs(T), 1) * 0.50;
+    // FIXED 漏解: floor must preserve ALL leaf constants as building blocks
+    // Old: 0.5*|T| would cut pi/e when T=25 after finding solutions near T
+    // New: ensure any leaf constant (like pi, e, sqrt2) can always be a subexpression
+    const _leafMaxGoal = consts.reduce((m,c)=>Math.max(m,Math.abs(Number(c.v)-T)),0);
+    const tFloor = Math.max(_leafMaxGoal * 3.0, Math.abs(T) * 2.0, 30);
     if(best.length>0){
-      const relax=1+Math.min(6.0,stagnationLayers*0.55 + strategyStats.pressureScore*0.82);
-      pruneGoalThresh=Math.max(Math.abs(best[0].delta)*(26*relax)+1e-9, tFloor);
+      const relax=1+Math.min(8.0,stagnationLayers*0.55 + strategyStats.pressureScore*0.82);
+      pruneGoalThresh=Math.max(Math.abs(best[0].delta)*(80*relax)+1e-9, tFloor);
       if(stagnationLayers>0 || strategyStats.pressureScore>0) strategyStats.pruneRelax++;
     } else {
       pruneGoalThresh = Math.max(pruneGoalThresh, tFloor);
@@ -4653,7 +4675,7 @@ function collectLeaves(ast, out){
     bestCount:best.length,
     bestDeltaSoFar,
     dynamicCandMul,dynamicConfirmMul,
-    strategyStats,
+    strategyStats,phaseTiming,
     best:best.slice(0,outN)
   }});
 };
@@ -4797,6 +4819,19 @@ $("btnStart").onclick=()=>{
             `keyHits=${d.keyHits} pairsTried=${d.pairsTried} rev2fwdPairs=${d.rev2fwdPairs}<br>`+
             `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, probe=${d.rejProbeConfirm}, confirm=${d.rejConfirm}) `+
             `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}`;
+        }
+        if(payload.phaseTiming){
+          const pt=payload.phaseTiming;
+          const total=pt.buildFwd+pt.buildRev+pt.meetSweep+pt.selectTop+pt.decompose+pt.meetFwd;
+          ps.innerHTML+=
+            `<br><b>⏱ Phase Timing (ms累计)</b> `+
+            `buildFwd=${pt.buildFwd.toFixed(0)} `+
+            `buildRev=${pt.buildRev.toFixed(0)} `+
+            `meetSweep=${pt.meetSweep.toFixed(0)} `+
+            `selectTop=${pt.selectTop.toFixed(0)} `+
+            `decompose=${pt.decompose.toFixed(0)} `+
+            `meetFwd=${pt.meetFwd.toFixed(0)} `+
+            `(已分析${pt.totalLayers}层, 总计=${total.toFixed(0)}ms)`;
         }
       }else{
         $("status").style.display="none";
