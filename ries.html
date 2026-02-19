@@ -2098,7 +2098,11 @@ function pretty(n,parentOp=null,side=null){
   if(n.t===0)return n.sym;
   if(n.t===1){
     const op=n.op,ch=n.ch;
-    if(op==="neg"){const s=pretty(ch,"neg","right");const need=prec(ch)<PREC_UN;return"−"+(need?"("+s+")":s);}
+    if(op==="neg"){
+      if(ch&&ch.t===1&&ch.op==="neg") return pretty(ch.ch,parentOp,side);
+      if(isNegAtomNode(ch)) return absAtomText(ch);
+      const s=pretty(ch,"neg","right");const need=prec(ch)<PREC_UN;return"−"+(need?"("+s+")":s);
+    }
     if(op==="sqrt"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_UN;return"√"+(need?"("+s+")":s);}
     if(op==="cbrt"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_UN;return"∛"+(need?"("+s+")":s);}
     if(op==="inv"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_MUL;return"1/"+(need?"("+s+")":s);}
@@ -2131,6 +2135,11 @@ function pretty(n,parentOp=null,side=null){
     const rout2=needParen(R.ch,"+","right")?"("+rs2+")":rs2;
     const lout2=needParen(L,"+","left")?"("+ls+")":ls;
     return lout2+"+"+rout2;
+  }
+  if(op==="-"&&isNegAtomNode(R)){
+    const rs2=absAtomText(R);
+    const lout2=needParen(L,"+","left")?"("+ls+")":ls;
+    return lout2+"+"+rs2;
   }
   const lout=needParen(L,op,"left")?"("+ls+")":ls;
   const rout=needParen(R,op,"right")?"("+rs+")":rs;
@@ -3199,6 +3208,10 @@ function collectLeaves(ast, out){
   const rev=Array.from({length:maxC+1},()=>[]);
   const revIdx=new Map();
   const fwdIdx=new Map();
+  // coarse band index: key ignores mantissa quantization (sign|exp|domain prefix)
+  // and stores a tiny hot-list. It is used as a breadth fallback when precise meet keys miss.
+  const revBandIdx=new Map();
+  const fwdBandIdx=new Map();
 
   function idxBetter(a,b){
     const ac=a?.cost??INF, bc=b?.cost??INF;
@@ -3236,19 +3249,43 @@ function collectLeaves(ast, out){
     }
   }
 
+  function keyBand(k){
+    if(typeof k!=="string" || !k.length) return "";
+    if(k==="NaN") return "";
+    const p=k.split("|");
+    if(p.length===3){
+      // base key: sign|exp|q
+      return p[0]+"|"+p[1];
+    }
+    if(p.length>=4){
+      // transformed key: prefix|sign|exp|q
+      return p[0]+"|"+p[1]+"|"+p[2];
+    }
+    return "";
+  }
+
+  function idxInsertBand(map,key,it,cap){
+    const bk=keyBand(key);
+    if(!bk) return;
+    idxInsert(map,bk,it,cap);
+  }
+
   function addRevIdx(items){
     const cap=Math.max(8,mp.revIdxKeyCap|0||120);
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
+    const bandCap=Math.max(6, Math.floor(cap*0.35));
     for(const it of items){
       const p=it.mkey || (it.mkey = meetPrimaryKey(it.v));
       idxInsert(revIdx,p,it,cap);
+      idxInsertBand(revBandIdx,p,it,bandCap);
       const ks=meetKeysCached(it);
       let used=0;
       for(let i=0;i<ks.length&&used<maxKeys;i++){
         const k2=ks[i];
         if(k2===p) continue;
         idxInsert(revIdx,k2,it,perItemCap);
+        idxInsertBand(revBandIdx,k2,it,bandCap);
         used++;
       }
     }
@@ -3261,15 +3298,18 @@ function collectLeaves(ast, out){
     const cap=Math.max(8,mp.fwdIdxKeyCap|0||120);
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
+    const bandCap=Math.max(6, Math.floor(cap*0.35));
     for(const it of items){
       const p=it.mkey || (it.mkey = meetPrimaryKey(it.v));
       idxInsert(fwdIdx,p,it,cap);
+      idxInsertBand(fwdBandIdx,p,it,bandCap);
       const ks=meetKeysCached(it);
       let used=0;
       for(let i=0;i<ks.length&&used<maxKeys;i++){
         const k2=ks[i];
         if(k2===p) continue;
         idxInsert(fwdIdx,k2,it,perItemCap);
+        idxInsertBand(fwdBandIdx,k2,it,bandCap);
         used++;
       }
     }
@@ -3457,7 +3497,87 @@ function collectLeaves(ast, out){
     const seedCk=tCount?ckFromCnt(seedCnt):"";
     const mk = meetPrimaryKey(T);
     rev[0]=[{v:T,wA:(a)=>a,mask:seedMask,cnt:seedCnt,ck:seedCk,flags:mkFlags(T,TAG_NONE,true),cost:0,score:0,srcOp:"seed",mkey:mk}];
-    addRevIdx(rev[0]);
+
+    // Target-anchored reverse hints: seed a tiny frontier of transformed targets so
+    // hard composed structures can meet earlier without waiting many reverse layers.
+    // This improves breadth structurally (not parameter-only) while staying bounded.
+    const hinted=new Set();
+    const hintCountByCost=new Map();
+    const maxHintTotal=72;
+    let hintTotal=0;
+    function pushRevHint(v,cost,wA,srcOp){
+      if(!Number.isFinite(v) || Math.abs(v)>CAP) return;
+      cost=cost|0;
+      if(cost<=0 || cost>maxC) return;
+      const hk=vKey(v)+"|"+cost+"|"+srcOp;
+      if(hinted.has(hk)) return;
+      hinted.add(hk);
+      const n=(hintCountByCost.get(cost)||0);
+      const capPerCost = (cost<=4)?18:10;
+      if(n>=capPerCost || hintTotal>=maxHintTotal) return;
+      hintCountByCost.set(cost,n+1);
+      hintTotal++;
+      const mkey=meetPrimaryKey(v);
+      const score=revScore(v);
+      const node=useBitmask
+        ?{v,wA,mask:seedMask,flags:mkFlags(v,TAG_NONE,false),keep:score,goal:score,bb:score,cost,srcOp,mkey}
+        :{v,wA,cnt:seedCnt,ck:seedCk,flags:mkFlags(v,TAG_NONE,false),keep:score,goal:score,bb:score,cost,srcOp,mkey};
+      if(!rev[cost]) rev[cost]=[];
+      rev[cost].push(node);
+    }
+
+    const favAtoms=pickInterestingAtoms(8);
+    for(const cst of favAtoms){
+      const cv=Number(cst.v);
+      if(!Number.isFinite(cv)) continue;
+      const cAst=mkC(cst.s,cst.v,ordLeaf(cst.s));
+      if(Array.isArray(opsBin)){
+        if(opsBin.includes("*") && cv!==0){
+          const x=invBinR("*",T,cv);
+          pushRevHint(x,wBin("*"),(a)=>mkB("*",cAst,a),"hint_mul_r");
+        }
+        if(opsBin.includes("/") && cv!==0){
+          const x=invBinR("/",T,cv);
+          pushRevHint(x,wBin("/"),(a)=>mkB("/",cAst,a),"hint_div_r");
+          const y=invBinL("/",T,cv);
+          pushRevHint(y,wBin("/"),(a)=>mkB("/",a,cAst),"hint_div_l");
+        }
+        if(opsBin.includes("+") ){
+          const x=invBinR("+",T,cv);
+          pushRevHint(x,wBin("+"),(a)=>mkB("+",cAst,a),"hint_add_r");
+        }
+        if(opsBin.includes("-") ){
+          const x=invBinR("-",T,cv);
+          pushRevHint(x,wBin("-"),(a)=>mkB("-",cAst,a),"hint_sub_r");
+          const y=invBinL("-",T,cv);
+          pushRevHint(y,wBin("-"),(a)=>mkB("-",a,cAst),"hint_sub_l");
+        }
+        if(opsBin.includes("^") && T>0 && cv>0 && Math.abs(cv-1)>1e-12){
+          const x=invBinR("^",T,cv);
+          pushRevHint(x,wBin("^"),(a)=>mkB("^",cAst,a),"hint_pow_exp");
+          const y=invBinL("^",T,cv);
+          pushRevHint(y,wBin("^"),(a)=>mkB("^",a,cAst),"hint_pow_base");
+        }
+      }
+    }
+
+    if(Array.isArray(opsUn)){
+      const unHintOps=["log","exp","sqrt","cbrt","square","cube","sin","cos","tan","asin","acos","atan"];
+      for(const op of unHintOps){
+        if(!opsUn.includes(op)) continue;
+        const invs=invUn(op,T);
+        if(!Array.isArray(invs)) continue;
+        const w=wUn(op);
+        for(const obj of invs){
+          const vv=obj&&obj.v;
+          pushRevHint(vv,w,(a)=>mkU(op,a),"hint_"+op);
+        }
+      }
+    }
+
+    for(let c=0;c<=maxC;c++){
+      if(Array.isArray(rev[c]) && rev[c].length) addRevIdx(rev[c]);
+    }
   }
 
   function tryMeetPair(f,r){
@@ -3594,6 +3714,44 @@ function collectLeaves(ast, out){
     }
   }
 
+  function tryBandProbe(target, bandMap, lim2Cap, seenNode, pairCb){
+    const tVal=target&&Number.isFinite(target.v)?target.v:NaN;
+    const tAbs=Math.abs(tVal);
+    const relTol=Math.max(8/Math.max(256,MEET_Q), (Math.max(1,MEET_R)+2)/Math.max(256,MEET_Q));
+    const baseBudget=(strategyStats.pressureScore>=1)?10:18;
+    const budget=Math.max(6, baseBudget - Math.max(0,(target?.cost|0)-8));
+    let consumed=0;
+    const keys=meetKeysCached(target);
+    const seenBand=new Set();
+    let hitCount=0;
+    for(const k of keys){
+      if(consumed>=budget) break;
+      const bk=keyBand(k);
+      if(!bk || seenBand.has(bk)) continue;
+      seenBand.add(bk);
+      const arr=bandMap.get(bk);
+      if(!arr) continue;
+      meetDbg.keyHits++;
+      const lim=Math.min(arr.length,Math.max(4,Math.floor(lim2Cap*0.35)));
+      for(let i=0;i<lim;i++){
+        if(consumed>=budget) break;
+        const cand=arr[i];
+        if(seenNode.has(cand)) continue;
+        const cv=(cand&&Number.isFinite(cand.v))?cand.v:NaN;
+        if(!Number.isFinite(cv)) continue;
+        const cAbs=Math.abs(cv);
+        const sc=Math.max(1,tAbs,cAbs);
+        if(Math.abs(cv-tVal)>relTol*sc) continue;
+        seenNode.add(cand);
+        pairCb(cand);
+        consumed++;
+        hitCount++;
+        if(stopFlag) return hitCount;
+      }
+    }
+    return hitCount;
+  }
+
   function tryMeetReverseWithFwdIdx(r){
     if(!bidir)return;
     const limKey=Math.max(8,mp.meetKeyProbeCap|0||120);
@@ -3635,6 +3793,14 @@ function collectLeaves(ast, out){
         tryMeetPair(cand,r);
         if(stopFlag) return;
       }
+    }
+    if(!stopFlag && !hit){
+      const bandHits=tryBandProbe(r,fwdBandIdx,limKey,seenNode,(cand)=>{
+        meetDbg.rev2fwdPairs++;
+        meetDbg.pairsTried++;
+        tryMeetPair(cand,r);
+      });
+      if(bandHits>0) strategyStats.extraDecomp++;
     }
     if(!stopFlag && strategyStats.stagnationLayers>=3) jitterMeetProbeReverse(r,limKey,seenNode);
   }
@@ -3705,6 +3871,13 @@ function collectLeaves(ast, out){
         tryMeetPair(f,cand);
         if(stopFlag) return;
       }
+    }
+    if(!stopFlag && !hit){
+      const bandHits=tryBandProbe(f,revBandIdx,lim2Cap,seenNode,(cand)=>{
+        meetDbg.pairsTried++;
+        tryMeetPair(f,cand);
+      });
+      if(bandHits>0) strategyStats.extraDecomp++;
     }
     if(!stopFlag && strategyStats.stagnationLayers>=3) jitterMeetProbeForward(f,lim2Cap,seenNode);
   }
@@ -4028,11 +4201,14 @@ function collectLeaves(ast, out){
 
         const base=Math.floor(Math.sqrt(beamR));
         const isPow = (op==="^");
-        // FIXED: reduced lane caps to prevent O(n^2) explosion in buildRev
-        const laneMul=isPow?2.0:1.2;
-        const laneMin=isPow?80:40;
-        const cR=Math.min(rs.length,Math.max(laneMin,Math.floor(base*laneMul)));
-        const cF=Math.min(fs.length,Math.max(laneMin,Math.floor(base*laneMul)));
+        // adaptive lane caps: keep broad exploration, but avoid quadratic blow-up
+        // when index pressure is already high (observed in long accuracy runs).
+        const pressureLane = (strategyStats.pressureScore>=1) ? 0.78 : 1.0;
+        const laneMul=(isPow?2.0:1.2)*pressureLane;
+        const laneMin=Math.max(isPow?64:32, Math.floor(base*(isPow?0.42:0.28)));
+        const laneMax=Math.max(laneMin, Math.floor(base*(isPow?2.0:1.35)));
+        const cR=Math.min(rs.length,laneMax,Math.max(laneMin,Math.floor(base*laneMul)));
+        const cF=Math.min(fs.length,laneMax,Math.max(laneMin,Math.floor(base*laneMul)));
 
         for(let ir=0;ir<cR;ir++){
           const r=rs[ir];
