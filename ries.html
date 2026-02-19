@@ -1673,12 +1673,12 @@ function modeParams(mode){
     qReq:0.06,
     meetStyle:"bin", meetPrec:10, meetQ:12288, meetR:10,
     revBeamMul:2.2, meetHitBonus:0.22,
-    candEpsMul:1.8, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
-    spillMul:0.55, capMul:0.9, keepMeetDup:false,
-    meetSweepMul:0.14, meetSweepPowMul:0.26,
-    beamMul:0.70, subLayerCapMul:0.86,
-    revIdxKeyCap:200, fwdIdxKeyCap:200, meetKeyProbeCap:240, meetSweepRevCap:320, idxKeysPerItem:10, idxPerItemCap:36,
-    capUnMul:2.5, capBinMul:2.0, jumpMul:0.85, meetStage2:1, qSeed:0.04
+    candEpsMul:1.55, confirmEpsMul:0.92, binSlackMul:0.14, confirmAbsFloor:1.2e-6,
+    spillMul:0.78, capMul:1.0, keepMeetDup:false,
+    meetSweepMul:0.20, meetSweepPowMul:0.34,
+    beamMul:0.82, subLayerCapMul:1.04,
+    revIdxKeyCap:240, fwdIdxKeyCap:240, meetKeyProbeCap:320, meetSweepRevCap:420, idxKeysPerItem:12, idxPerItemCap:48,
+    capUnMul:2.9, capBinMul:2.3, jumpMul:1.25, meetStage2:1, qSeed:0.06
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:13, keepMode:"goal",
@@ -3126,8 +3126,6 @@ function collectLeaves(ast, out){
     if(LEAF_ORDER && obj.ast && obj.ast.ord && !obj.ast.ord.ok) return;
     if(mode!=="speed" && obj.ast && isTinyTailClone(obj.ast,T)) return;
 
-    const expr=obj.ast?strA(obj.ast):(obj.s||"?");
-    const latex=obj.ast?latexA(obj.ast):expr;
     const delta=v-T;
     const absDelta=Math.abs(delta);
     if(absDelta<bestDeltaSoFar) bestDeltaSoFar=absDelta;
@@ -3143,7 +3141,13 @@ function collectLeaves(ast, out){
       }
     }
     const ci=useBitmask?maskStr(obj.mask||0):cntStr(obj.cnt||EMPTY);
-    const leaves = obj.ast ? collectLeaves(obj.ast, []) : [];
+    const needCustom = !!(customAllow || customScoreAdjust);
+    let expr=null, latex=null, leaves=null;
+    if(needCustom){
+      expr=obj.ast?strA(obj.ast):(obj.s||"?");
+      latex=obj.ast?latexA(obj.ast):expr;
+      leaves = obj.ast ? collectLeaves(obj.ast, []) : [];
+    }
 
     if(customAllow){
       try{
@@ -3175,6 +3179,10 @@ function collectLeaves(ast, out){
       if(old && !powPrefer && !meetPrefer && (oldDelta<newDelta||(oldDelta===newDelta&&old.cost<=newCost))){
         dupesKilled++;return;
       }
+      if(!expr){
+        expr=obj.ast?strA(obj.ast):(obj.s||"?");
+        latex=obj.ast?latexA(obj.ast):expr;
+      }
       best.splice(idx,1);
       bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
       if(best.length>outN*4)best.length=outN*3;
@@ -3183,6 +3191,10 @@ function collectLeaves(ast, out){
       return;
     }
 
+    if(!expr){
+      expr=obj.ast?strA(obj.ast):(obj.s||"?");
+      latex=obj.ast?latexA(obj.ast):expr;
+    }
     bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
     if(best.length>outN*4)best.length=outN*3;
     rebuildBestCaches();
@@ -3195,18 +3207,39 @@ function collectLeaves(ast, out){
   const revIdx=new Map();
   const fwdIdx=new Map();
 
+  function idxBetter(a,b){
+    const ac=a?.cost??INF, bc=b?.cost??INF;
+    if(ac!==bc) return ac<bc;
+    const ak=a?.keep??INF, bk=b?.keep??INF;
+    if(ak!==bk) return ak<bk;
+    return Math.abs(a?.v??INF) < Math.abs(b?.v??INF);
+  }
+
   function idxInsert(map,key,it,cap){
     let arr=map.get(key);
     if(!arr){arr=[];map.set(key,arr);}
-    if(arr.length<cap){arr.push(it);return;}
+
+    if(arr.length<cap){
+      arr.push(it);
+      // Keep hot prefix ordered so meet probing can stop early with higher quality candidates.
+      for(let j=arr.length-1;j>0;j--){
+        if(idxBetter(arr[j],arr[j-1])){ const t=arr[j-1]; arr[j-1]=arr[j]; arr[j]=t; }
+        else break;
+      }
+      return;
+    }
+
     let wi=0;
     for(let i=1;i<arr.length;i++){
-      const a=arr[i], w=arr[wi];
-      if( (a.cost>w.cost) || (a.cost===w.cost && (a.keep??INF)>(w.keep??INF)) ) wi=i;
+      if(idxBetter(arr[wi],arr[i])) wi=i;
     }
-    const w=arr[wi];
-    if( (it.cost<w.cost) || (it.cost===w.cost && (it.keep??INF)<(w.keep??INF)) ){
+
+    if(idxBetter(it,arr[wi])){
       arr[wi]=it;
+      for(let j=wi;j>0;j--){
+        if(idxBetter(arr[j],arr[j-1])){ const t=arr[j-1]; arr[j-1]=arr[j]; arr[j]=t; }
+        else break;
+      }
     }
   }
 
@@ -3456,10 +3489,6 @@ function collectLeaves(ast, out){
     if(matchGap>epsCand){meetDbg.rejEpsCand++;return;}
     meetCandidates++;
 
-    const probeAST=r.wA?r.wA(mkC("#",f.v,ordLeaf("#"))):mkC("#",f.v,ordLeaf("#"));
-    const probeVal=evalA(probeAST);
-    if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){meetDbg.rejEvalNaN++;return;}
-
     const combinedAST=r.wA?r.wA(f.ast):f.ast;
 
     if(LEAF_ORDER && combinedAST && combinedAST.ord && !combinedAST.ord.ok) return;
@@ -3470,25 +3499,43 @@ function collectLeaves(ast, out){
     const powRisk=powStat.risk;
     const powTighten=Math.min(1.0,(1/(1+0.18*powCnt+0.06*powRisk))*(hasFunc?1.12:1.0));
 
-    const epsProbeBase=(8e-10*mp.confirmEpsMul*dynamicConfirmMul)*Math.max(1,Math.abs(T),Math.abs(probeVal))*(1+tc*0.03);
-    const epsProbeGap=matchGap*(1.7+tc*0.09)*powTighten*(isPowRelated?1.6:1.0);
-    const epsProbe=Math.max(epsProbeBase,epsProbeGap,mp.confirmAbsFloor||0);
-    const probeErr=Math.abs(probeVal-T);
-    if(probeErr>epsProbe){
-      meetDbg.rejProbeConfirm++;
-      if(probeErr>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=probeErr;
-      return;
+    const forceDeeperConfirm=(strategyStats.pressureScore>=2 && (isPowRelated || hasFunc));
+    const skipProbe =
+      (matchGap<=epsCand*0.10 && (tc<=Math.max(8,Math.floor(maxC*0.72)) || forceDeeperConfirm)) ||
+      (forceDeeperConfirm && matchGap<=epsCand*0.22);
+
+    let probeVal=f.v;
+    if(!skipProbe){
+      const probeAST=r.wA?r.wA(mkC("#",f.v,ordLeaf("#"))):mkC("#",f.v,ordLeaf("#"));
+      probeVal=evalA(probeAST);
+      if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){meetDbg.rejEvalNaN++;return;}
+
+      const epsProbeBase=(8e-10*mp.confirmEpsMul*dynamicConfirmMul)*Math.max(1,Math.abs(T),Math.abs(probeVal))*(1+tc*0.03);
+      const epsProbeGap=matchGap*(1.7+tc*0.09)*powTighten*(isPowRelated?1.6:1.0);
+      const epsProbe=Math.max(epsProbeBase,epsProbeGap,mp.confirmAbsFloor||0);
+      const probeErr=Math.abs(probeVal-T);
+      if(probeErr>epsProbe){
+        if(!forceDeeperConfirm || probeErr>epsProbe*1.45){
+          meetDbg.rejProbeConfirm++;
+          if(probeErr>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=probeErr;
+          return;
+        }
+      }
     }
 
     const trueVal=evalA(combinedAST);
     if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){meetDbg.rejEvalNaN++;return;}
 
-    const structuralDrift=Math.abs(trueVal-probeVal);
-    const driftCap=matchGap*(3.4+tc*0.18)*(1+powCnt*0.22)/(1+0.10*powRisk)+3e-12*scale;
-    if(structuralDrift>driftCap){
-      meetDbg.rejProbeConfirm++;
-      if(structuralDrift>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=structuralDrift;
-      return;
+    if(!skipProbe){
+      const structuralDrift=Math.abs(trueVal-probeVal);
+      const driftCap=matchGap*(3.4+tc*0.18)*(1+powCnt*0.22)/(1+0.10*powRisk)+3e-12*scale;
+      if(structuralDrift>driftCap){
+        if(!forceDeeperConfirm || structuralDrift>driftCap*1.35){
+          meetDbg.rejProbeConfirm++;
+          if(structuralDrift>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=structuralDrift;
+          return;
+        }
+      }
     }
 
     const epsConfirmBase=(7e-10*mp.confirmEpsMul*dynamicConfirmMul)*Math.max(1,Math.abs(T),Math.abs(trueVal))*(1+tc*0.025);
@@ -3519,6 +3566,34 @@ function collectLeaves(ast, out){
     }else{
       const cnt=addCnt(f.cnt??EMPTY,r.cnt??EMPTY);
       pushBest({v:trueVal,ast:combinedAST,cnt,cost:tc,searchType:"meet"});
+    }
+  }
+
+  function jitterMeetProbeReverse(r,lim2Cap,seenNode){
+    if(!bidir) return;
+    const scale=Math.max(1,Math.abs(r.v),Math.abs(T));
+    const eps=Math.max(3e-10*scale, Math.abs(r.v)*3e-10);
+    const probes=[r.v+eps,r.v-eps,r.v*(1+2e-10),r.v*(1-2e-10)];
+    const seenKey=new Set();
+    for(const pv of probes){
+      if(!Number.isFinite(pv) || Math.abs(pv)>CAP) continue;
+      const pkey=meetPrimaryKey(pv);
+      if(seenKey.has(pkey)) continue;
+      seenKey.add(pkey);
+      const fl=fwdIdx.get(pkey);
+      if(!fl) continue;
+      strategyStats.meetJitter++;
+      meetDbg.keyHits++;
+      const lim2=Math.min(fl.length,lim2Cap);
+      for(let i=0;i<lim2;i++){
+        const cand=fl[i];
+        if(seenNode.has(cand)) continue;
+        seenNode.add(cand);
+        meetDbg.rev2fwdPairs++;
+        meetDbg.pairsTried++;
+        tryMeetPair(cand,r);
+        if(stopFlag) return;
+      }
     }
   }
 
@@ -3564,6 +3639,7 @@ function collectLeaves(ast, out){
         if(stopFlag) return;
       }
     }
+    if(!stopFlag && strategyStats.stagnationLayers>=3) jitterMeetProbeReverse(r,limKey,seenNode);
   }
 
   function jitterMeetProbeForward(f,lim2Cap,seenNode){
@@ -4404,17 +4480,17 @@ function collectLeaves(ast, out){
     const dProbeRej=Math.max(0,meetDbg.rejProbeConfirm-prevProbeRej);
     const meetYield=dMeetOK/Math.max(1,dMeetCand);
     const probeRejRate=dProbeRej/Math.max(1,dMeetCand);
-    const pressureScore=(stagnationLayers>=1?1:0) + (meetYield<0.012?1:0) + (probeRejRate>0.55?1:0) + (dVisited>120000 && dMeetOK<2?1:0);
+    const pressureScore=(stagnationLayers>=1?1:0) + (meetYield<0.016?1:0) + (probeRejRate>0.50?1:0) + (dVisited>110000 && dMeetOK<3?1:0);
     strategyStats.stagnationLayers=stagnationLayers;
     strategyStats.pressureScore=pressureScore;
 
-    const forcedBoost=(c%3===0 && pressureScore>=2) || (c%5===0 && meetYield<0.008);
+    const forcedBoost=(c%2===0 && pressureScore>=2) || (c%4===0 && meetYield<0.010);
     if(forcedBoost) strategyStats.forcedBoost++;
 
-    const explorePressure=1+Math.min(2.2, pressureScore*0.35 + (forcedBoost?0.55:0));
-    const stagnationBoost=(1+Math.min(1.6,stagnationLayers*0.18))*explorePressure;
-    dynamicCandMul=1+Math.min(0.6,stagnationLayers*0.06 + pressureScore*0.12 + (forcedBoost?0.18:0));
-    dynamicConfirmMul=1+Math.min(1.5,stagnationLayers*0.10 + pressureScore*0.22 + (forcedBoost?0.35:0));
+    const explorePressure=1+Math.min(2.6, pressureScore*0.42 + (forcedBoost?0.70:0));
+    const stagnationBoost=(1+Math.min(1.9,stagnationLayers*0.22))*explorePressure;
+    dynamicCandMul=1+Math.min(0.95,stagnationLayers*0.09 + pressureScore*0.16 + (forcedBoost?0.24:0));
+    dynamicConfirmMul=1+Math.min(2.0,stagnationLayers*0.14 + pressureScore*0.30 + (forcedBoost?0.45:0));
 
     let capUn=Math.max(180,Math.floor(beamF*(mp.capUnMul||2.0)/4/constPenalty*stagnationBoost));
     let capBin=Math.max(120,Math.floor(beamF*(mp.capBinMul||1.8)/6/constPenalty*stagnationBoost));
@@ -4552,8 +4628,8 @@ function collectLeaves(ast, out){
     // Floor = max(|T|, 1) × 0.5 ensures values within T's order of magnitude are ALWAYS kept.
     const tFloor = Math.max(Math.abs(T), 1) * 0.50;
     if(best.length>0){
-      const relax=1+Math.min(4.5,stagnationLayers*0.42 + strategyStats.pressureScore*0.65);
-      pruneGoalThresh=Math.max(Math.abs(best[0].delta)*(20*relax)+1e-9, tFloor);
+      const relax=1+Math.min(6.0,stagnationLayers*0.55 + strategyStats.pressureScore*0.82);
+      pruneGoalThresh=Math.max(Math.abs(best[0].delta)*(26*relax)+1e-9, tFloor);
       if(stagnationLayers>0 || strategyStats.pressureScore>0) strategyStats.pruneRelax++;
     } else {
       pruneGoalThresh = Math.max(pruneGoalThresh, tFloor);
