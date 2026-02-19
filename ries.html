@@ -1677,7 +1677,7 @@ function modeParams(mode){
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
     meetSweepMul:0.16, meetSweepPowMul:0.30,
     beamMul:0.70, subLayerCapMul:0.86,
-    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:6, idxPerItemCap:40,
+    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:10, idxPerItemCap:40,
     capUnMul:2.5, capBinMul:2.0, jumpMul:0.85, meetStage2:1, qSeed:0.05
   };
   if(mode==="accuracy") return {
@@ -1692,7 +1692,7 @@ function modeParams(mode){
     spillMul:1.6, capMul:1.35, keepMeetDup:false,
     meetSweepMul:0.28, meetSweepPowMul:0.55,
     beamMul:1.42, subLayerCapMul:2.00,
-    revIdxKeyCap:420, fwdIdxKeyCap:420, meetKeyProbeCap:560, meetSweepRevCap:700, idxKeysPerItem:12, idxPerItemCap:128,
+    revIdxKeyCap:420, fwdIdxKeyCap:420, meetKeyProbeCap:560, meetSweepRevCap:700, idxKeysPerItem:24, idxPerItemCap:160,
     capUnMul:5.6, capBinMul:4.8, jumpMul:3.20, meetStage2:1, qSeed:0.22
   };
   return {
@@ -1707,7 +1707,7 @@ function modeParams(mode){
     spillMul:1.55, capMul:1.25, keepMeetDup:false,
     meetSweepMul:0.38, meetSweepPowMul:0.75,
     beamMul:1.64, subLayerCapMul:2.20,
-    revIdxKeyCap:480, fwdIdxKeyCap:480, meetKeyProbeCap:700, meetSweepRevCap:900, idxKeysPerItem:16, idxPerItemCap:160,
+    revIdxKeyCap:480, fwdIdxKeyCap:480, meetKeyProbeCap:700, meetSweepRevCap:900, idxKeysPerItem:28, idxPerItemCap:200,
     capUnMul:6.5, capBinMul:5.7, jumpMul:3.50, meetStage2:1, qSeed:0.24
   };
 }
@@ -1756,11 +1756,37 @@ function meetKeyBinPrimary(v){
 function meetPrimaryKey(v){
   return MEET_STYLE==="bin"?meetKeyBinPrimary(v):meetKeyPrec(v);
 }
-// broaden meet keys: bin neighborhood + precision key (improves meet on pow-heavy targets)
-// [替换 function meetKeys]
-
-// 预分配数组避免 GC
+// Generalized meet keys: primary bin-quantized + neighborhood + precision +
+// transform-domain keys so that values related by any monotone function can share keys.
+// This allows fwd[f(x)] and rev[f(y)] to match even when f introduces nonlinearity.
 const _meetKeyOut = []; 
+// Inline quantized key builder for any domain value
+function _bk(prefix,val){
+  if(!Number.isFinite(val)||Math.abs(val)>1e13)return null;
+  if(Object.is(val,-0))val=0;
+  if(val===0)return prefix+"|0|0|0";
+  const sign=val<0?1:0;
+  const a=Math.abs(val);
+  const e=Math.floor(Math.log2(a));
+  const sc=Math.pow(2,e);
+  const q=Math.round((a/sc)*MEET_Q);
+  return prefix+"|"+sign+"|"+e+"|"+q;
+}
+function _bkNeighbor(prefix,val,rr){
+  if(!Number.isFinite(val)||Math.abs(val)>1e13)return;
+  if(Object.is(val,-0))val=0;
+  if(val===0){_meetKeyOut.push(prefix+"|0|0|0");return;}
+  const sign=val<0?1:0;
+  const a=Math.abs(val);
+  const e=Math.floor(Math.log2(a));
+  const sc=Math.pow(2,e);
+  const q0=Math.round((a/sc)*MEET_Q);
+  _meetKeyOut.push(prefix+"|"+sign+"|"+e+"|"+q0);
+  for(let d=1;d<=rr;d++){
+    _meetKeyOut.push(prefix+"|"+sign+"|"+e+"|"+(q0-d));
+    _meetKeyOut.push(prefix+"|"+sign+"|"+e+"|"+(q0+d));
+  }
+}
 function meetKeys(v,goalHint=Infinity,depthHint=0){
   if(MEET_STYLE!=="bin") return [meetKeyPrec(v)];
   if(!Number.isFinite(v)) return ["NaN"];
@@ -1794,38 +1820,77 @@ function meetKeys(v,goalHint=Infinity,depthHint=0){
   }
 
   _meetKeyOut.push(meetKeyPrec(v));
-  // Additional keys for power-expression meet: log(|v|) and e^v and sqrt(|v|)
-  // These allow fwd[base] to meet rev[exponent] when combined via ^ in tryMeetPair.
-  // Key insight: if fwd has value f and rev's "hole" is h with h≈log(T)/log(f),
-  // then meetKeys(f) should also include keys near log(f) so that indexing on
-  // T's log-domain gives direct hits.
+
   const av=Math.abs(v);
+
+  // --- Log-domain key (power-base meet: fwd[base] ↔ rev[exponent via ^]) ---
   if(av>1e-9 && av<1e10 && v>0){
-    // log variant - so a base value and its log get common keys
     const lv=Math.log(v);
     if(Number.isFinite(lv) && Math.abs(lv)<1e9){
-      // Add a quantized key in log-space
-      const sign2=lv<0?1:0;
-      const al=Math.abs(lv);
-      const e2=al>0?Math.floor(Math.log2(al)):0;
-      const sc2=al>0?Math.pow(2,e2):1;
-      const q2=Math.round((al/sc2)*MEET_Q);
-      _meetKeyOut.push("L|"+sign2+"|"+e2+"|"+q2);
-      for(let d=1;d<=Math.min(3,MEET_R);d++){
-        _meetKeyOut.push("L|"+sign2+"|"+e2+"|"+(q2-d));
-        _meetKeyOut.push("L|"+sign2+"|"+e2+"|"+(q2+d));
-      }
+      _bkNeighbor("L",lv,Math.min(3,MEET_R));
     }
   }
-  // sqrt key - for a√b pattern in meet
+
+  // --- Sqrt-domain key (square-root meet) ---
   if(v>=0 && av<1e10 && av>0){
     const sv=Math.sqrt(v);
-    const sign3=0;
-    const e3=Math.floor(Math.log2(sv+1e-30));
-    const sc3=Math.pow(2,e3);
-    const q3=Math.round((sv/sc3)*MEET_Q);
-    _meetKeyOut.push("S|0|"+e3+"|"+q3);
+    const k=_bk("S",sv);
+    if(k)_meetKeyOut.push(k);
   }
+
+  // --- Square-domain key: for x² meets; if we have v, add key for v² ---
+  if(av<1e5){
+    const sq=v*v;
+    const k=_bk("Q",sq);
+    if(k)_meetKeyOut.push(k);
+  }
+
+  // --- Cube-root domain key: cbrt(v) and v³ ---
+  if(av>0 && av<1e9){
+    const cr=Math.cbrt(v);
+    if(Number.isFinite(cr)){
+      const k=_bk("C",cr);
+      if(k)_meetKeyOut.push(k);
+    }
+  }
+
+  // --- Trig-output range key: for v ∈ [-1,1] add arcsin/arccos keys ---
+  // Helps rev[arcsin(T)] ↔ fwd[arcsin(T)] without depending on perfect primary-key match
+  if(av<=1.0+1e-9){
+    const as=Math.asin(Math.max(-1,Math.min(1,v)));
+    const ac=Math.acos(Math.max(-1,Math.min(1,v)));
+    if(Number.isFinite(as)){const k=_bk("AS",as);if(k)_meetKeyOut.push(k);}
+    if(Number.isFinite(ac)){const k=_bk("AC",ac);if(k)_meetKeyOut.push(k);}
+  }
+
+  // --- Arctan key: for any v, add atan(v) key ---
+  // Helps cos(tan(e)) style: fwd builds tan(e), rev from T through cos(?) has arccos(T)
+  // atan range is [-π/2, π/2]; adds cross-domain linkage for tan-based meets
+  if(av<1e8){
+    const at=Math.atan(v);
+    const k=_bk("AT",at);
+    if(k)_meetKeyOut.push(k);
+  }
+
+  // --- Exp/sinh/cosh-domain keys ---
+  // For small |v| (in trig argument range), add sin(v) and cos(v) keys
+  // so that fwd[v] and rev[sin(v)] (from rev applying sin-inverse) can meet
+  if(av<=Math.PI*2+0.5 && av>0){
+    const sv2=Math.sin(v), cv2=Math.cos(v);
+    if(Number.isFinite(sv2)){const k=_bk("SN",sv2);if(k)_meetKeyOut.push(k);}
+    if(Number.isFinite(cv2)){const k=_bk("CS",cv2);if(k)_meetKeyOut.push(k);}
+  }
+
+  // --- Exp key: for v in modest range, add exp(v) ---
+  // Lets fwd[v] share a key with rev[exp(v)] (from rev's log-inverse)
+  if(av<10){
+    const ev=Math.exp(v);
+    if(Number.isFinite(ev)&&ev<1e10){
+      const k=_bk("E",ev);
+      if(k)_meetKeyOut.push(k);
+    }
+  }
+
   return _meetKeyOut.slice();
 }
 
@@ -2243,14 +2308,88 @@ function pruneBin(op,af,bf,av,bv){
 }
 
 // Reverse inversion (built-in + custom inverses if provided)
+// Generalized: covers ALL unary ops so rev layer can propagate through any composition
 function invUn(op,r){switch(op){
   case"neg":return[{v:-r}];
   case"abs":return r<0?[]:[{v:r},{v:-r}];
   case"inv":return r===0?[]:[{v:1/r}];
   case"sqrt":return[{v:r*r}];
+  case"cbrt":return[{v:r*r*r}];
   case"square":return r<0?[]:[{v:Math.sqrt(r)},{v:-Math.sqrt(r)}];
+  case"cube":return[{v:Math.cbrt(r)}];
   case"exp":return r<=0?[]:[{v:Math.log(r)}];
+  case"expm1":return[{v:Math.log1p(r)}];
   case"log":return[{v:Math.exp(r)}];
+  case"log10":return r<=0?[]:[{v:Math.pow(10,r)}];
+  case"log1p":return r<=-1?[]:[{v:Math.expm1(r)}];
+  case"sin":{
+    // sin(x)=r → x=arcsin(r)+2kπ or x=π-arcsin(r)+2kπ; emit primary branch only
+    if(r<-1||r>1)return[];
+    const a=Math.asin(r);
+    if(!Number.isFinite(a))return[];
+    return[{v:a},{v:Math.PI-a}];
+  }
+  case"cos":{
+    // cos(x)=r → x=±arccos(r)
+    if(r<-1||r>1)return[];
+    const a=Math.acos(r);
+    if(!Number.isFinite(a))return[];
+    return[{v:a},{v:-a}];
+  }
+  case"tan":{
+    // tan(x)=r → x=arctan(r) (principal)
+    return[{v:Math.atan(r)}];
+  }
+  case"asin":{
+    // asin(x)=r, r∈[-π/2,π/2] → x=sin(r)
+    if(r<-Math.PI/2-1e-12||r>Math.PI/2+1e-12)return[];
+    return[{v:Math.sin(r)}];
+  }
+  case"acos":{
+    // acos(x)=r, r∈[0,π] → x=cos(r)
+    if(r<-1e-12||r>Math.PI+1e-12)return[];
+    return[{v:Math.cos(r)}];
+  }
+  case"atan":{
+    // atan(x)=r, r∈(-π/2,π/2) → x=tan(r)
+    if(Math.abs(r)>=Math.PI/2-1e-12)return[];
+    const tv=Math.tan(r);
+    if(!Number.isFinite(tv)||Math.abs(tv)>1e12)return[];
+    return[{v:tv}];
+  }
+  case"sinh":return[{v:Math.asinh(r)}];
+  case"cosh":{
+    // cosh(x)=r, r≥1 → x=±acosh(r)
+    if(r<1-1e-12)return[];
+    const a=Math.acosh(r);
+    if(!Number.isFinite(a))return[];
+    return a<1e-12?[{v:0}]:[{v:a},{v:-a}];
+  }
+  case"tanh":{
+    // tanh(x)=r, |r|<1 → x=atanh(r)
+    if(r<=-1+1e-12||r>=1-1e-12)return[];
+    return[{v:Math.atanh(r)}];
+  }
+  case"floor":{
+    // floor(x)=r → x∈[r,r+1); representative: center r+0.5
+    if(!Number.isInteger(r))return[];
+    return[{v:r+0.5}];
+  }
+  case"ceil":{
+    if(!Number.isInteger(r))return[];
+    return[{v:r-0.5}];
+  }
+  case"round":{
+    if(!Number.isInteger(r))return[];
+    return[{v:r}]; // r itself rounds to r
+  }
+  case"frac":{
+    // frac(x)=r, 0≤r<1 → x=r+n for any integer n; return a few representatives
+    if(r<0||r>=1)return[];
+    if(r<1e-14)return[{v:0},{v:1},{v:-1}];
+    return[{v:r},{v:r+1},{v:r-1},{v:r+2}];
+  }
+  case"sign":return r===0?[{v:0}]:(r>0?[{v:1}]:[{v:-1}]);
   default:{
     const fn=CUSTOM_INV_UN.get(op);
     if(fn){ try{ return fn(r)||[]; }catch(e){ return []; } }
@@ -2391,6 +2530,36 @@ function topK(items,k,scoreFn,lowerBetter=true,filterFn=null){
 function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const out=[];
   const used=new Set();
+  const keepPoolMul = mode==="speed" ? 8 : (mode==="accuracy" ? 18 : 14);
+  const keepPoolFloor = mode==="speed" ? 2200 : 3200;
+  const keepPoolSize = Math.min(items.length, Math.max(beam*keepPoolMul, keepPoolFloor));
+  const quotaPool = keepPoolSize<items.length ? topK(items,keepPoolSize,(x)=>x.keep,true) : items;
+
+  const rootBest=new Map();
+  const rootFreq=new Map();
+  const rootKey=(it)=>{
+    const ast=it&&it.ast;
+    if(!ast) return "c";
+    if(ast.t===2) return "b:"+ast.op;
+    if(ast.t===1) return "u:"+ast.op;
+    return "c";
+  };
+  for(const it of quotaPool){
+    const r=rootKey(it);
+    rootFreq.set(r,(rootFreq.get(r)||0)+1);
+    const old=rootBest.get(r);
+    if(old===undefined || it.keep<old) rootBest.set(r,it.keep);
+  }
+  const opPriorityAdj=(it)=>{
+    const r=rootKey(it);
+    const freq=rootFreq.get(r)||1;
+    const bestKeep=rootBest.get(r);
+    const rarity=1/Math.sqrt(freq);
+    const quality=bestKeep===undefined ? 0 : (1/(1+bestKeep));
+    // Encourage rare/high-quality operator roots so function priorities remain heuristic and unbiased.
+    return (mode==="speed"?0.08:0.14)*rarity + (mode==="speed"?0.05:0.08)*quality;
+  };
+
   const take=(arr,limit)=>{
     for(let i=0;i<arr.length&&out.length<beam&&limit>0;i++){
       const it=arr[i];
@@ -2433,6 +2602,12 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
   const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
   const nFrac=Math.max(0,Math.floor(beam*(mp.qFrac||0)));
+  // Quota: values in trig-OUTPUT range [-1,1] — required for sin/cos inverse meets
+  const nTrigOut=Math.max(0,Math.floor(beam*(mode==="speed"?0.04:0.10)));
+  // Quota: values in trig-ARGUMENT range approx [-2π,2π] — needed as cos/sin arguments
+  const nTrigArg=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.07)));
+  // Quota: values useful as arcsin/arccos/arctan inverses (i.e. in [-π/2..π] range)
+  const nInvTrig=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.07)));
   const exploreRatio = mode==="speed" ? 0.035 : (mode==="accuracy" ? 0.20 : 0.18);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
@@ -2448,7 +2623,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
 
   // qFrac: keep highly rational values (small bb) in pow-useful range – key for e.g. 25/7 type bases
   if(nFrac>0){
-    take(topK(items,nFrac,(x)=>x.bb,true,(x)=>{
+    take(topK(quotaPool,nFrac,(x)=>x.bb,true,(x)=>{
       const v=x.v;
       if(!Number.isFinite(v)||Math.abs(v)<0.05)return false;
       const a=Math.abs(v);
@@ -2457,7 +2632,36 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     }), nFrac);
   }
 
-  if(allowPow && nPow>0) take(topK(items,nPow,(x)=>(x.goal+0.20*x.bb),true,(x)=>x.hasPow), nPow);
+  // Trig-output range: values in [-1,1] are outputs of sin/cos/tanh, needed for inverse-trig meets
+  // e.g. cos(tan(e)) ≈ some value → fwd must retain cos(tan(e)) which is in [-1,1]
+  if(nTrigOut>0){
+    take(topK(quotaPool,nTrigOut,(x)=>(x.goal*0.6+x.bb*0.4),true,(x)=>{
+      const a=Math.abs(x.v);
+      return Number.isFinite(x.v) && a<=1.0+1e-12;
+    }), nTrigOut);
+  }
+
+  // Trig-argument range: values in [-2π,2π] useful as sin/cos/tan arguments
+  if(nTrigArg>0){
+    take(topK(quotaPool,nTrigArg,(x)=>(x.goal*0.5+x.bb*0.5),true,(x)=>{
+      const a=Math.abs(x.v);
+      return Number.isFinite(x.v) && a<=Math.PI*2+0.1 && a>1e-12;
+    }), nTrigArg);
+  }
+
+  // Inverse-trig range: values in arcsin/arccos/arctan ranges [-π/2, π]
+  // Needed so fwd can match rev[asin(T)], rev[acos(T)], rev[atan(T)] etc.
+  if(nInvTrig>0){
+    take(topK(quotaPool,nInvTrig,(x)=>(x.goal*0.4+x.bb*0.6),true,(x)=>{
+      const v=x.v;
+      if(!Number.isFinite(v))return false;
+      const a=Math.abs(v);
+      // asin/atan range: [-π/2, π/2], acos range [0, π]
+      return a<=Math.PI+0.1 && a>1e-14;
+    }), nInvTrig);
+  }
+
+  if(allowPow && nPow>0) take(topK(quotaPool,nPow,(x)=>(x.goal+0.20*x.bb),true,(x)=>x.hasPow), nPow);
 
   if(allowPow && nPowBase>0){
     const baseFilter=(x)=>{
@@ -2467,7 +2671,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
       const a=Math.abs(v);
       return a>0.12 && a<24 && Math.abs(a-1)>1e-12;
     };
-    take(topK(items,nPowBase,(x)=>x.bb,true,baseFilter), nPowBase);
+    take(topK(quotaPool,nPowBase,(x)=>x.bb,true,baseFilter), nPowBase);
   }
   if(allowPow && nPowExp>0){
     const expFilter=(x)=>{
@@ -2475,18 +2679,20 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
       if(!Number.isFinite(v))return false;
       return Math.abs(v)<24;
     };
-    take(topK(items,nPowExp,(x)=>(x.bb*0.7 + 0.01/(1+(x.depth||0))),false,expFilter), nPowExp);
+    take(topK(quotaPool,nPowExp,(x)=>(x.bb*0.7 + 0.01/(1+(x.depth||0))),false,expFilter), nPowExp);
   }
 
-  if(nFunc>0) take(topK(items,nFunc,(x)=>(x.goal+0.16*x.bb),true,(x)=>x.hasFunc), nFunc);
+  if(nFunc>0){
+    take(topK(quotaPool,nFunc,(x)=>(x.goal+0.16*x.bb-opPriorityAdj(x)),true,(x)=>x.hasFunc), nFunc);
+  }
 
   if(nDepth>0){
-    take(topK(items,nDepth,(x)=>-(x.depth||0),true), nDepth);
+    take(topK(quotaPool,nDepth,(x)=>-(x.depth||0),true), nDepth);
   }
 
   if(nMagD>0){
     const bins=new Map();
-    for(const it of items){
+    for(const it of quotaPool){
       const mb=Math.floor(Math.log2(Math.abs(it.v)+1e-30));
       const old=bins.get(mb);
       if(!old||it.keep<old.keep)bins.set(mb,it);
@@ -2497,24 +2703,24 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   }
 
   if(nIrr>0){
-    take(topK(items,nIrr,(x)=> (x.bb*0.8 - x.goal*0.15), false), nIrr);
+    take(topK(quotaPool,nIrr,(x)=> (x.bb*0.8 - x.goal*0.15 - opPriorityAdj(x)*0.25), false), nIrr);
   }
 
-  take(topK(items,nBB,(x)=>x.bb,true), nBB);
+  take(topK(quotaPool,nBB,(x)=>x.bb,true), nBB);
 
   if(nSeed>0){
-    const seed=topK(items,nSeed,(x)=>((x.cost||0)*0.7 + x.bb*0.25 + x.goal*0.05),true,(x)=>((x.cost||0)<=6)&&!used.has(x.key));
+    const seed=topK(quotaPool,nSeed,(x)=>((x.cost||0)*0.7 + x.bb*0.25 + x.goal*0.05 - opPriorityAdj(x)*0.25),true,(x)=>((x.cost||0)<=6)&&!used.has(x.key));
     take(seed,nSeed);
   }
 
   if(nExplore>0){
-    const ex = topK(items,nExplore,(x)=>((x.goal*0.55)+(x.bb*0.35)-0.03*(x.depth||0)),true,(x)=>!used.has(x.key));
+    const ex = topK(quotaPool,nExplore,(x)=>((x.goal*0.55)+(x.bb*0.35)-0.03*(x.depth||0)-opPriorityAdj(x)*0.45),true,(x)=>!used.has(x.key));
     take(ex,nExplore);
   }
 
   if(nNovel>0){
     const bins=new Map();
-    for(const it of items){
+    for(const it of quotaPool){
       if(used.has(it.key)) continue;
       const root=(it.ast&&it.ast.t===2)?it.ast.op:((it.ast&&it.ast.t===1)?("u:"+it.ast.op):"c");
       const d=(it.depth||0);
@@ -2530,7 +2736,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
 
   if(nDiv>0){
     const bins=new Map();
-    for(const it of items){
+    for(const it of quotaPool){
       if(used.has(it.key))continue;
       const b=Math.floor(Math.log(Math.abs(it.v)+1e-30)*3);
       const old=bins.get(b);
@@ -2541,6 +2747,11 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   }
 
   if(out.length<beam){
+    take(topK(quotaPool,beam-out.length,(x)=>(x.keep-opPriorityAdj(x)*0.12),true), beam-out.length);
+  }
+
+  if(out.length<beam){
+    // Fallback to full set for safety so precision does not regress when pool is too narrow.
     take(topK(items,beam-out.length,(x)=>x.keep,true), beam-out.length);
   }
   for(const it of out){
@@ -3208,6 +3419,12 @@ function collectLeaves(ast, out){
     const matchGap=Math.abs(f.v-r.v);
 
     const isPowRelated = (r.srcOp==="^") || (f.hasPow) || (r.wA && r.srcOp==="pow");
+    // isTrigRelated: if either side involves trig ops, allow slightly larger cand epsilon
+    // because trig functions have larger float sensitivity near extrema
+    const isTrigRelated = (f.ast && f.ast.f) ||
+      (r.srcOp==="sin"||r.srcOp==="cos"||r.srcOp==="tan"||
+       r.srcOp==="asin"||r.srcOp==="acos"||r.srcOp==="atan"||
+       r.srcOp==="sinh"||r.srcOp==="cosh"||r.srcOp==="tanh");
     const binSlack=(MEET_STYLE==="bin")?((mp.binSlackMul??1)*Math.max(1,MEET_R)/Math.max(1,MEET_Q))*scale:0;
     const epsCand=(4e-10*mp.candEpsMul*dynamicCandMul*(isPowRelated?2.8:1.0))*scale+binSlack;
     if(matchGap>epsCand){meetDbg.rejEpsCand++;return;}
@@ -3614,7 +3831,20 @@ function collectLeaves(ast, out){
   function buildRev(c){
     if(!bidir)return;
     const{bucket,put}=mkBucket(beamR,mp.spillMul);
-    const revScore=(v)=>Math.log1p(Math.abs(v));
+    // Enhanced revScore: prefer values in trig-output range [-1,1], small magnitude,
+    // and rational-looking values — all are likely building blocks for complex compositions
+    const revScore=(v)=>{
+      const ab=Math.abs(v);
+      const mag=Math.log1p(ab);
+      // Prefer trig-output range [-1,1]: needed for sin/cos/tanh argument chains
+      const trigOutBonus=(ab<=1.0&&ab>1e-15)?0.22:0;
+      // Prefer trig-argument range (small angle): cos(tan(e)) style
+      const trigArgBonus=(ab<=Math.PI*2+0.1)?0.10:0;
+      // Prefer rational-looking (small denominator fraction): e.g. 25/7, 5/3
+      const rbb=bbScore(v,18,0.012);
+      const ratBonus=rbb<0.06?0.18:(rbb<0.18?0.07:0);
+      return Math.max(0.001, mag - trigOutBonus - trigArgBonus - ratBonus);
+    };
 
     for(const op of opsUn){
       const w=wUn(op),sc=c-w;
@@ -3641,13 +3871,50 @@ function collectLeaves(ast, out){
             ? {v,wA:nW,mask:a.mask,flags:nf,keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk}
             : {v,wA:nW,cnt:a.cnt,ck:(a.ck||""),flags:nf,keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
 
-          if(LEAF_ORDER && cand.wA){
-            // leafOrder applies when combined; not here
-          }
-
           put(keyOf(v,useBitmask?cand.mask:0,useBitmask?"":cand.ck),cand);
-          if(op==="inv"||op==="sqrt") tryMeetReverseWithFwdIdx(cand);
+          // *** Critical fix: trigger immediate meet for ALL unary ops, not just inv/sqrt ***
+          // This allows the rev layer to participate in meet as soon as any op produces it
+          tryMeetReverseWithFwdIdx(cand);
           if(stopFlag) return;
+
+          // For periodic trig ops: also try ±1 period so fwd values offset by 2π/π can meet
+          // This is crucial for cos(tan(e)) + additive compositions
+          if((op==="sin"||op==="cos")&&Math.abs(v)<CAP){
+            const twopi=2*Math.PI;
+            for(const dk of[-1,1]){
+              const v2=v+dk*twopi;
+              if(!Number.isFinite(v2)||Math.abs(v2)>CAP)continue;
+              const out2=applyUn(op,v2);
+              const s2=Math.max(1,Math.abs(a.v),Math.abs(out2));
+              if(!Number.isFinite(out2)||Math.abs(out2-a.v)>1e-10*s2)continue;
+              const nf2=mkFlags(v2,opTag(op),false);
+              const mk2=meetPrimaryKey(v2);
+              const cand2=useBitmask
+                ?{v:v2,wA:nW,mask:a.mask,flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2}
+                :{v:v2,wA:nW,cnt:a.cnt,ck:(a.ck||""),flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2};
+              put(keyOf(v2,useBitmask?cand2.mask:0,useBitmask?"":cand2.ck),cand2);
+              tryMeetReverseWithFwdIdx(cand2);
+              if(stopFlag)return;
+            }
+          }
+          if(op==="tan"&&Math.abs(v)<CAP){
+            const pi=Math.PI;
+            for(const dk of[-1,1]){
+              const v2=v+dk*pi;
+              if(!Number.isFinite(v2)||Math.abs(v2)>CAP)continue;
+              const out2=applyUn(op,v2);
+              const s2=Math.max(1,Math.abs(a.v),Math.abs(out2));
+              if(!Number.isFinite(out2)||Math.abs(out2-a.v)>1e-10*s2)continue;
+              const nf2=mkFlags(v2,opTag(op),false);
+              const mk2=meetPrimaryKey(v2);
+              const cand2=useBitmask
+                ?{v:v2,wA:nW,mask:a.mask,flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2}
+                :{v:v2,wA:nW,cnt:a.cnt,ck:(a.ck||""),flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2};
+              put(keyOf(v2,useBitmask?cand2.mask:0,useBitmask?"":cand2.ck),cand2);
+              tryMeetReverseWithFwdIdx(cand2);
+              if(stopFlag)return;
+            }
+          }
         }
       }
     }
