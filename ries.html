@@ -1668,47 +1668,47 @@ function modeParams(mode){
   if(mode==="speed") return {
     keyPrec:10, bestPrec:10, keepMode:"goal",
     bbD:18, bbMagA:0.032,
-    qGoal:0.52,qBB:0.06,qMeet:0.12,qDiv:0.03,qPow:0.06,qFunc:0.03,qDepth:0.07,qMag:0.04,qIrr:0.03,
-    qPowBase:0.10, qPowExp:0.08,
-    qReq:0.08,
+    qGoal:0.36,qBB:0.06,qMeet:0.10,qDiv:0.03,qPow:0.05,qFunc:0.03,qDepth:0.06,qMag:0.08,qIrr:0.02,
+    qPowBase:0.08, qPowExp:0.06,
+    qReq:0.06,
     meetStyle:"bin", meetPrec:10, meetQ:12288, meetR:10,
-    revBeamMul:2.4, meetHitBonus:0.26,
-    candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
+    revBeamMul:2.2, meetHitBonus:0.22,
+    candEpsMul:1.8, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
-    meetSweepMul:0.16, meetSweepPowMul:0.30,
+    meetSweepMul:0.14, meetSweepPowMul:0.26,
     beamMul:0.70, subLayerCapMul:0.86,
-    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:10, idxPerItemCap:40,
-    capUnMul:2.5, capBinMul:2.0, jumpMul:0.85, meetStage2:1, qSeed:0.05
+    revIdxKeyCap:200, fwdIdxKeyCap:200, meetKeyProbeCap:240, meetSweepRevCap:320, idxKeysPerItem:10, idxPerItemCap:36,
+    capUnMul:2.5, capBinMul:2.0, jumpMul:0.85, meetStage2:1, qSeed:0.04
   };
   if(mode==="accuracy") return {
-    keyPrec:14, bestPrec:12, keepMode:"goal",
+    keyPrec:14, bestPrec:13, keepMode:"goal",
     bbD:72, bbMagA:0.018,
-    qGoal:0.26,qBB:0.12,qMeet:0.18,qDiv:0.05,qPow:0.16,qFunc:0.08,qDepth:0.10,qMag:0.06,qIrr:0.04,
-    qPowBase:0.22, qPowExp:0.18, qFrac:0.14,
-    qReq:0.14,
-    meetStyle:"bin", meetPrec:12, meetQ:24576, meetR:18,
-    revBeamMul:2.6, meetHitBonus:0.12,
-    candEpsMul:1.35, confirmEpsMul:1.0, binSlackMul:0.28, confirmAbsFloor:0.0,
+    qGoal:0.16,qBB:0.10,qMeet:0.14,qDiv:0.04,qPow:0.12,qFunc:0.07,qDepth:0.08,qMag:0.09,qIrr:0.04,
+    qPowBase:0.18, qPowExp:0.14, qFrac:0.10,
+    qReq:0.10,
+    meetStyle:"bin", meetPrec:13, meetQ:24576, meetR:22,
+    revBeamMul:2.6, meetHitBonus:0.10,
+    candEpsMul:0.85, confirmEpsMul:1.0, binSlackMul:0.30, confirmAbsFloor:0.0,
     spillMul:1.6, capMul:1.35, keepMeetDup:false,
-    meetSweepMul:0.28, meetSweepPowMul:0.55,
+    meetSweepMul:0.26, meetSweepPowMul:0.50,
     beamMul:1.42, subLayerCapMul:2.00,
-    revIdxKeyCap:420, fwdIdxKeyCap:420, meetKeyProbeCap:560, meetSweepRevCap:700, idxKeysPerItem:24, idxPerItemCap:160,
-    capUnMul:5.6, capBinMul:4.8, jumpMul:3.20, meetStage2:1, qSeed:0.22
+    revIdxKeyCap:380, fwdIdxKeyCap:380, meetKeyProbeCap:520, meetSweepRevCap:680, idxKeysPerItem:22, idxPerItemCap:140,
+    capUnMul:5.6, capBinMul:4.8, jumpMul:3.20, meetStage2:1, qSeed:0.18
   };
   return {
-    keyPrec:12, bestPrec:11, keepMode:"goal",
+    keyPrec:12, bestPrec:12, keepMode:"goal",
     bbD:44, bbMagA:0.02,
-    qGoal:0.24,qBB:0.10,qMeet:0.24,qDiv:0.05,qPow:0.14,qFunc:0.08,qDepth:0.10,qMag:0.06,qIrr:0.04,
-    qPowBase:0.20, qPowExp:0.18, qFrac:0.12,
-    qReq:0.12,
-    meetStyle:"bin", meetPrec:11, meetQ:16384, meetR:20,
-    revBeamMul:3.4, meetHitBonus:0.24,
-    candEpsMul:3.2, confirmEpsMul:1.0, binSlackMul:0.16, confirmAbsFloor:0.0,
+    qGoal:0.16,qBB:0.08,qMeet:0.18,qDiv:0.04,qPow:0.12,qFunc:0.06,qDepth:0.08,qMag:0.09,qIrr:0.03,
+    qPowBase:0.16, qPowExp:0.12, qFrac:0.08,
+    qReq:0.10,
+    meetStyle:"bin", meetPrec:12, meetQ:16384, meetR:16,
+    revBeamMul:3.0, meetHitBonus:0.18,
+    candEpsMul:1.40, confirmEpsMul:1.0, binSlackMul:0.15, confirmAbsFloor:0.0,
     spillMul:1.55, capMul:1.25, keepMeetDup:false,
-    meetSweepMul:0.38, meetSweepPowMul:0.75,
+    meetSweepMul:0.28, meetSweepPowMul:0.55,
     beamMul:1.64, subLayerCapMul:2.20,
-    revIdxKeyCap:480, fwdIdxKeyCap:480, meetKeyProbeCap:700, meetSweepRevCap:900, idxKeysPerItem:28, idxPerItemCap:200,
-    capUnMul:6.5, capBinMul:5.7, jumpMul:3.50, meetStage2:1, qSeed:0.24
+    revIdxKeyCap:380, fwdIdxKeyCap:380, meetKeyProbeCap:540, meetSweepRevCap:700, idxKeysPerItem:22, idxPerItemCap:160,
+    capUnMul:6.5, capBinMul:5.7, jumpMul:3.50, meetStage2:1, qSeed:0.18
   };
 }
 
@@ -2612,6 +2612,32 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
   const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.12)));
+
+  // ── PRIORITY STAGE: Building-block reservoir + mandatory magnitude diversity ──
+  // These run BEFORE standard quotas so they can't be crowded out by near-T items.
+  // Essential for compositions like f^g where f,g can be any value far from T.
+
+  // 1. Mandatory magnitude coverage: one best item per log2-magnitude bucket (pos + neg).
+  //    Ensures the beam always spans all scales: 0.001, 0.01, 0.1, 1, 10, 100...
+  const nMandatoryMag = Math.floor(beam * (mode==="speed" ? 0.12 : 0.18));
+  {
+    const posBuckets=new Map(), negBuckets=new Map();
+    for(const it of items){
+      const v=it.v; if(!Number.isFinite(v))continue;
+      const mb=Math.floor(Math.log2(Math.abs(v)+1e-30));
+      if(v>=0){const old=posBuckets.get(mb);if(!old||it.keep<old.keep)posBuckets.set(mb,it);}
+      else{const old=negBuckets.get(mb);if(!old||it.keep<old.keep)negBuckets.set(mb,it);}
+    }
+    take(Array.from(posBuckets.values()).sort((a,b)=>a.keep-b.keep), Math.ceil(nMandatoryMag*0.70));
+    take(Array.from(negBuckets.values()).sort((a,b)=>a.keep-b.keep), Math.ceil(nMandatoryMag*0.30));
+  }
+
+  // 2. Building-block reservoir: top items scored PURELY by rationality (bb), not goal.
+  //    Deliberately includes values far from T — they are bases/exponents for pow, sin args, etc.
+  const nBlock = Math.floor(beam * (mode==="speed" ? 0.10 : 0.16));
+  if(nBlock>0){
+    take(topK(items, nBlock, (x)=>x.bb, true, (x)=>x.bb<0.18), nBlock);
+  }
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
@@ -3607,7 +3633,7 @@ function collectLeaves(ast, out){
         if(stopFlag) return;
       }
     }
-    if(!stopFlag && (strategyStats.stagnationLayers>=1 || strategyStats.pressureScore>=2)) jitterMeetProbeForward(f,lim2Cap,seenNode);
+    if(!stopFlag && strategyStats.stagnationLayers>=3) jitterMeetProbeForward(f,lim2Cap,seenNode);
   }
   
 // [插入位置：在 tryMeetFwdWithRevIdx 函数结束后，buildRev 函数开始前]
@@ -4351,7 +4377,9 @@ function collectLeaves(ast, out){
 
   // Dynamic goal threshold: skip items much worse than best found so far
   // Updated each complexity level; starts at Infinity
-  let pruneGoalThresh=Infinity;
+  // pruneGoalThresh: start at 2×|T| scale. Values within this range OR with low bb (rational)
+  // are kept. Updated each layer. See tFloor logic below that prevents it going too tight.
+  let pruneGoalThresh=Math.max(Math.abs(T)*2.0, 2.0);
   let stagnationLayers=0;
   let prevLayerBest=Infinity;
   let prevVisited=0, prevMeetCand=0, prevMeetOK=0, prevProbeRej=0;
@@ -4385,8 +4413,8 @@ function collectLeaves(ast, out){
 
     const explorePressure=1+Math.min(2.2, pressureScore*0.35 + (forcedBoost?0.55:0));
     const stagnationBoost=(1+Math.min(1.6,stagnationLayers*0.18))*explorePressure;
-    dynamicCandMul=1+Math.min(3.4,stagnationLayers*0.22 + pressureScore*0.45 + (forcedBoost?0.75:0));
-    dynamicConfirmMul=1+Math.min(2.2,stagnationLayers*0.12 + pressureScore*0.28 + (forcedBoost?0.45:0));
+    dynamicCandMul=1+Math.min(0.6,stagnationLayers*0.06 + pressureScore*0.12 + (forcedBoost?0.18:0));
+    dynamicConfirmMul=1+Math.min(1.5,stagnationLayers*0.10 + pressureScore*0.22 + (forcedBoost?0.35:0));
 
     let capUn=Math.max(180,Math.floor(beamF*(mp.capUnMul||2.0)/4/constPenalty*stagnationBoost));
     let capBin=Math.max(120,Math.floor(beamF*(mp.capBinMul||1.8)/6/constPenalty*stagnationBoost));
@@ -4519,11 +4547,16 @@ function collectLeaves(ast, out){
     }
 
     emit(c);
-    // Update goal prune threshold: allow up to 12x best delta (keeps diversity while cutting noise)
+    // Update goal prune threshold: allow up to relax×best_delta BUT never below T-scale floor.
+    // CRITICAL: building blocks like π, e, √2 may be far from T but needed for f^g compositions.
+    // Floor = max(|T|, 1) × 0.5 ensures values within T's order of magnitude are ALWAYS kept.
+    const tFloor = Math.max(Math.abs(T), 1) * 0.50;
     if(best.length>0){
       const relax=1+Math.min(4.5,stagnationLayers*0.42 + strategyStats.pressureScore*0.65);
-      pruneGoalThresh=Math.abs(best[0].delta)*(20*relax)+1e-9;
+      pruneGoalThresh=Math.max(Math.abs(best[0].delta)*(20*relax)+1e-9, tFloor);
       if(stagnationLayers>0 || strategyStats.pressureScore>0) strategyStats.pruneRelax++;
+    } else {
+      pruneGoalThresh = Math.max(pruneGoalThresh, tFloor);
     }
     prevVisited=visited; prevMeetCand=meetCandidates; prevMeetOK=meetConfirmed; prevProbeRej=meetDbg.rejProbeConfirm;
     await new Promise(r=>setTimeout(r,0));
