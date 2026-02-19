@@ -1693,18 +1693,18 @@ function modeParams(mode){
     meetSweepMul:0.20, meetSweepPowMul:0.34,
     beamMul:0.92, subLayerCapMul:1.08,
     // 减小索引探针量: meetKeyProbeCap 260→120, idxKeysPerItem 12→6(speed模式只用主键+邻域键)
-    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:84, meetSweepRevCap:180, idxKeysPerItem:5, idxPerItemCap:32,
+    revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:48, meetSweepRevCap:120, idxKeysPerItem:4, idxPerItemCap:24,
     capUnMul:3.0, capBinMul:2.6, jumpMul:1.45, meetStage2:0, qSeed:0.08,
     // 明确设置采样率: 0.28 (原来undefined→0.50)
-    meetFwdSampleRatio:0.16,
+    meetFwdSampleRatio:0.09,
     // 每个fwd项最多尝试N对, 防止单项消耗过多时间
-    speedMeetMaxPairsPerItem:48,
+    speedMeetMaxPairsPerItem:22,
     // meetFwd扫描时只用主键检测revIdx命中(不生成全部transform域键)
     speedMeetScanPrimaryOnly:true,
     // buildRev中对非pow项跳过transform域键(只用主键+邻域)
     speedRevMeetPrimaryOnly:true,
     // speed模式每层meetFwd总时限(ms)
-    speedMeetLayerTimeCapMs:26,
+    speedMeetLayerTimeCapMs:10,
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:13, keepMode:"goal",
@@ -4338,7 +4338,8 @@ function collectLeaves(ast, out){
        r.srcOp==="asin"||r.srcOp==="acos"||r.srcOp==="atan"||
        r.srcOp==="sinh"||r.srcOp==="cosh"||r.srcOp==="tanh");
     const binSlack=(MEET_STYLE==="bin")?((mp.binSlackMul??1)*Math.max(1,MEET_R)/Math.max(1,MEET_Q))*scale:0;
-    const epsCand=(4e-10*mp.candEpsMul*dynamicCandMul*(isPowRelated?2.8:1.0))*scale+binSlack;
+    const speedTight=(mode==="speed"&&((strategyStats.pressureScore||0)>=2||meetDbg.maxConfirmErr>1e9))?0.55:1.0;
+    const epsCand=(4e-10*mp.candEpsMul*dynamicCandMul*speedTight*(isPowRelated?2.8:1.0))*scale+binSlack;
     if(matchGap>epsCand){meetDbg.rejEpsCand++;return;}
     meetCandidates++;
 
@@ -4355,8 +4356,9 @@ function collectLeaves(ast, out){
     const forceDeeperConfirm=(strategyStats.pressureScore>=2 && (isPowRelated || hasFunc));
     const skipProbe =
       ultraClose || // ◀ 极近匹配直接跳过 probe
-      (matchGap<=epsCand*0.10 && (tc<=Math.max(8,Math.floor(maxC*0.72)) || forceDeeperConfirm)) ||
-      (forceDeeperConfirm && matchGap<=epsCand*0.22);
+      ((mode!=="speed") && (matchGap<=epsCand*0.10 && (tc<=Math.max(8,Math.floor(maxC*0.72)) || forceDeeperConfirm))) ||
+      ((mode==="speed") && (matchGap<=epsCand*0.06 && tc<=6)) ||
+      ((mode!=="speed") && forceDeeperConfirm && matchGap<=epsCand*0.22);
 
     let probeVal=f.v;
     if(!skipProbe){
@@ -6740,7 +6742,7 @@ function collectLeaves(ast, out){
     // 现在通过采样将 meet 候选削减至约 40%+revHit，大幅降低时间
     {
       const sampleRatio = mp.meetFwdSampleRatio != null ? mp.meetFwdSampleRatio : 0.50;
-      const meetFwdCap = Math.max(160, Math.floor(beamF * sampleRatio));
+      const meetFwdCap = Math.max(96, Math.floor(beamF * sampleRatio));
       for(const e of fwd[c]){
         pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
         if(stopFlag)break;
@@ -6749,7 +6751,7 @@ function collectLeaves(ast, out){
         const sorted = fwd[c].slice().sort((a,b)=>(a.goal||0)-(b.goal||0));
         const meetSet = new Set();
         const sampleRatio2 = mp.meetFwdSampleRatio != null ? mp.meetFwdSampleRatio : 0.50;
-        const meetFwdCap2 = Math.max(140, Math.floor(beamF * sampleRatio2));
+        const meetFwdCap2 = Math.max(88, Math.floor(beamF * sampleRatio2));
         const topK3 = Math.min(sorted.length, meetFwdCap2);
         for(let i=0;i<topK3;i++) meetSet.add(sorted[i]);
 
@@ -6802,9 +6804,14 @@ function collectLeaves(ast, out){
           }
         }
 
+        if(mode==="speed" && meetSet.size>220){
+          const trimmed=Array.from(meetSet).sort((a,b)=>(a.goal||0)-(b.goal||0)).slice(0,220);
+          meetSet.clear();
+          for(const it of trimmed) meetSet.add(it);
+        }
         // Speed模式: 整个meetFwd阶段的总对数预算, 防止整层meet时间失控
         const meetFwdTotalBudget = mp.speedMeetMaxPairsPerItem ?
-          Math.max(2000, (meetSet.size * (mp.speedMeetMaxPairsPerItem|0))) : Infinity;
+          Math.max(900, (meetSet.size * (mp.speedMeetMaxPairsPerItem|0))) : Infinity;
         let meetFwdTotalPairs = 0;
         // 将meetSet按goal排序(goal小的优先probe, 最可能match)
         const meetSetArr = Array.from(meetSet).sort((a,b)=>(a.goal||0)-(b.goal||0));
