@@ -2990,7 +2990,7 @@ onmessage=async(ev)=>{
     rejProbeConfirm:0,rejConfirm:0,revInvBad:0,maxConfirmErr:0,
   };
   let dynamicCandMul=1.0, dynamicConfirmMul=1.0;
-  const strategyStats={adaptiveBoosts:0,pruneRelax:0,meetJitter:0,extraDecomp:0,stagnationLayers:0};
+  const strategyStats={adaptiveBoosts:0,pruneRelax:0,meetJitter:0,extraDecomp:0,stagnationLayers:0,forcedBoost:0,pressureScore:0};
 
   const best=[];
   let bestDeltaSoFar=Infinity;
@@ -3607,7 +3607,7 @@ function collectLeaves(ast, out){
         if(stopFlag) return;
       }
     }
-    if(!stopFlag && strategyStats.stagnationLayers>=2) jitterMeetProbeForward(f,lim2Cap,seenNode);
+    if(!stopFlag && (strategyStats.stagnationLayers>=1 || strategyStats.pressureScore>=2)) jitterMeetProbeForward(f,lim2Cap,seenNode);
   }
   
 // [插入位置：在 tryMeetFwdWithRevIdx 函数结束后，buildRev 函数开始前]
@@ -4354,6 +4354,7 @@ function collectLeaves(ast, out){
   let pruneGoalThresh=Infinity;
   let stagnationLayers=0;
   let prevLayerBest=Infinity;
+  let prevVisited=0, prevMeetCand=0, prevMeetOK=0, prevProbeRej=0;
   for(let c=2;c<=maxC;c++){
     if(stopFlag)break;
     if(performance.now()-t0>lim)break;
@@ -4368,17 +4369,30 @@ function collectLeaves(ast, out){
     const bestNow=Math.max(1e-18,Math.abs(bestDeltaSoFar));
     if(bestNow < prevLayerBest*0.995) stagnationLayers=0; else stagnationLayers=Math.min(10,stagnationLayers+1);
     prevLayerBest=Math.min(prevLayerBest,bestNow);
-    strategyStats.stagnationLayers=stagnationLayers;
 
-    const stagnationBoost=1+Math.min(1.6,stagnationLayers*0.18);
-    dynamicCandMul=1+Math.min(2.4,stagnationLayers*0.22);
-    dynamicConfirmMul=1+Math.min(1.5,stagnationLayers*0.12);
+    const dVisited=Math.max(1,visited-prevVisited);
+    const dMeetCand=Math.max(0,meetCandidates-prevMeetCand);
+    const dMeetOK=Math.max(0,meetConfirmed-prevMeetOK);
+    const dProbeRej=Math.max(0,meetDbg.rejProbeConfirm-prevProbeRej);
+    const meetYield=dMeetOK/Math.max(1,dMeetCand);
+    const probeRejRate=dProbeRej/Math.max(1,dMeetCand);
+    const pressureScore=(stagnationLayers>=1?1:0) + (meetYield<0.012?1:0) + (probeRejRate>0.55?1:0) + (dVisited>120000 && dMeetOK<2?1:0);
+    strategyStats.stagnationLayers=stagnationLayers;
+    strategyStats.pressureScore=pressureScore;
+
+    const forcedBoost=(c%3===0 && pressureScore>=2) || (c%5===0 && meetYield<0.008);
+    if(forcedBoost) strategyStats.forcedBoost++;
+
+    const explorePressure=1+Math.min(2.2, pressureScore*0.35 + (forcedBoost?0.55:0));
+    const stagnationBoost=(1+Math.min(1.6,stagnationLayers*0.18))*explorePressure;
+    dynamicCandMul=1+Math.min(3.4,stagnationLayers*0.22 + pressureScore*0.45 + (forcedBoost?0.75:0));
+    dynamicConfirmMul=1+Math.min(2.2,stagnationLayers*0.12 + pressureScore*0.28 + (forcedBoost?0.45:0));
 
     let capUn=Math.max(180,Math.floor(beamF*(mp.capUnMul||2.0)/4/constPenalty*stagnationBoost));
     let capBin=Math.max(120,Math.floor(beamF*(mp.capBinMul||1.8)/6/constPenalty*stagnationBoost));
     capUn=Math.max(50,Math.floor(capUn*mp.capMul));
     capBin=Math.max(45,Math.floor(capBin*mp.capMul));
-    if(stagnationLayers>0) strategyStats.adaptiveBoosts++;
+    if(stagnationLayers>0 || strategyStats.pressureScore>0) strategyStats.adaptiveBoosts++;
 
     if(subWorkers.length>0){
       fwd[c]=await computeLayerMT(c,capUn,capBin);
@@ -4489,7 +4503,7 @@ function collectLeaves(ast, out){
     // Free cached mkeys after indexing
     for(const it of fwd[c]){if(it.mkeys)it.mkeys=null;}
     tryTargetDecomposition(fwd[c], T);
-    if(stagnationLayers>=2){
+    if(stagnationLayers>=2 || strategyStats.pressureScore>=2){
       const prev=fwd[Math.max(1,c-1)]||[];
       if(prev.length){
         tryTargetDecomposition(prev.slice(0,Math.min(prev.length,Math.max(16,Math.floor(beamF*0.08)))), T);
@@ -4507,10 +4521,11 @@ function collectLeaves(ast, out){
     emit(c);
     // Update goal prune threshold: allow up to 12x best delta (keeps diversity while cutting noise)
     if(best.length>0){
-      const relax=1+Math.min(3.0,stagnationLayers*0.42);
+      const relax=1+Math.min(4.5,stagnationLayers*0.42 + strategyStats.pressureScore*0.65);
       pruneGoalThresh=Math.abs(best[0].delta)*(20*relax)+1e-9;
-      if(stagnationLayers>0) strategyStats.pruneRelax++;
+      if(stagnationLayers>0 || strategyStats.pressureScore>0) strategyStats.pruneRelax++;
     }
+    prevVisited=visited; prevMeetCand=meetCandidates; prevMeetOK=meetConfirmed; prevProbeRej=meetDbg.rejProbeConfirm;
     await new Promise(r=>setTimeout(r,0));
   }
 
@@ -4653,7 +4668,7 @@ $("btnStart").onclick=()=>{
           best_delta_ever:Number.isFinite(payload.bestDeltaSoFar)?fmt(payload.bestDeltaSoFar):"n/a",
           meetLookups:payload.meetLookups||0,meetCand:payload.meetCandidates||0,
           meetOK:payload.meetConfirmed||0,beam:((payload.beamF||0)+"/"+(payload.beamR||0)),
-          candMul:fmt(payload.dynamicCandMul||1),cfmMul:fmt(payload.dynamicConfirmMul||1)
+          candMul:fmt(payload.dynamicCandMul||1),cfmMul:fmt(payload.dynamicConfirmMul||1),pressure:payload.strategyStats?.pressureScore??0
         });
         const ps=$("pruneStats");
         ps.style.display="block";
@@ -4663,7 +4678,7 @@ $("btnStart").onclick=()=>{
           " &nbsp;|&nbsp; <b>吞吐(v/s)：</b>"+vps.toLocaleString();
         if(payload.strategyStats){
           const st=payload.strategyStats;
-          ps.innerHTML+=`<br><b>策略统计</b> boost=${st.adaptiveBoosts} pruneRelax=${st.pruneRelax} jitter=${st.meetJitter} extraDecomp=${st.extraDecomp} stagnation=${st.stagnationLayers}`;
+          ps.innerHTML+=`<br><b>策略统计</b> boost=${st.adaptiveBoosts} forced=${st.forcedBoost} pruneRelax=${st.pruneRelax} jitter=${st.meetJitter} extraDecomp=${st.extraDecomp} stagnation=${st.stagnationLayers} pressure=${st.pressureScore}`;
         }
         if(payload.meetDbg){
           const d=payload.meetDbg;
