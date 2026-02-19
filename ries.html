@@ -2530,6 +2530,36 @@ function topK(items,k,scoreFn,lowerBetter=true,filterFn=null){
 function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const out=[];
   const used=new Set();
+  const keepPoolMul = mode==="speed" ? 8 : (mode==="accuracy" ? 18 : 14);
+  const keepPoolFloor = mode==="speed" ? 2200 : 3200;
+  const keepPoolSize = Math.min(items.length, Math.max(beam*keepPoolMul, keepPoolFloor));
+  const quotaPool = keepPoolSize<items.length ? topK(items,keepPoolSize,(x)=>x.keep,true) : items;
+
+  const rootBest=new Map();
+  const rootFreq=new Map();
+  const rootKey=(it)=>{
+    const ast=it&&it.ast;
+    if(!ast) return "c";
+    if(ast.t===2) return "b:"+ast.op;
+    if(ast.t===1) return "u:"+ast.op;
+    return "c";
+  };
+  for(const it of quotaPool){
+    const r=rootKey(it);
+    rootFreq.set(r,(rootFreq.get(r)||0)+1);
+    const old=rootBest.get(r);
+    if(old===undefined || it.keep<old) rootBest.set(r,it.keep);
+  }
+  const opPriorityAdj=(it)=>{
+    const r=rootKey(it);
+    const freq=rootFreq.get(r)||1;
+    const bestKeep=rootBest.get(r);
+    const rarity=1/Math.sqrt(freq);
+    const quality=bestKeep===undefined ? 0 : (1/(1+bestKeep));
+    // Encourage rare/high-quality operator roots so function priorities remain heuristic and unbiased.
+    return (mode==="speed"?0.08:0.14)*rarity + (mode==="speed"?0.05:0.08)*quality;
+  };
+
   const take=(arr,limit)=>{
     for(let i=0;i<arr.length&&out.length<beam&&limit>0;i++){
       const it=arr[i];
@@ -2593,7 +2623,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
 
   // qFrac: keep highly rational values (small bb) in pow-useful range – key for e.g. 25/7 type bases
   if(nFrac>0){
-    take(topK(items,nFrac,(x)=>x.bb,true,(x)=>{
+    take(topK(quotaPool,nFrac,(x)=>x.bb,true,(x)=>{
       const v=x.v;
       if(!Number.isFinite(v)||Math.abs(v)<0.05)return false;
       const a=Math.abs(v);
@@ -2605,7 +2635,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   // Trig-output range: values in [-1,1] are outputs of sin/cos/tanh, needed for inverse-trig meets
   // e.g. cos(tan(e)) ≈ some value → fwd must retain cos(tan(e)) which is in [-1,1]
   if(nTrigOut>0){
-    take(topK(items,nTrigOut,(x)=>(x.goal*0.6+x.bb*0.4),true,(x)=>{
+    take(topK(quotaPool,nTrigOut,(x)=>(x.goal*0.6+x.bb*0.4),true,(x)=>{
       const a=Math.abs(x.v);
       return Number.isFinite(x.v) && a<=1.0+1e-12;
     }), nTrigOut);
@@ -2613,7 +2643,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
 
   // Trig-argument range: values in [-2π,2π] useful as sin/cos/tan arguments
   if(nTrigArg>0){
-    take(topK(items,nTrigArg,(x)=>(x.goal*0.5+x.bb*0.5),true,(x)=>{
+    take(topK(quotaPool,nTrigArg,(x)=>(x.goal*0.5+x.bb*0.5),true,(x)=>{
       const a=Math.abs(x.v);
       return Number.isFinite(x.v) && a<=Math.PI*2+0.1 && a>1e-12;
     }), nTrigArg);
@@ -2622,7 +2652,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   // Inverse-trig range: values in arcsin/arccos/arctan ranges [-π/2, π]
   // Needed so fwd can match rev[asin(T)], rev[acos(T)], rev[atan(T)] etc.
   if(nInvTrig>0){
-    take(topK(items,nInvTrig,(x)=>(x.goal*0.4+x.bb*0.6),true,(x)=>{
+    take(topK(quotaPool,nInvTrig,(x)=>(x.goal*0.4+x.bb*0.6),true,(x)=>{
       const v=x.v;
       if(!Number.isFinite(v))return false;
       const a=Math.abs(v);
@@ -2631,7 +2661,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     }), nInvTrig);
   }
 
-  if(allowPow && nPow>0) take(topK(items,nPow,(x)=>(x.goal+0.20*x.bb),true,(x)=>x.hasPow), nPow);
+  if(allowPow && nPow>0) take(topK(quotaPool,nPow,(x)=>(x.goal+0.20*x.bb),true,(x)=>x.hasPow), nPow);
 
   if(allowPow && nPowBase>0){
     const baseFilter=(x)=>{
@@ -2641,7 +2671,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
       const a=Math.abs(v);
       return a>0.12 && a<24 && Math.abs(a-1)>1e-12;
     };
-    take(topK(items,nPowBase,(x)=>x.bb,true,baseFilter), nPowBase);
+    take(topK(quotaPool,nPowBase,(x)=>x.bb,true,baseFilter), nPowBase);
   }
   if(allowPow && nPowExp>0){
     const expFilter=(x)=>{
@@ -2649,18 +2679,20 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
       if(!Number.isFinite(v))return false;
       return Math.abs(v)<24;
     };
-    take(topK(items,nPowExp,(x)=>(x.bb*0.7 + 0.01/(1+(x.depth||0))),false,expFilter), nPowExp);
+    take(topK(quotaPool,nPowExp,(x)=>(x.bb*0.7 + 0.01/(1+(x.depth||0))),false,expFilter), nPowExp);
   }
 
-  if(nFunc>0) take(topK(items,nFunc,(x)=>(x.goal+0.16*x.bb),true,(x)=>x.hasFunc), nFunc);
+  if(nFunc>0){
+    take(topK(quotaPool,nFunc,(x)=>(x.goal+0.16*x.bb-opPriorityAdj(x)),true,(x)=>x.hasFunc), nFunc);
+  }
 
   if(nDepth>0){
-    take(topK(items,nDepth,(x)=>-(x.depth||0),true), nDepth);
+    take(topK(quotaPool,nDepth,(x)=>-(x.depth||0),true), nDepth);
   }
 
   if(nMagD>0){
     const bins=new Map();
-    for(const it of items){
+    for(const it of quotaPool){
       const mb=Math.floor(Math.log2(Math.abs(it.v)+1e-30));
       const old=bins.get(mb);
       if(!old||it.keep<old.keep)bins.set(mb,it);
@@ -2671,24 +2703,24 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   }
 
   if(nIrr>0){
-    take(topK(items,nIrr,(x)=> (x.bb*0.8 - x.goal*0.15), false), nIrr);
+    take(topK(quotaPool,nIrr,(x)=> (x.bb*0.8 - x.goal*0.15 - opPriorityAdj(x)*0.25), false), nIrr);
   }
 
-  take(topK(items,nBB,(x)=>x.bb,true), nBB);
+  take(topK(quotaPool,nBB,(x)=>x.bb,true), nBB);
 
   if(nSeed>0){
-    const seed=topK(items,nSeed,(x)=>((x.cost||0)*0.7 + x.bb*0.25 + x.goal*0.05),true,(x)=>((x.cost||0)<=6)&&!used.has(x.key));
+    const seed=topK(quotaPool,nSeed,(x)=>((x.cost||0)*0.7 + x.bb*0.25 + x.goal*0.05 - opPriorityAdj(x)*0.25),true,(x)=>((x.cost||0)<=6)&&!used.has(x.key));
     take(seed,nSeed);
   }
 
   if(nExplore>0){
-    const ex = topK(items,nExplore,(x)=>((x.goal*0.55)+(x.bb*0.35)-0.03*(x.depth||0)),true,(x)=>!used.has(x.key));
+    const ex = topK(quotaPool,nExplore,(x)=>((x.goal*0.55)+(x.bb*0.35)-0.03*(x.depth||0)-opPriorityAdj(x)*0.45),true,(x)=>!used.has(x.key));
     take(ex,nExplore);
   }
 
   if(nNovel>0){
     const bins=new Map();
-    for(const it of items){
+    for(const it of quotaPool){
       if(used.has(it.key)) continue;
       const root=(it.ast&&it.ast.t===2)?it.ast.op:((it.ast&&it.ast.t===1)?("u:"+it.ast.op):"c");
       const d=(it.depth||0);
@@ -2704,7 +2736,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
 
   if(nDiv>0){
     const bins=new Map();
-    for(const it of items){
+    for(const it of quotaPool){
       if(used.has(it.key))continue;
       const b=Math.floor(Math.log(Math.abs(it.v)+1e-30)*3);
       const old=bins.get(b);
@@ -2715,6 +2747,11 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   }
 
   if(out.length<beam){
+    take(topK(quotaPool,beam-out.length,(x)=>(x.keep-opPriorityAdj(x)*0.12),true), beam-out.length);
+  }
+
+  if(out.length<beam){
+    // Fallback to full set for safety so precision does not regress when pool is too narrow.
     take(topK(items,beam-out.length,(x)=>x.keep,true), beam-out.length);
   }
   for(const it of out){
