@@ -4136,7 +4136,7 @@ function collectLeaves(ast, out){
 
   function selectDecompAnchors(layerItems,layerCost,jm){
     if(!Array.isArray(layerItems) || !layerItems.length) return [];
-    const cap=Math.max(24,Math.floor(beamF*((mode==="speed")?0.08:0.18)*Math.max(0.8,jm)));
+    const cap=Math.max(16,Math.floor(beamF*((mode==="speed")?0.035:(mode==="accuracy"?0.09:0.055))*Math.max(0.75,jm)));
     const seen=new Set();
     const out=[];
     const add=(it)=>{
@@ -4146,10 +4146,10 @@ function collectLeaves(ast, out){
       out.push(it);
     };
 
-    const src=layerItems.slice(0,Math.min(layerItems.length,cap*3));
+    const src=layerItems.slice(0,Math.min(layerItems.length,cap*2));
     // keep best-by-keep skeleton
     src.sort((a,b)=>(a.keep??INF)-(b.keep??INF));
-    for(let i=0;i<src.length && out.length<Math.floor(cap*0.45);i++) add(src[i]);
+    for(let i=0;i<src.length && out.length<Math.floor(cap*0.35);i++) add(src[i]);
 
     // magnitude diversity bins
     const magBins=new Map();
@@ -4159,7 +4159,7 @@ function collectLeaves(ast, out){
       if(!old || (it.keep??INF)<(old.keep??INF)) magBins.set(mb,it);
     }
     for(const it of Array.from(magBins.values()).sort((a,b)=>(a.keep??INF)-(b.keep??INF))){
-      add(it); if(out.length>=Math.floor(cap*0.70)) break;
+      add(it); if(out.length>=Math.floor(cap*0.62)) break;
     }
 
     // operator-shape diversity
@@ -4177,16 +4177,16 @@ function collectLeaves(ast, out){
     }
 
     // cross-layer anchors: deepen node linkage when stagnant/pressured
-    if((strategyStats.stagnationLayers>=1 || strategyStats.pressureScore>=1) && Number.isFinite(layerCost)){
+    if((strategyStats.stagnationLayers>=2 || strategyStats.pressureScore>=3) && Number.isFinite(layerCost)){
       for(let d=1;d<=2;d++){
         const li=fwd[layerCost-d];
         if(!Array.isArray(li)||!li.length) continue;
         const lim=Math.min(li.length, Math.max(10,Math.floor(cap*(d===1?0.24:0.16))));
-        for(let i=0;i<lim && out.length<Math.floor(cap*1.35);i++) add(li[i]);
+        for(let i=0;i<lim && out.length<Math.floor(cap*1.12);i++) add(li[i]);
       }
     }
 
-    if(out.length>Math.floor(cap*1.35)) out.length=Math.floor(cap*1.35);
+    if(out.length>Math.floor(cap*1.12)) out.length=Math.floor(cap*1.12);
     return out;
   }
 
@@ -4197,11 +4197,13 @@ function collectLeaves(ast, out){
     if(jm<0.45) return;
     const anchors=selectDecompAnchors(layerItems,layerCost,jm);
     if(!anchors.length) return;
-    const limItems=Math.min(anchors.length, Math.max(20,Math.floor(beamF*((mode==="speed")?0.06:0.14)*jm)));
+    const limHard=(mode==="speed")?96:((mode==="accuracy")?240:140);
+    const limItems=Math.min(anchors.length, limHard, Math.max(16,Math.floor(beamF*((mode==="speed")?0.025:(mode==="accuracy"?0.08:0.04))*jm)));
     if(mode==="speed" && (anchors[0]?.cost||0)<4) return;
+    if(Number.isFinite(layerCost) && ((mode==="speed"&&layerCost<5)||(mode!=="accuracy"&&layerCost<4))) return;
     const logT=(T>0)?Math.log(T):NaN;
     const jumpCache=new Map();
-    const dynHitsMul=1+Math.min(1.8, strategyStats.stagnationLayers*0.22 + (strategyStats.pressureScore||0)*0.35);
+    const dynHitsMul=1+Math.min(0.85, strategyStats.stagnationLayers*0.12 + (strategyStats.pressureScore||0)*0.18);
     const J=(tv,h)=>{
       const kk=meetPrimaryKey(tv)+"|"+(h|0);
       const c=jumpCache.get(kk);
@@ -4210,9 +4212,13 @@ function collectLeaves(ast, out){
       jumpCache.set(kk,arr);
       return arr;
     };
-    const JH=(tv,base)=>J(tv,Math.max(6,Math.floor(base*dynHitsMul)));
+    const jumpHard=(mode==="speed")?36:((mode==="accuracy")?84:56);
+    const JH=(tv,base)=>J(tv,Math.min(jumpHard,Math.max(4,Math.floor(base*dynHitsMul))));
+    const JU=(tv,base)=>J(tv,Math.min(jumpHard,Math.max(4,Math.floor(base*(0.72+0.18*dynHitsMul)))));
 
-    tryUnaryTargetTransforms(jm,JH);
+    tryUnaryTargetTransforms(jm,JU);
+    const decStart=performance.now();
+    const decBudget=(mode==="speed")?24:((mode==="accuracy")?62:38);
 
     for(let i=0;i<limItems;i++){
       const a=anchors[i];
@@ -4280,6 +4286,7 @@ function collectLeaves(ast, out){
       }
 
       if(stopFlag) return;
+      if((i&7)===0 && (performance.now()-decStart)>decBudget) return;
     }
   }
 
