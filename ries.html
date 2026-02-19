@@ -3352,6 +3352,20 @@ function collectLeaves(ast, out){
     return astCost(n.l)+astCost(n.r)+wBin(n.op);
   }
 
+  // Shared reverse scoring utility (used by seed hints + buildRev expansion).
+  function revScore(v){
+    const ab=Math.abs(v);
+    const mag=Math.log1p(ab);
+    // Prefer trig-output range [-1,1]: needed for sin/cos/tanh chains.
+    const trigOutBonus=(ab<=1.0&&ab>1e-15)?0.22:0;
+    // Prefer small-angle argument range: useful for composed trig forms.
+    const trigArgBonus=(ab<=Math.PI*2+0.1)?0.10:0;
+    // Prefer rational-looking values to retain good bases/exponents.
+    const rbb=bbScore(v,18,0.012);
+    const ratBonus=rbb<0.06?0.18:(rbb<0.18?0.07:0);
+    return Math.max(0.001, mag - trigOutBonus - trigArgBonus - ratBonus);
+  }
+
   function pickInterestingAtoms(limit=10){
     const atoms=[];
     for(const c of consts){
@@ -4103,21 +4117,6 @@ function collectLeaves(ast, out){
   function buildRev(c){
     if(!bidir)return;
     const{bucket,put}=mkBucket(beamR,mp.spillMul);
-    // Enhanced revScore: prefer values in trig-output range [-1,1], small magnitude,
-    // and rational-looking values — all are likely building blocks for complex compositions
-    const revScore=(v)=>{
-      const ab=Math.abs(v);
-      const mag=Math.log1p(ab);
-      // Prefer trig-output range [-1,1]: needed for sin/cos/tanh argument chains
-      const trigOutBonus=(ab<=1.0&&ab>1e-15)?0.22:0;
-      // Prefer trig-argument range (small angle): cos(tan(e)) style
-      const trigArgBonus=(ab<=Math.PI*2+0.1)?0.10:0;
-      // Prefer rational-looking (small denominator fraction): e.g. 25/7, 5/3
-      const rbb=bbScore(v,18,0.012);
-      const ratBonus=rbb<0.06?0.18:(rbb<0.18?0.07:0);
-      return Math.max(0.001, mag - trigOutBonus - trigArgBonus - ratBonus);
-    };
-
     for(const op of opsUn){
       const w=wUn(op),sc=c-w;
       if(sc<0||!rev[sc]||!rev[sc].length)continue;
