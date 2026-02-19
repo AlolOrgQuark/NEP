@@ -1693,16 +1693,18 @@ function modeParams(mode){
     meetSweepMul:0.20, meetSweepPowMul:0.34,
     beamMul:0.92, subLayerCapMul:1.08,
     // 减小索引探针量: meetKeyProbeCap 260→120, idxKeysPerItem 12→6(speed模式只用主键+邻域键)
-    revIdxKeyCap:240, fwdIdxKeyCap:240, meetKeyProbeCap:120, meetSweepRevCap:240, idxKeysPerItem:6, idxPerItemCap:40,
+    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:84, meetSweepRevCap:180, idxKeysPerItem:5, idxPerItemCap:32,
     capUnMul:3.0, capBinMul:2.6, jumpMul:1.45, meetStage2:0, qSeed:0.08,
     // 明确设置采样率: 0.28 (原来undefined→0.50)
-    meetFwdSampleRatio:0.28,
+    meetFwdSampleRatio:0.16,
     // 每个fwd项最多尝试N对, 防止单项消耗过多时间
-    speedMeetMaxPairsPerItem:80,
+    speedMeetMaxPairsPerItem:48,
     // meetFwd扫描时只用主键检测revIdx命中(不生成全部transform域键)
     speedMeetScanPrimaryOnly:true,
     // buildRev中对非pow项跳过transform域键(只用主键+邻域)
     speedRevMeetPrimaryOnly:true,
+    // speed模式每层meetFwd总时限(ms)
+    speedMeetLayerTimeCapMs:26,
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:13, keepMode:"goal",
@@ -2774,8 +2776,6 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
   const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.14)));
-  // 新增：误差修正值配额 — 接近T的项（误差<2%）优先保留用于精度提升
-  const nNearT=Math.max(0,Math.floor(beam*(mode==="speed"?0.06:0.12)));
   // 新增：变换亲和值配额 — 值接近T的各种变换（√T, ∛T, ln(T)等）的项
   const nTransformAffin=Math.max(0,Math.floor(beam*(mode==="speed"?0.04:0.10)));
 
@@ -3030,11 +3030,6 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
     take(topK(quotaPool,beam-out.length,(x)=>(x.keep-opPriorityAdj(x)*0.12),true), beam-out.length);
   }
 
-  // ── 新增：误差修正值配额 — 保留误差<2%的接近T项，用于errorCorrectionSearch ──
-  if(nNearT>0 && Number.isFinite(T_target)){
-    const scale=Math.max(1,Math.abs(T_target));
-    take(topK(quotaPool,nNearT,(x)=>Math.abs(x.v-T_target)/scale,true,(x)=>Math.abs(x.v-T_target)<scale*0.03 && !used.has(x.key)), nNearT);
-  }
   // ── 新增：变换亲和值配额 — 保留接近T各种变换的项，扩展jumpLookupNear可以找到的候选 ──
   if(nTransformAffin>0 && Number.isFinite(T_target)){
     const transTargets=[];
@@ -4291,6 +4286,12 @@ function collectLeaves(ast, out){
     const ultraCloseGap = 3e-13 * scale;
     const ultraClose = (matchGap <= ultraCloseGap);
 
+    // 高复杂度+大幅值时的快速拒绝，减少无效confirm
+    if(!ultraClose && tc>=12){
+      const m=Math.max(Math.abs(f.v),Math.abs(r.v));
+      if(m>80 && matchGap>6e-11*scale){ meetDbg.rejEpsCand++; return; }
+    }
+
     const isPowRelated = (r.srcOp==="^") || (f.hasPow) || (r.wA && r.srcOp==="pow");
     if(meetDbg.maxConfirmErr > 100 && isPowRelated){
       const fMag=Math.abs(f.v), rMag=Math.abs(r.v);
@@ -4552,7 +4553,7 @@ function collectLeaves(ast, out){
         totalPairsThisItem++;
         tryMeetPair(cand,r);
       });
-      if(bandHits>0) strategyStats.extraDecomp++;
+      if(bandHits>0) strategyStats.meetJitter++;
     }
     if(!stopFlag && strategyStats.stagnationLayers>=3) jitterMeetProbeReverse(r,limKey,seenNode);
   }
@@ -4641,7 +4642,7 @@ function collectLeaves(ast, out){
         totalPairsThisItem++;
         tryMeetPair(f,cand);
       });
-      if(bandHits>0) strategyStats.extraDecomp++;
+      if(bandHits>0) strategyStats.meetJitter++;
     }
     if(!stopFlag && strategyStats.stagnationLayers>=3) jitterMeetProbeForward(f,lim2Cap,seenNode);
   }
@@ -5142,6 +5143,8 @@ function collectLeaves(ast, out){
 
 
   function refinementCombiner(c){
+    return; // disabled: remove small-number add/sub approximation mechanism
+
     if(c<6||best.length<2) return;
     const t0r=performance.now();
     const timeBudget2=(mode==="speed")?5:12;
@@ -5271,6 +5274,8 @@ function collectLeaves(ast, out){
   // 同时处理乘法修正：若 expr * k ≈ T，寻找 k ≈ T/expr_val。
   // ═══════════════════════════════════════════════════════════════════════
   function errorCorrectionSearch(c){
+    return; // disabled: remove small-number add/sub approximation mechanism
+
     if(best.length<1) return;
     const tStart=performance.now();
     const timeCap=(mode==="speed")?10:(mode==="accuracy"?32:18);
@@ -5767,6 +5772,8 @@ function collectLeaves(ast, out){
   // 使用"误差放大"技术：将误差乘以整数因子后在fwd中寻找匹配
   // ═══════════════════════════════════════════════════════════════════════
   function precisionRefinement(c){
+    return; // disabled: remove small-number add/sub approximation mechanism
+
     if(best.length<1||c<6) return;
     const tStart=performance.now();
     const timeCap=(mode==="speed")?6:(mode==="accuracy"?24:12);
@@ -6527,13 +6534,17 @@ function collectLeaves(ast, out){
         // 高拒绝率：候选太差，收紧而非放松
         dynamicCandMul=Math.max(0.35,1.0-Math.min(0.55,(rejRate-0.85)*6));
         dynamicConfirmMul=Math.max(0.45,1.0-Math.min(0.45,(rejRate-0.85)*5));
-      } else if(stagnationLayers>=2&&rejRate<0.40){
+      } else if(stagnationLayers>=2&&rejRate<0.40&&(meetDbg.maxConfirmErr||0)<5e5){
         // 低拒绝率+停滞：可以放松
         dynamicCandMul=1+Math.min(0.8,stagnationLayers*0.08+pressureScore*0.14+(forcedBoost?0.20:0));
         dynamicConfirmMul=1+Math.min(1.5,stagnationLayers*0.12+pressureScore*0.25+(forcedBoost?0.35:0));
       } else {
-        dynamicCandMul=1+Math.min(0.5,stagnationLayers*0.04+pressureScore*0.06);
-        dynamicConfirmMul=1+Math.min(0.8,stagnationLayers*0.06+pressureScore*0.10);
+        dynamicCandMul=1+Math.min(0.35,stagnationLayers*0.03+pressureScore*0.05);
+        dynamicConfirmMul=1+Math.min(0.55,stagnationLayers*0.04+pressureScore*0.08);
+        if((meetDbg.maxConfirmErr||0)>1e7){
+          dynamicCandMul=Math.min(dynamicCandMul,0.78);
+          dynamicConfirmMul=Math.min(dynamicConfirmMul,0.85);
+        }
       }
     }
 
@@ -6662,22 +6673,17 @@ function collectLeaves(ast, out){
     tryTargetDecomposition(fwd[c], T, c);
     if(c%2===0||stagnationLayers>=2) deepStructureProbe(c);
     if(c%3===0||strategyStats.pressureScore>=2) powerChainProbe(c);
-    if((c%4===0||stagnationLayers>=3)&&c>=8) refinementCombiner(c);
 
     // ═══ 新增顿悟/启发/联结/跳跃探针 ═══
-    // 【顿悟】误差修正搜索: c>=5时每层运行（找到接近T的表达式后用加法/乘法精化）
-    if(c>=5 && !stopFlag) errorCorrectionSearch(c);
     // 【联结】横向梁代数扫描: c>=4时每2层, 或停滞时每层
     if(c>=4 && !stopFlag && (c%2===0 || stagnationLayers>=2)) crossBeamAlgebraicScan(c);
     // 【启发】常数关联启发: c>=5时每3层, 精度模式每2层
     if(c>=5 && !stopFlag && (c%3===0 || (mode==="accuracy"&&c%2===0))) heuristicConstantRelationSearch(c);
     // 【跳跃】强化深层嵌套（L3+L4）: c>=7时每2层
     if(c>=7 && !stopFlag && (c%2===1 || stagnationLayers>=3)) advancedDeepNestingProbe(c);
-    // 【精度】精度淬火: c>=8时每4层, 有好解后触发
-    if(c>=8 && !stopFlag && best.length>=2 && (c%4===0 || stagnationLayers>=3)) precisionRefinement(c);
     phaseTiming.decompose+=performance.now()-_t0Dec;
-    if(stagnationLayers>=3 || strategyStats.pressureScore>=3){
-      const doExtraDecomp = strategyStats.pressureScore>=4 || (c%3===0);
+    if((mode==="speed"?stagnationLayers>=4:stagnationLayers>=3) || strategyStats.pressureScore>=3){
+      const doExtraDecomp = strategyStats.pressureScore>=4 || (mode!=="speed"&&c%3===0) || (mode==="speed"&&c%4===0&&strategyStats.pressureScore>=3);
       if(doExtraDecomp){
         const prev=fwd[Math.max(1,c-1)]||[];
         if(prev.length){
@@ -6734,7 +6740,7 @@ function collectLeaves(ast, out){
     // 现在通过采样将 meet 候选削减至约 40%+revHit，大幅降低时间
     {
       const sampleRatio = mp.meetFwdSampleRatio != null ? mp.meetFwdSampleRatio : 0.50;
-      const meetFwdCap = Math.max(250, Math.floor(beamF * sampleRatio));
+      const meetFwdCap = Math.max(160, Math.floor(beamF * sampleRatio));
       for(const e of fwd[c]){
         pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
         if(stopFlag)break;
@@ -6743,7 +6749,7 @@ function collectLeaves(ast, out){
         const sorted = fwd[c].slice().sort((a,b)=>(a.goal||0)-(b.goal||0));
         const meetSet = new Set();
         const sampleRatio2 = mp.meetFwdSampleRatio != null ? mp.meetFwdSampleRatio : 0.50;
-        const meetFwdCap2 = Math.max(200, Math.floor(beamF * sampleRatio2));
+        const meetFwdCap2 = Math.max(140, Math.floor(beamF * sampleRatio2));
         const topK3 = Math.min(sorted.length, meetFwdCap2);
         for(let i=0;i<topK3;i++) meetSet.add(sorted[i]);
 
@@ -6802,8 +6808,11 @@ function collectLeaves(ast, out){
         let meetFwdTotalPairs = 0;
         // 将meetSet按goal排序(goal小的优先probe, 最可能match)
         const meetSetArr = Array.from(meetSet).sort((a,b)=>(a.goal||0)-(b.goal||0));
+        const meetLayerStart=performance.now();
+        const meetLayerCap=(mode==="speed"?(mp.speedMeetLayerTimeCapMs||26):Infinity);
         for(const e of meetSetArr){
           if(meetFwdTotalPairs >= meetFwdTotalBudget) break;
+          if((performance.now()-meetLayerStart)>meetLayerCap) break;
           const pairsBefore = meetDbg.pairsTried;
           tryMeetFwdWithRevIdx(e);
           meetFwdTotalPairs += (meetDbg.pairsTried - pairsBefore);
