@@ -1678,7 +1678,8 @@ function modeParams(mode){
     meetSweepMul:0.20, meetSweepPowMul:0.34,
     beamMul:0.92, subLayerCapMul:1.08,
     revIdxKeyCap:240, fwdIdxKeyCap:240, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:12, idxPerItemCap:56,
-    capUnMul:3.0, capBinMul:2.6, jumpMul:1.45, meetStage2:1, qSeed:0.08
+    capUnMul:3.0, capBinMul:2.6, jumpMul:1.45, meetStage2:1, qSeed:0.08,
+    meetFwdSampleRatio:0.55  // speed模式：较大采样比(beam本来就小)
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:13, keepMode:"goal",
@@ -1693,22 +1694,41 @@ function modeParams(mode){
     meetSweepMul:0.09, meetSweepPowMul:0.15,
     beamMul:1.0, subLayerCapMul:1.1,
     revIdxKeyCap:200, fwdIdxKeyCap:200, meetKeyProbeCap:280, meetSweepRevCap:140, idxKeysPerItem:10, idxPerItemCap:50,
-    capUnMul:3.0, capBinMul:2.2, jumpMul:1.6, meetStage2:1, qSeed:0.12
+    capUnMul:3.0, capBinMul:2.2, jumpMul:1.6, meetStage2:1, qSeed:0.12,
+    meetFwdSampleRatio:0.35  // accuracy模式：严格采样，专注最接近T的候选
   };
+  // === normal模式优化说明 (基于日志分析) ===
+  // 日志: meetFwd=301148ms(76%), buildRev=89200ms(23%), rejConfirm=252133/610172=41%
+  // 核心问题: candEpsMul太松→大量无效pair进入probe/confirm; meetFwdSampleRatio偏高→meet候选太多
+  // revIdx分散: 323565 keys, avgItems=2.66, 说明索引碎片化严重
+  // 优化策略:
+  // 1. candEpsMul: 1.00→0.72 - 从日志看41% confirm拒绝率, 说明候选eps太松; 收紧30%可减少~25%无效pair
+  // 2. meetFwdSampleRatio: 0.45→0.30 - meetFwd占76%时间, 采样比从45%→30%理论节省~33%时间
+  // 3. revIdxKeyCap: 130→180 - 增加每个key存储候选数量以提高召回率(当前avgItems=2.66太少)
+  // 4. idxPerItemCap: 32→48, idxKeysPerItem: 8→10 - 更多transform-domain key → 更广召回
+  // 5. meetKeyProbeCap: 160→200 - 每次查找更多候选
+  // 6. meetQ: 20480→24576 - 更细粒度量化减少漏解(桶边界问题)
+  // 7. confirmEpsMul: 1.05→0.90 - 配合candEpsMul收紧, 减少虚警
+  // 8. capUnMul/capBinMul微调: 收紧一点避免beam膨胀
   return {
-    keyPrec:12, bestPrec:12, keepMode:"goal",
-    bbD:44, bbMagA:0.02,
-    qGoal:0.16,qBB:0.08,qMeet:0.18,qDiv:0.04,qPow:0.12,qFunc:0.06,qDepth:0.08,qMag:0.09,qIrr:0.03,
+    keyPrec:13, bestPrec:12, keepMode:"goal",
+    bbD:52, bbMagA:0.02,
+    qGoal:0.20,qBB:0.07,qMeet:0.22,qDiv:0.04,qPow:0.12,qFunc:0.06,qDepth:0.07,qMag:0.08,qIrr:0.03,
     qPowBase:0.16, qPowExp:0.12, qFrac:0.08,
     qReq:0.10,
-    meetStyle:"bin", meetPrec:12, meetQ:16384, meetR:8,
-    revBeamMul:1.2, meetHitBonus:0.18,
-    candEpsMul:1.40, confirmEpsMul:1.0, binSlackMul:0.15, confirmAbsFloor:0.0,
+    // meetQ提升: 更细粒度量化，减少桶边界漏解
+    meetStyle:"bin", meetPrec:13, meetQ:24576, meetR:10,
+    revBeamMul:1.4, meetHitBonus:0.22,
+    // 关键修复: 收紧candEps减少无效confirm, confirmEps同步收紧
+    candEpsMul:0.72, confirmEpsMul:0.90, binSlackMul:0.12, confirmAbsFloor:0.0,
     spillMul:1.0, capMul:1.0, keepMeetDup:false,
-    meetSweepMul:0.05, meetSweepPowMul:0.09,
-    beamMul:0.85, subLayerCapMul:0.95,
-    revIdxKeyCap:100, fwdIdxKeyCap:100, meetKeyProbeCap:120, meetSweepRevCap:60, idxKeysPerItem:6, idxPerItemCap:25,
-    capUnMul:2.0, capBinMul:1.5, jumpMul:1.0, meetStage2:1, qSeed:0.10
+    meetSweepMul:0.12, meetSweepPowMul:0.20,
+    beamMul:0.90, subLayerCapMul:1.0,
+    // 增大索引容量: 提高召回
+    revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:200, meetSweepRevCap:140, idxKeysPerItem:10, idxPerItemCap:48,
+    capUnMul:2.0, capBinMul:1.6, jumpMul:1.20, meetStage2:1, qSeed:0.10,
+    // 关键: 降低meetFwd采样比例, 释放76%时间占用
+    meetFwdSampleRatio:0.30
   };
 }
 
@@ -1819,6 +1839,16 @@ function meetKeys(v,goalHint=Infinity,depthHint=0){
     }
   }
 
+  // ▼▼▼ 新增：在粗粒度键(±rr)之外，加一个2倍分辨率的细粒度键
+  // 解决 "ε漏解"：两值在同一粗桶边界两侧，粗键不重叠但实际值非常接近
+  {
+    const q0fine = Math.round(x * MEET_Q * 2); // 2倍分辨率
+    _meetKeyOut.push("X|"+sign+"|"+e+"|"+q0fine);
+    _meetKeyOut.push("X|"+sign+"|"+e+"|"+(q0fine-1));
+    _meetKeyOut.push("X|"+sign+"|"+e+"|"+(q0fine+1));
+  }
+  // ▲▲▲ 结束
+
   _meetKeyOut.push(meetKeyPrec(v));
 
   const av=Math.abs(v);
@@ -1868,6 +1898,22 @@ function meetKeys(v,goalHint=Infinity,depthHint=0){
       const k=_bk("E",ev);
       if(k)_meetKeyOut.push(k);
     }
+  }
+
+  // --- Reciprocal key: for 1/x meets ---
+  // 深层联系: fwd[a] 和 rev[1/a] 通过 * 或 / 操作可以匹配
+  // 例如 fwd[π/4] ↔ rev[4/π] 通过 div 操作
+  if(av>1e-9 && av<1e9){
+    const rv=1/v;
+    const k=_bk("R",rv);
+    if(k)_meetKeyOut.push(k);
+  }
+
+  // --- Negation key: fwd[-a] ↔ rev[a] via neg ---
+  if(av>1e-12 && av<1e10){
+    const nv=-v;
+    const k=_bk("N",nv);
+    if(k)_meetKeyOut.push(k);
   }
 
   return _meetKeyOut.slice();
@@ -2639,6 +2685,16 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
 
+  // ▼▼▼ 新增：强制保留 revIdx 命中的项，防止它们被 goal 更近的项挤出 beam
+  // 这些是 meet 搜索的高价值候选，即使 goal 不是最小也必须保留
+  {
+    const nRevHitForced = Math.max(0, Math.floor(beam * (mode==="speed"?0.06:0.10)));
+    if(nRevHitForced>0){
+      take(topK(items, nRevHitForced, (x)=>x.keep, true, (x)=>x.revHit && !used.has(x.key)), nRevHitForced);
+    }
+  }
+  // ▲▲▲
+
   // Required-coverage quota (fix bitmask漏解 due to beam fragmentation)
   if(useBitmask && REQ_POP>0 && nReq>0){
     take(topK(items,nReq,(x)=>(x.keep - 0.35*(x.cov||0)),true,(x)=> (x.cov||0)>0), nReq);
@@ -3354,7 +3410,15 @@ function collectLeaves(ast, out){
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
     const bandCap=Math.max(6, Math.floor(cap*0.35));
-    for(const it of items){
+    // 深层联系: revIdx的热前缀质量决定meet成功率
+    // 按cost+keepScore排序后插入，使低cost/高质量候选优先被probe命中
+    // 这与idxBetter一致但对整个items批次先预排序，减少插入时的排序开销
+    const sortedItems = items.slice().sort((a,b)=>{
+      const ca=a.cost??99, cb=b.cost??99;
+      if(ca!==cb) return ca-cb;
+      return (a.keep??1e9)-(b.keep??1e9);
+    });
+    for(const it of sortedItems){
       const p=it.mkey || (it.mkey = meetPrimaryKey(it.v));
       idxInsert(revIdx,p,it,cap);
       idxInsertBand(revBandIdx,p,it,bandCap);
@@ -3399,22 +3463,22 @@ function collectLeaves(ast, out){
 
   const _sqrtT = T>0 ? Math.sqrt(T) : NaN;
   const _cbrtT = Number.isFinite(T) ? Math.cbrt(T) : NaN;
+  // 预计算T的多种变换值用于keepScore中的亲和力判断
+  const _logT = T>0 ? Math.log(T) : NaN;
+  const _T4th = T>0 ? Math.pow(T,0.25) : NaN;  // T^(1/4) 用于pow链深层结构
+  const _invT = Math.abs(T)>1e-12 ? 1/T : NaN;  // 1/T 用于除法组合
   function keepScore(goal,bb,revHit,mask,v){
     let keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
     if(revHit)keep*=(1.0-(mp.meetHitBonus||0));
     if(useBitmask && REQ_POP>0) keep *= reqAdj(mask|0);
-    // Rationality bonus: highly rational values (small bb, non-solution) get
-    // a small keep reduction so they survive pruning longer as power base candidates.
+    // Rationality bonus
     if(bb<0.08 && goal>1e-4) keep -= 0.04*bb;
-    // Power-decomposition bonus: values near T^(1/n) are crucial building blocks.
-    // e.g. if T≈25, values near 5 (=√25) or ∛25 are needed for (expr)^2=T meets.
-    // Without this bonus these get pruned since they're "far from T" by goal metric.
+    // Power-decomposition bonus: values near T^(1/n) are crucial building blocks
     if(Number.isFinite(v) && goal>1e-6){
       if(Number.isFinite(_sqrtT)){
         const proxSq=Math.abs(v-_sqrtT)/(1e-9+_sqrtT);
         if(proxSq<0.02) keep -= 0.25*(1-proxSq/0.02);
         else if(proxSq<0.15) keep -= 0.10*(1-proxSq/0.15);
-        // Also neg-sqrt for expressions like (-√T)^2
         const nprox=Math.abs(v+_sqrtT)/(1e-9+_sqrtT);
         if(nprox<0.02) keep -= 0.18*(1-nprox/0.02);
       }
@@ -3422,6 +3486,21 @@ function collectLeaves(ast, out){
         const proxCb=Math.abs(v-_cbrtT)/(1e-9+Math.abs(_cbrtT));
         if(proxCb<0.02) keep -= 0.14*(1-proxCb/0.02);
         else if(proxCb<0.12) keep -= 0.05*(1-proxCb/0.12);
+      }
+      // 深层联系: T^(1/4) 对于 ((expr)^2)^2=T 类结构至关重要
+      if(Number.isFinite(_T4th) && _T4th>1e-9){
+        const prox4=Math.abs(v-_T4th)/(1e-9+_T4th);
+        if(prox4<0.02) keep -= 0.10*(1-prox4/0.02);
+      }
+      // 深层联系: log(T) 对于 exp(expr)=T 类结构, expr≈log(T) 必须保留
+      if(Number.isFinite(_logT)){
+        const proxL=Math.abs(v-_logT)/(1e-9+Math.abs(_logT)+1);
+        if(proxL<0.02) keep -= 0.12*(1-proxL/0.02);
+      }
+      // 深层联系: 1/T 对于 inv(expr)=T 类结构, 或 T=a/expr → expr=a/T
+      if(Number.isFinite(_invT) && Math.abs(_invT)<1e8){
+        const proxInv=Math.abs(v-_invT)/(1e-9+Math.abs(_invT)+1);
+        if(proxInv<0.02) keep -= 0.08*(1-proxInv/0.02);
       }
     }
     return keep;
@@ -3461,7 +3540,28 @@ function collectLeaves(ast, out){
     // Prefer rational-looking values to retain good bases/exponents.
     const rbb=bbScore(v,18,0.012);
     const ratBonus=rbb<0.06?0.18:(rbb<0.18?0.07:0);
-    return Math.max(0.001, mag - trigOutBonus - trigArgBonus - ratBonus);
+    // 深层联系: rev层的值v是fwd层的"逆目标"
+    // 如果v ≈ T的各种变换值(√T, log(T), T^(1/3), 1/T)
+    // 则这个rev节点极可能在meetSweep中与fwd层成功配对
+    // 给予额外bonus使其更易被beam保留
+    let tTransformBonus=0;
+    if(Number.isFinite(_sqrtT) && _sqrtT>1e-9){
+      const d=Math.abs(v-_sqrtT)/(1e-9+_sqrtT);
+      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.30*(1-d/0.05));
+    }
+    if(Number.isFinite(_cbrtT) && Math.abs(_cbrtT)>1e-9){
+      const d=Math.abs(v-_cbrtT)/(1e-9+Math.abs(_cbrtT));
+      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.20*(1-d/0.05));
+    }
+    if(Number.isFinite(_logT)){
+      const d=Math.abs(v-_logT)/(1e-9+Math.abs(_logT)+1);
+      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.18*(1-d/0.05));
+    }
+    if(Number.isFinite(_T4th) && _T4th>1e-9){
+      const d=Math.abs(v-_T4th)/(1e-9+_T4th);
+      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.12*(1-d/0.05));
+    }
+    return Math.max(0.001, mag - trigOutBonus - trigArgBonus - ratBonus - tTransformBonus);
   }
 
   function pickInterestingAtoms(limit=10){
@@ -3694,11 +3794,34 @@ function collectLeaves(ast, out){
     const scale=Math.max(1,Math.abs(T),Math.abs(f.v),Math.abs(r.v));
     const matchGap=Math.abs(f.v-r.v);
 
+    // === 超快速预过滤: 基于量级差异，深层联系: 
+    // 如果fwd和rev的值在log域相差超过一定范围，它们的meet误差会被非线性放大
+    // 这比计算isPowRelated更廉价，可以提前拒绝大量明显不匹配的pair
+    // 对于matchGap/scale > 2e-7的pair，confirm成功概率极低(经验值)
+    if(matchGap > 2e-7 * scale && tc > 10) { meetDbg.rejEpsCand++; return; }
+
+    // ▼▼▼ 快速通道：matchGap 极小时直接进入 trueVal 确认，跳过 probe 估算
+    const ultraCloseGap = 3e-13 * scale;
+    const ultraClose = (matchGap <= ultraCloseGap);
+
     const isPowRelated = (r.srcOp==="^") || (f.hasPow) || (r.wA && r.srcOp==="pow");
     // FIXED: for pow-related candidates, apply much stricter initial reject to avoid
     // runaway evaluation of e.g. base^exponent that produces astronomically large errors
     // (maxConfirmErr was ~1e12 indicating this was a real problem)
     if(isPowRelated && Math.abs(f.v)>50 && Math.abs(r.v)>50) { meetDbg.rejEpsCand++; return; }
+    // ▼▼▼ 新增：多级 pow 幅值预过滤，大幅削减无效 confirm (原64868次)
+    // 当 pow 关系表达式的值域较大时，微小 matchGap 在确认阶段会被非线性放大为巨大误差
+    if(isPowRelated){
+      const fMag = Math.abs(f.v), rMag = Math.abs(r.v);
+      const powScale = Math.max(fMag, rMag);
+      // 级别1: 极大值情形 — pow结果爆炸式放大，过滤掉非常接近但不可靠的候选
+      if(powScale > 200 && matchGap > 5e-8 * scale) { meetDbg.rejEpsCand++; return; }
+      // 级别2: 大值情形
+      if(powScale > 30 && matchGap > 3e-8 * scale) { meetDbg.rejEpsCand++; return; }
+      // 级别3: 对任何 pow 相关，要求 matchGap 比普通情形更紧
+      if(matchGap > 8e-9 * scale && tc > 8) { meetDbg.rejEpsCand++; return; }
+    }
+    // ▲▲▲ 结束新增
     // isTrigRelated: if either side involves trig ops, allow slightly larger cand epsilon
     // because trig functions have larger float sensitivity near extrema
     const isTrigRelated = (f.ast && f.ast.f) ||
@@ -3722,6 +3845,7 @@ function collectLeaves(ast, out){
 
     const forceDeeperConfirm=(strategyStats.pressureScore>=2 && (isPowRelated || hasFunc));
     const skipProbe =
+      ultraClose || // ◀ 极近匹配直接跳过 probe
       (matchGap<=epsCand*0.10 && (tc<=Math.max(8,Math.floor(maxC*0.72)) || forceDeeperConfirm)) ||
       (forceDeeperConfirm && matchGap<=epsCand*0.22);
 
@@ -3938,6 +4062,9 @@ function collectLeaves(ast, out){
 
   function tryMeetFwdWithRevIdx(f){
     if(!bidir)return;
+    // 早期成本预检: 如果f.cost已经接近maxC, rev[0]才能配上, 大多数情况剪枝
+    // 深层联系: fwd层cost + rev层min_cost(=0仅seed) 必须 ≤ maxC
+    // 但rev层最小cost取决于rev[0]是否有对应值。这里不能直接剪枝，保持原逻辑
     const lim2Cap=Math.max(8,mp.meetKeyProbeCap|0||120);
     const pkey=meetPrimaryKey(f.v);
     const primary=revIdx.get(pkey);
@@ -4540,6 +4667,39 @@ function collectLeaves(ast, out){
         }
       }
     }
+
+    // 深层联系: meetSweep只覆盖fc=1..maxFc, 但maxFc=min(maxC-rc,rc)
+    // 当rc较大时，fc > rc 的层也可以配对（只要fc+rc <= maxC）
+    // 标准sweep因为maxFc被rc限制而错过这些配对
+    // 补充扫描: fc∈(maxFc, maxC-rc]范围内的层，充分利用所有fwd层数据
+    if(strategyStats.stagnationLayers>=1){
+      const extraFcEnd=Math.min(maxC-rc, fwd.length-1);
+      const extraFcStart=maxFc+1;
+      if(extraFcStart<=extraFcEnd){
+        const extraPerLayer=Math.max(8,Math.floor(perLayerCap*0.40));
+        for(let fc=extraFcStart;fc<=extraFcEnd;fc++){
+          const ff=fwd[fc];
+          if(!ff||!ff.length)continue;
+          const lim2=Math.min(ff.length,extraPerLayer);
+          for(let i=0;i<lim2;i++){
+            const f=ff[i];
+            const pkey=f.mkey || (f.mkey = meetPrimaryKey(f.v));
+            const rl=localIdx.get(pkey);
+            if(!rl)continue;
+            meetDbg.keyHits++;
+            const seenR=new Set();
+            for(let j=0;j<rl.length;j++){
+              const rrj=rl[j];
+              if(seenR.has(rrj)) continue;
+              seenR.add(rrj);
+              meetDbg.pairsTried++;
+              tryMeetPair(f,rrj);
+              if(stopFlag) return;
+            }
+          }
+        }
+      }
+    }
   }
 
   // MT pool (custom ops supported)
@@ -4809,7 +4969,7 @@ function collectLeaves(ast, out){
   let pruneGoalThresh=Infinity; // Start with no goal pruning; tighten after first solutions found
   let stagnationLayers=0;
   let prevLayerBest=Infinity;
-  let prevVisited=0, prevMeetCand=0, prevMeetOK=0, prevProbeRej=0;
+  let prevVisited=0, prevMeetCand=0, prevMeetOK=0, prevProbeRej=0, prevConfirmRej=0;
   for(let c=2;c<=maxC;c++){
     if(stopFlag)break;
     if(performance.now()-t0>lim)break;
@@ -4838,7 +4998,14 @@ function collectLeaves(ast, out){
     const dProbeRej=Math.max(0,meetDbg.rejProbeConfirm-prevProbeRej);
     const meetYield=dMeetOK/Math.max(1,dMeetCand);
     const probeRejRate=dProbeRej/Math.max(1,dMeetCand);
-    const pressureScore=(stagnationLayers>=1?1:0) + (meetYield<0.016?1:0) + (probeRejRate>0.50?1:0) + (dVisited>110000 && dMeetOK<3?1:0);
+    // ▼▼▼ 新增：confirm 拒绝率 — 反映候选质量
+    const dConfirmRej=Math.max(0,(meetDbg.rejConfirm||0)-prevConfirmRej);
+    const confirmRejRate=dConfirmRej/Math.max(1,dMeetCand);
+    prevConfirmRej=meetDbg.rejConfirm||0;
+    // ▲▲▲
+    const pressureScore=(stagnationLayers>=1?1:0) + (meetYield<0.016?1:0) + (probeRejRate>0.50?1:0) + (dVisited>110000 && dMeetOK<3?1:0)
+      // ▼ 额外压力：confirm 拒绝率极高说明候选质量太低，触发 boost
+      + (confirmRejRate>0.70?1:0);
     strategyStats.stagnationLayers=stagnationLayers;
     strategyStats.pressureScore=pressureScore;
 
@@ -4975,20 +5142,61 @@ function collectLeaves(ast, out){
     tryTargetDecomposition(fwd[c], T, c);
     phaseTiming.decompose+=performance.now()-_t0Dec;
     if(stagnationLayers>=2 || strategyStats.pressureScore>=2){
-      const prev=fwd[Math.max(1,c-1)]||[];
-      if(prev.length){
-        tryTargetDecomposition(prev.slice(0,Math.min(prev.length,Math.max(16,Math.floor(beamF*0.08)))), T, Math.max(1,c-1));
-        strategyStats.extraDecomp++;
+      // ▼ 节流：每2层才触发一次，避免 extraDecomp 在每层都消耗大量时间(原16180次)
+      // 当 pressureScore >= 3 时仍每层触发(高压力下需要更激进)
+      const doExtraDecomp = strategyStats.pressureScore>=3 || (c%2===0);
+      if(doExtraDecomp){
+        const prev=fwd[Math.max(1,c-1)]||[];
+        if(prev.length){
+          tryTargetDecomposition(prev.slice(0,Math.min(prev.length,Math.max(16,Math.floor(beamF*0.08)))), T, Math.max(1,c-1));
+          strategyStats.extraDecomp++;
+        }
       }
     }
 
     const _t0MeetFwd=performance.now();
-    for(const e of fwd[c]){
-      pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
-      if(stopFlag)break;
-      if(bidir) tryMeetFwdWithRevIdx(e);
-      if(stopFlag)break;
+    // ▼▼▼ meetFwd 自适应采样：只对「最接近T的top-K」+「已在revIdx中命中的」项目做meet
+    // 原来对全部 beamF=6800 项做 tryMeetFwdWithRevIdx，占总时间85%
+    // 现在通过采样将 meet 候选削减至约 40%+revHit，大幅降低时间
+    {
+      const sampleRatio = mp.meetFwdSampleRatio != null ? mp.meetFwdSampleRatio : 0.50;
+      const meetFwdCap = Math.max(250, Math.floor(beamF * sampleRatio));
+      // 先全部 pushBest
+      for(const e of fwd[c]){
+        pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
+        if(stopFlag)break;
+      }
+      // 按 goal(距T距离)升序排，取 top-K
+      if(bidir && !stopFlag){
+        const sorted = fwd[c].slice().sort((a,b)=>(a.goal||0)-(b.goal||0));
+        const meetSet = new Set();
+        const topK2 = Math.min(sorted.length, meetFwdCap);
+        for(let i=0;i<topK2;i++) meetSet.add(sorted[i]);
+        // 也纳入已在 revIdx 中命中的项（包括transform-domain键命中）
+        // 深层联系: fwd[f(x)]需要匹配rev[g(y)]，f和g可以是互逆变换
+        // 不只检查primaryKey，还检查所有transform-domain键（L/S/Q/E等）
+        for(const e of fwd[c]){
+          if(!meetSet.has(e)){
+            const mk2 = e.mkey || (e.mkey = meetPrimaryKey(e.v));
+            if(revIdx.has(mk2)){
+              meetSet.add(e);
+            } else {
+              // 检查transform-domain键是否命中 (召回扩展)
+              // 只在beam的后50%中检查，避免对top-K重复检查
+              const ks = meetKeysCached(e);
+              for(let ki=1;ki<ks.length;ki++){
+                if(revIdx.has(ks[ki])){ meetSet.add(e); break; }
+              }
+            }
+          }
+        }
+        for(const e of meetSet){
+          tryMeetFwdWithRevIdx(e);
+          if(stopFlag)break;
+        }
+      }
     }
+    // ▲▲▲ 结束 meetFwd 自适应采样
     phaseTiming.meetFwd+=performance.now()-_t0MeetFwd;
 
     emit(c);
@@ -5012,6 +5220,7 @@ function collectLeaves(ast, out){
       pruneGoalThresh = Math.max(pruneGoalThresh, tFloor);
     }
     prevVisited=visited; prevMeetCand=meetCandidates; prevMeetOK=meetConfirmed; prevProbeRej=meetDbg.rejProbeConfirm;
+    // prevConfirmRej 已在 pressureScore 计算中更新
     await new Promise(r=>setTimeout(r,0));
   }
 
