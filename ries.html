@@ -3,224 +3,513 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>RIES Solver</title>
+  <title>RIES Solver — 表达式搜索</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap');
     :root{
-      color-scheme:light dark;
-      --bg:color-mix(in srgb,Canvas 96%,#f8fafc 4%);
-      --panel:color-mix(in srgb,Canvas 92%,transparent);
-      --panel-border:rgba(127,127,127,.25);
-      --text-soft:rgba(90,95,110,.9);
-      --accent:#2563eb;
-      --accent-2:#0ea5e9;
+      --bg:#0a0c10;
+      --surface:#111318;
+      --surface2:#181c23;
+      --surface3:#1e2330;
+      --border:rgba(255,255,255,.07);
+      --border-hi:rgba(255,255,255,.13);
+      --text:rgba(225,230,240,.92);
+      --text-soft:rgba(160,170,190,.7);
+      --accent:#3b82f6;
+      --accent2:#06b6d4;
+      --accent3:#8b5cf6;
+      --green:#10b981;
+      --amber:#f59e0b;
+      --red:#ef4444;
+      --glow:rgba(59,130,246,.18);
+      --radius:12px;
+      --radius-sm:8px;
+      --shadow:0 4px 32px rgba(0,0,0,.45);
+      --shadow-sm:0 2px 12px rgba(0,0,0,.3);
+      color-scheme:dark;
     }
+    *,*::before,*::after{box-sizing:border-box;}
     body{
-      font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","PingFang SC","Hiragino Sans GB","Microsoft Yahei",sans-serif;
-      margin:20px;
+      font-family:'Syne',ui-sans-serif,system-ui,sans-serif;
+      margin:0;
+      min-height:100vh;
+      background:var(--bg);
+      color:var(--text);
+      line-height:1.5;
       overflow-x:hidden;
-      background:radial-gradient(circle at top right,rgba(37,99,235,.08),transparent 42%),var(--bg);
-      color:CanvasText;
-      line-height:1.45;
     }
-    h1{font-size:20px;margin:0 0 14px;letter-spacing:.2px}
-    .box{
-      border:1px solid var(--panel-border);
-      padding:14px;
-      border-radius:14px;
-      background:var(--panel);
-      backdrop-filter:blur(6px);
-      box-shadow:0 6px 24px rgba(15,23,42,.06);
-      max-width:100%;
-      overflow-x:auto;
-      -webkit-overflow-scrolling:touch;
+    body::before{
+      content:'';position:fixed;top:0;left:0;right:0;height:400px;pointer-events:none;
+      background:radial-gradient(ellipse 80% 60% at 50% -20%,rgba(59,130,246,.12),transparent);
+      z-index:0;
     }
-    .row{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:end}
-    .row > div{flex:1 1 160px;min-width:0;max-width:100%}
-    @media(max-width:560px){ .row > div{flex:1 1 100%} }
-    label{display:block;font-size:12px;opacity:.9;margin-bottom:4px;color:var(--text-soft)}
+    #app{max-width:1200px;margin:0 auto;padding:20px 18px 60px;position:relative;z-index:1;}
+
+    /* Header */
+    .header{
+      display:flex;align-items:baseline;gap:14px;margin-bottom:28px;
+      animation:slideDown .4s ease both;
+    }
+    .header h1{
+      font-size:26px;font-weight:800;letter-spacing:-.5px;margin:0;
+      background:linear-gradient(120deg,#e2e8f0,#94a3b8);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+    }
+    .header-sub{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-soft);letter-spacing:.5px;}
+
+    /* Cards */
+    .card{
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      padding:16px;
+      box-shadow:var(--shadow-sm);
+      transition:border-color .2s;
+    }
+    .card:hover{border-color:var(--border-hi);}
+    .card + .card{margin-top:12px;}
+
+    /* Section label */
+    .section-label{
+      font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;
+      color:var(--text-soft);display:flex;align-items:center;gap:8px;margin-bottom:12px;
+    }
+    .section-label::after{content:'';flex:1;height:1px;background:var(--border);}
+
+    /* Form fields */
+    .field-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px;}
+    .field-group{display:flex;flex-direction:column;gap:5px;}
+    label.field-label{font-size:11px;font-weight:600;color:var(--text-soft);letter-spacing:.4px;}
     input[type="text"],input[type="number"],select,textarea{
-      padding:8px 10px;width:100%;max-width:100%;
-      box-sizing:border-box;
-      border-radius:10px;
-      border:1px solid var(--panel-border);
-      background:color-mix(in srgb,Canvas 94%,transparent);
-    }
-    input[type="checkbox"]{transform:translateY(1px)}
-    button{
-      padding:8px 12px;
-      cursor:pointer;
-      border-radius:10px;
-      border:1px solid var(--panel-border);
-      background:color-mix(in srgb,Canvas 90%,transparent);
-      transition:all .18s ease;
-    }
-    button:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--accent) 40%,var(--panel-border));}
-    button:disabled{opacity:.6;cursor:not-allowed}
-    .muted{opacity:.9;font-size:12px;color:var(--text-soft)}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
-    .status{display:flex;flex-wrap:wrap;gap:10px 12px;margin-top:10px}
-    .pill{padding:4px 8px;border:1px solid rgba(127,127,127,.35);border-radius:999px;font-size:12px}
-    .split{display:grid;grid-template-columns:1.1fr .9fr;gap:12px}
-    @media(max-width:1100px){.split{grid-template-columns:1fr}}
-    .split > .box{min-width:0}
-    .constWrap{max-height:360px;overflow:auto;border:1px solid rgba(127,127,127,.25);border-radius:10px}
-    .constTable{width:100%;border-collapse:collapse;min-width:420px}
-    .constTable th,.constTable td{border-bottom:1px solid rgba(127,127,127,.15);padding:6px;font-size:12px}
-    .constTable th{position:sticky;top:0;background:color-mix(in srgb,Canvas 92%,transparent);z-index:2}
-    .miniInp{width:70px;min-width:70px;padding:4px 6px;box-sizing:border-box}
-    .opsGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px}
-    .opsGrid label{display:flex;gap:8px;align-items:center;margin:0;font-size:12px}
-    @media(max-width:640px){.opsGrid{grid-template-columns:repeat(2,minmax(0,1fr));}}
-    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .warn{color:#b45309}
-    .pruneStats{margin-top:8px;padding:8px 12px;background:rgba(127,127,127,.08);border-radius:8px;font-size:12px}
-    .runtimePanel{margin-top:10px;padding:10px;border:1px solid var(--panel-border);border-radius:12px;background:color-mix(in srgb,Canvas 93%,transparent)}
-    .runtimeMeta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px}
-    .runtimeBar{height:10px;background:rgba(127,127,127,.2);border-radius:999px;overflow:hidden}
-    .runtimeBarFill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .2s ease}
-    .tableWrap{
-      margin-top:12px;border:1px solid rgba(127,127,127,.25);
-      border-radius:10px;overflow-x:auto;
-      -webkit-overflow-scrolling:touch;
-      max-width:100%;
-    }
-    table{
+      font-family:'IBM Plex Mono',monospace;
+      font-size:13px;
+      padding:8px 10px;
       width:100%;
-      border-collapse:collapse;
-      min-width:0;
-      table-layout:auto;
+      background:var(--surface2);
+      border:1px solid var(--border);
+      border-radius:var(--radius-sm);
+      color:var(--text);
+      outline:none;
+      transition:border-color .15s, box-shadow .15s;
+      -webkit-appearance:none;
     }
-    th,td{
-      border-bottom:1px solid rgba(127,127,127,.25);
-      padding:8px 6px;
-      vertical-align:top;
+    input:focus,select:focus,textarea:focus{
+      border-color:rgba(59,130,246,.5);
+      box-shadow:0 0 0 3px rgba(59,130,246,.1);
+    }
+    select option{background:var(--surface2);}
+    textarea{resize:vertical;min-height:120px;line-height:1.55;}
+
+    /* Checkboxes */
+    .check-row{
+      display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-soft);
+      cursor:pointer;padding:3px 0;
+    }
+    .check-row input[type="checkbox"]{
+      width:14px;height:14px;cursor:pointer;
+      accent-color:var(--accent);
+    }
+
+    /* Buttons */
+    button{
+      font-family:'Syne',sans-serif;
+      font-weight:600;font-size:12px;
+      cursor:pointer;
+      border-radius:var(--radius-sm);
+      border:1px solid var(--border);
+      padding:7px 13px;
+      background:var(--surface2);
+      color:var(--text);
+      transition:all .15s ease;
+      position:relative;overflow:hidden;
       white-space:nowrap;
     }
-    th{text-align:left;font-size:12px;opacity:.85}
-    td{font-size:13px}
-    .right{text-align:right}
-    td.expr{
-      white-space:normal;
-      overflow-wrap:anywhere;
-      word-break:break-word;
+    button::after{
+      content:'';position:absolute;inset:0;opacity:0;
+      background:linear-gradient(135deg,rgba(255,255,255,.06),transparent);
+      transition:opacity .15s;
     }
-    .countsLine{margin-top:3px;font-size:11px;opacity:.85}
-    .tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px}
-    .tag-fwd{background:#dbeafe;color:#1e40af}
-    .tag-meet{background:#d1fae5;color:#065f46}
-    @media(prefers-color-scheme:dark){
-      .tag-fwd{background:#1e3a5f;color:#93c5fd}
-      .tag-meet{background:#064e3b;color:#6ee7b7}
+    button:hover::after{opacity:1;}
+    button:hover{border-color:var(--border-hi);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.3);}
+    button:active{transform:translateY(0);box-shadow:none;}
+    button:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none;}
+    button:disabled::after{display:none;}
+
+    .btn-primary{
+      background:linear-gradient(135deg,var(--accent),var(--accent2));
+      border-color:transparent;color:#fff;
+      box-shadow:0 2px 16px rgba(59,130,246,.3);
+      min-width:110px;padding:9px 18px;font-size:13px;
     }
-    .copyBtn{padding:6px 10px;font-size:12px}
-    .primaryBtn{background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;border-color:transparent;font-weight:600}
-    .copyTiny{padding:4px 8px;font-size:12px}
-    .noteBox{margin-top:10px;padding:10px;border:1px dashed rgba(127,127,127,.35);border-radius:10px;font-size:12px;line-height:1.35}
-    .noteBox code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:12px}
-    th.sortable{cursor:pointer;user-select:none}
-    th.sortable::after{content:" ↕";opacity:.35;font-size:11px}
-    th.sortable[data-sort-dir="asc"]::after{content:" ↑";opacity:.85}
-    th.sortable[data-sort-dir="desc"]::after{content:" ↓";opacity:.85}
+    .btn-primary:hover{
+      box-shadow:0 4px 24px rgba(59,130,246,.5);
+      transform:translateY(-2px);
+    }
+    .btn-primary.running{
+      background:linear-gradient(135deg,#374151,#4b5563);
+      box-shadow:none;
+      animation:pulse-btn 1.5s infinite;
+    }
+    @keyframes pulse-btn{0%,100%{opacity:1}50%{opacity:.75}}
+
+    .btn-stop{
+      background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.25);color:var(--red);
+    }
+    .btn-stop:hover{background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.4);}
+
+    .btn-small{padding:5px 10px;font-size:11px;}
+    .btn-copy{padding:5px 10px;font-size:11px;font-family:'IBM Plex Mono',monospace;}
+
+    /* Action bar */
+    .action-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px;}
+
+    /* Const / ops panels */
+    .split{display:grid;grid-template-columns:1.1fr .9fr;gap:12px;margin-top:12px;}
+    .split>*{min-width:0;overflow:hidden;}
+    @media(max-width:900px){.split{grid-template-columns:1fr}}
+    .const-wrap{
+      max-height:280px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--border);
+      border-radius:var(--radius-sm);
+      scrollbar-width:thin;scrollbar-color:var(--surface3) transparent;
+    }
+    .const-wrap::-webkit-scrollbar{width:5px;}
+    .const-wrap::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:4px;}
+    .const-table{width:100%;border-collapse:collapse;min-width:0;table-layout:fixed;}
+    .const-table th,.const-table td{
+      border-bottom:1px solid var(--border);padding:6px 8px;font-size:11px;
+    }
+    .const-table th{
+      position:sticky;top:0;background:var(--surface);z-index:2;
+      font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+      color:var(--text-soft);font-size:10px;
+    }
+    .const-table td{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text);}
+    .const-table tbody tr:hover{background:rgba(255,255,255,.025);}
+    .mini-inp{
+      width:100%;min-width:0;padding:2px 3px;font-size:10px;
+      background:var(--surface2);border:1px solid var(--border);border-radius:5px;
+      color:var(--text);font-family:'IBM Plex Mono',monospace;
+    }
+    .mini-inp:focus{border-color:rgba(59,130,246,.5);outline:none;}
+
+    /* Ops grid */
+    .ops-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;min-width:0;}
+    @media(max-width:640px){.ops-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+    .ops-grid .check-row{
+      padding:5px 8px;background:var(--surface2);
+      border-radius:6px;border:1px solid var(--border);
+      transition:border-color .15s,background .15s;
+    }
+    .ops-grid .check-row:hover{border-color:var(--border-hi);background:var(--surface3);}
+
+    /* Toolbar */
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+
+    /* Progress */
+    .progress-card{
+      background:var(--surface);border:1px solid var(--border);
+      border-radius:var(--radius);padding:14px 16px;margin-top:12px;
+      transition:border-color .3s;
+    }
+    .progress-card.active{border-color:rgba(59,130,246,.35);box-shadow:0 0 0 1px rgba(59,130,246,.1);}
+    .rt-meta{
+      display:flex;gap:16px;flex-wrap:wrap;
+      font-family:'IBM Plex Mono',monospace;font-size:11px;
+      color:var(--text-soft);margin-bottom:10px;
+    }
+    .rt-meta span{display:flex;align-items:center;gap:5px;}
+    .rt-meta .dot{
+      width:7px;height:7px;border-radius:50%;
+      background:var(--text-soft);flex-shrink:0;
+    }
+    .rt-meta .dot.active{background:var(--accent);box-shadow:0 0 6px var(--accent);animation:pulse-dot 1.2s infinite;}
+    @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
+    .progress-bar-wrap{
+      height:4px;background:var(--surface3);border-radius:999px;overflow:hidden;
+    }
+    .progress-bar-fill{
+      height:100%;width:0%;
+      background:linear-gradient(90deg,var(--accent),var(--accent2));
+      border-radius:999px;
+      transition:width .3s ease;
+      position:relative;overflow:hidden;
+    }
+    .progress-bar-fill::after{
+      content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.4),transparent);
+      animation:none;opacity:0;transition:opacity .3s;
+    }
+    .progress-card.active .progress-bar-fill::after{
+      animation:shimmer 1.8s infinite;opacity:1;
+    }
+    @keyframes shimmer{to{left:200%}}
+
+    /* Status pills */
+    .status-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+    .pill{
+      padding:3px 9px;border-radius:999px;
+      font-size:10px;font-family:'IBM Plex Mono',monospace;
+      border:1px solid var(--border);background:var(--surface2);
+      color:var(--text-soft);
+    }
+    .prune-info{
+      margin-top:8px;padding:8px 12px;background:rgba(255,255,255,.03);
+      border-radius:8px;font-size:11px;font-family:'IBM Plex Mono',monospace;
+      color:var(--text-soft);line-height:1.7;
+    }
+
+    /* Results */
+    .results-header{
+      display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+      margin:16px 0 8px;
+    }
+    .results-label{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text-soft);}
+    .copy-msg{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--green);
+      animation:fadeMsg .2s ease both;}
+    @keyframes fadeMsg{from{opacity:0;transform:translateX(-4px)}to{opacity:1;transform:none}}
+
+    .table-wrap{
+      border:1px solid var(--border);border-radius:var(--radius);
+      overflow-x:auto;overflow-y:hidden;
+      -webkit-overflow-scrolling:touch;
+      scrollbar-width:thin;scrollbar-color:var(--surface3) transparent;
+    }
+    .table-wrap::-webkit-scrollbar{height:5px;}
+    .table-wrap::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:3px;}
+    table{
+      width:100%;border-collapse:collapse;min-width:560px;
+    }
+    thead{background:var(--surface2);}
+    th{
+      padding:10px 10px;text-align:left;
+      font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+      color:var(--text-soft);white-space:nowrap;
+      border-bottom:1px solid var(--border);
+    }
+    th.sortable{cursor:pointer;user-select:none;transition:color .15s;}
+    th.sortable:hover{color:var(--text);}
+    th.sortable::after{content:" ↕";opacity:.3;font-size:9px;}
+    th.sortable[data-sort-dir="asc"]::after{content:" ↑";opacity:.8;color:var(--accent);}
+    th.sortable[data-sort-dir="desc"]::after{content:" ↓";opacity:.8;color:var(--accent);}
+    td{
+      padding:9px 10px;font-size:12px;
+      border-bottom:1px solid rgba(255,255,255,.04);
+      vertical-align:top;white-space:nowrap;
+    }
+    td.expr{white-space:normal;overflow-wrap:anywhere;word-break:break-word;font-family:'IBM Plex Mono',monospace;font-size:12px;}
+    td.mono{font-family:'IBM Plex Mono',monospace;}
+    .right{text-align:right;}
+    tr{transition:background .12s;}
+    tbody tr:hover{background:rgba(255,255,255,.025);}
+    tbody tr{animation:rowIn .2s ease both;}
+    @keyframes rowIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+    .tag{
+      display:inline-block;padding:1px 7px;border-radius:4px;
+      font-size:10px;font-weight:600;font-family:'IBM Plex Mono',monospace;
+    }
+    .tag-fwd{background:rgba(59,130,246,.15);color:#93c5fd;border:1px solid rgba(59,130,246,.2);}
+    .tag-meet{background:rgba(16,185,129,.15);color:#6ee7b7;border:1px solid rgba(16,185,129,.2);}
+    .counts-line{margin-top:3px;font-size:10px;opacity:.65;font-family:'IBM Plex Mono',monospace;}
+
+    /* Details/disclosure */
+    .custom-details{
+      border:1px solid var(--border);border-radius:var(--radius-sm);
+      overflow:hidden;transition:border-color .2s;
+    }
+    .custom-details:hover{border-color:var(--border-hi);}
+    .custom-details summary{
+      padding:10px 14px;cursor:pointer;
+      font-size:12px;font-weight:700;letter-spacing:.3px;
+      display:flex;align-items:center;gap:8px;
+      background:var(--surface2);list-style:none;
+      transition:background .15s;user-select:none;
+    }
+    .custom-details summary::-webkit-details-marker{display:none;}
+    .custom-details summary::before{
+      content:'▶';font-size:9px;color:var(--text-soft);
+      transition:transform .2s;display:inline-block;
+    }
+    .custom-details[open] summary::before{transform:rotate(90deg);}
+    .custom-details summary:hover{background:var(--surface3);}
+    .custom-details-body{
+      padding:0 14px;background:var(--surface);
+      overflow:hidden;max-height:0;opacity:0;
+      transition:max-height .3s cubic-bezier(0.4,0,0.2,1),opacity .25s ease,padding .3s ease;
+    }
+    .custom-details pre{
+      white-space:pre;overflow-x:auto;display:block;
+      margin:0;font-size:11px;color:var(--text-soft);
+      font-family:'IBM Plex Mono',monospace;line-height:1.6;
+      scrollbar-width:thin;scrollbar-color:var(--surface3) transparent;
+    }
+    .custom-details pre::-webkit-scrollbar{height:4px;}
+    .custom-details pre::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:3px;}
+
+    /* Mode badge */
+    .mode-badge{
+      display:inline-flex;align-items:center;gap:5px;padding:4px 10px;
+      border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.5px;
+      border:1px solid rgba(59,130,246,.25);background:rgba(59,130,246,.08);
+      color:#93c5fd;
+    }
+
+    /* Warn text */
+    .warn{color:var(--amber);}
+
+    /* Animations */
+    @keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+    .card{animation:cardIn .3s ease both;}
+    @keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    .card:nth-child(1){animation-delay:.05s}
+    .card:nth-child(2){animation-delay:.1s}
+    .card:nth-child(3){animation-delay:.15s}
+    .card:nth-child(4){animation-delay:.2s}
+
+    /* Divider */
+    .divider{height:1px;background:var(--border);margin:14px 0;}
+
+    /* Number input arrows hidden on mobile */
+    input[type=number]{-moz-appearance:textfield;}
+    input[type=number]::-webkit-outer-spin-button,
+    input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+
+    /* Responsive */
+    @media(max-width:600px){
+      .field-grid{grid-template-columns:repeat(2,1fr);}
+      #app{padding:14px 12px 40px;}
+    }
   </style>
+  <style>html{scroll-behavior:smooth}</style>
 </head>
 <body>
-<h1>RIES Solver</h1>
-<p class="muted" style="margin:0 0 14px">表达式搜索 · KaTeX 渲染 · 多线程加速</p>
+<div id="app">
 
-<div class="box">
-  <div class="row">
-    <div><label>目标值 T</label><input id="target" type="text" value="24" class="mono"/></div>
+<div class="header">
+  <h1>RIES Solver</h1>
 
-    <div>
-      <label>模式</label>
+</div>
+
+<!-- Main Config Card -->
+<div class="card">
+  <div class="section-label">搜索参数</div>
+  <div class="field-grid">
+    <div class="field-group">
+      <label class="field-label">目标值 T</label>
+      <input id="target" type="text" value="24" class="mono"/>
+    </div>
+    <div class="field-group">
+      <label class="field-label">模式</label>
       <select id="mode">
         <option value="speed" selected>普通模式</option>
         <option value="normal">中等模式</option>
         <option value="accuracy">精确模式</option>
       </select>
-      <div class="muted" style="margin-top:6px;line-height:1.25">
-        普通模式：快速探索。中等模式：平衡覆盖与速度。精确模式：尽量保留关键构件，提升结果质量。
-      </div>
     </div>
-
-    <div><label>最大复杂度</label><input id="maxC" type="number" value="24" min="1" max="200"/></div>
-    <div><label>Beam</label><input id="beam" type="number" value="4000" min="50" max="50000"/></div>
-    <div><label>Diversity比例</label><input id="divRatio" type="number" value="0.25" min="0" max="1" step="0.05"/></div>
-    <div><label>输出条数</label><input id="outN" type="number" value="30" min="1" max="200"/></div>
-    <div><label>更新间隔ms</label><input id="emitInterval" type="number" value="500" min="50" max="60000"/></div>
-
-    <div>
-      <label>时间上限ms</label><input id="timeLimit" type="number" value="12000" min="0" max="600000"/>
-      <label style="margin:4px 0 0;display:flex;gap:8px;align-items:center">
-        <input id="infiniteTime" type="checkbox"/><span class="muted">无限</span>
+    <div class="field-group">
+      <label class="field-label">最大复杂度</label>
+      <input id="maxC" type="number" value="24" min="1" max="200"/>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Beam</label>
+      <input id="beam" type="number" value="4000" min="50" max="50000"/>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Diversity 比例</label>
+      <input id="divRatio" type="number" value="0.25" min="0" max="1" step="0.05"/>
+    </div>
+    <div class="field-group">
+      <label class="field-label">输出条数</label>
+      <input id="outN" type="number" value="30" min="1" max="200"/>
+    </div>
+    <div class="field-group">
+      <label class="field-label">更新间隔 ms</label>
+      <input id="emitInterval" type="number" value="500" min="50" max="60000"/>
+    </div>
+    <div class="field-group">
+      <label class="field-label">时间上限 ms</label>
+      <input id="timeLimit" type="number" value="12000" min="0" max="600000"/>
+      <label class="check-row" style="margin-top:4px">
+        <input id="infiniteTime" type="checkbox"/><span>无限时间</span>
       </label>
     </div>
+  </div>
 
-    <div>
-      <label>搜索选项</label>
-      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="bidir" type="checkbox" checked/><span class="muted">双向搜索（meet）</span></label>
-      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="showCounts" type="checkbox" checked/><span class="muted">显示常数计数</span></label>
-      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="pruneEquiv" type="checkbox" checked/><span class="muted">恒等式剪枝</span></label>
-      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="excludeExact" type="checkbox"/><span class="muted">排除 exact</span></label>
-      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="debugMode" type="checkbox"/><span class="muted">Debug 显示详细统计</span></label>
-      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="latexMode" type="checkbox"/><span class="muted">LaTeX 模式（在线渲染）</span></label>
+  <div class="divider"></div>
+
+  <div class="field-grid">
+    <div class="field-group" style="grid-column:1/-1">
+      <label class="field-label">搜索选项</label>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px 12px;margin-top:2px">
+        <label class="check-row"><input id="bidir" type="checkbox" checked/><span>双向搜索（meet）</span></label>
+        <label class="check-row"><input id="showCounts" type="checkbox" checked/><span>显示常数计数</span></label>
+        <label class="check-row"><input id="pruneEquiv" type="checkbox" checked/><span>恒等式剪枝</span></label>
+        <label class="check-row"><input id="excludeExact" type="checkbox"/><span>排除 exact</span></label>
+        <label class="check-row"><input id="debugMode" type="checkbox"/><span>Debug 统计</span></label>
+        <label class="check-row"><input id="latexMode" type="checkbox"/><span>LaTeX 渲染</span></label>
+      </div>
     </div>
-
-    <div>
-      <label>多线程</label>
-      <label style="margin:0;display:flex;gap:8px;align-items:center"><input id="mt" type="checkbox" checked/><span class="muted">启用</span></label>
-      <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-        <input id="threads" type="number" value="6" min="1" max="64" style="max-width:140px"/>
-        <span class="muted">线程</span>
-        <span class="muted warn" id="mtHint"></span>
+    <div class="field-group">
+      <label class="field-label">多线程</label>
+      <label class="check-row" style="margin-bottom:6px"><input id="mt" type="checkbox" checked/><span>启用</span></label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="threads" type="number" value="6" min="1" max="64" style="max-width:80px"/>
+        <span style="font-size:11px;color:var(--text-soft)">线程</span>
+        <span class="warn" id="mtHint" style="font-size:11px"></span>
       </div>
     </div>
 
-    <div class="toolbar">
-      <button id="btnResetConstraints" title="清空所有 min/max 约束并恢复常数/函数默认勾选">恢复默认约束</button>
+  </div>
+</div>
+
+<!-- Constants + Ops -->
+<div class="split">
+  <div class="card" style="padding:12px">
+    <div class="section-label">常数 + 次数限制
+      <button id="cAll" class="btn-small" style="margin-left:auto">全选</button>
+      <button id="cNone" class="btn-small">全不选</button>
+      <button id="btnResetConstraints" class="btn-small" title="清空所有 min/max 约束并恢复常数/函数默认勾选">恢复默认</button>
+    </div>
+    <div class="const-wrap">
+      <table class="const-table">
+        <thead><tr>
+          <th style="width:36px">启用</th>
+          <th style="width:90px">符号</th>
+          <th style="width:100px">数值</th>
+          <th style="width:62px">min</th>
+          <th style="width:62px">max</th>
+        </tr></thead>
+        <tbody id="constBody"></tbody>
+      </table>
     </div>
   </div>
 
-  <div style="height:10px"></div>
-
-  <div class="split">
-    <div class="box">
-      <div class="toolbar">
-        <div class="muted">常数 + 次数限制</div>
-        <button id="cAll">全选</button>
-        <button id="cNone">全不选</button>
-      </div>
-      <div class="constWrap" style="margin-top:8px">
-        <table class="constTable">
-          <thead><tr><th style="width:56px">启用</th><th style="width:120px">符号</th><th>数值</th><th style="width:120px">min</th><th style="width:120px">max</th></tr></thead>
-          <tbody id="constBody"></tbody>
-        </table>
-      </div>
+  <div class="card" style="padding:12px">
+    <div class="section-label">运算 / 函数
+      <button id="oAll" class="btn-small" style="margin-left:auto">全选</button>
+      <button id="oNone" class="btn-small">全不选</button>
     </div>
-
-    <div class="box">
-      <div class="toolbar"><div class="muted">运算 / 函数</div><button id="oAll">全选</button><button id="oNone">全不选</button></div>
-      <div class="opsGrid" id="opsBox" style="margin-top:8px"></div>
-    </div>
+    <div class="ops-grid" id="opsBox"></div>
   </div>
+</div>
 
-  <div style="height:10px"></div>
-
-  <div class="box">
-    <label style="display:flex;gap:8px;align-items:center;margin:0 0 6px 0">
+<!-- Custom Script -->
+<div class="card" style="margin-top:12px">
+  <div class="section-label">自定义扩展</div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+    <label class="check-row">
       <input id="customEnable" type="checkbox"/>
-      <span class="muted">自定义约束与扩展（高级）</span>
+      <span style="font-weight:600">启用自定义约束脚本</span>
     </label>
-    <div class="toolbar" style="margin-bottom:8px">
-      <button id="btnApplyCustom">应用自定义扩展到UI（新增常数/函数）</button>
-      <span class="muted">启用后新增项会出现在常数表和运算表</span>
-    </div>
-    <textarea id="customBox" class="mono" style="min-height:160px"></textarea>
+    <button id="btnApplyCustom" class="btn-small">应用扩展到 UI</button>
+    <span style="font-size:11px;color:var(--text-soft)">新增项会出现在常数表和运算表</span>
+  </div>
+  <textarea id="customBox" class="mono" style="min-height:120px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.55"></textarea>
 
-<details class="noteBox" style="cursor:pointer">
-      <summary style="font-weight:bold;opacity:.9">自定义脚本</summary>
-      <div style="margin-top:8px;cursor:auto">
-<pre class="mono" style="white-space:pre-wrap;margin:0;font-size:11px;opacity:.9">// 示例：要求“所有数字常量必须按指定顺序出现”。
+  <details class="custom-details" style="margin-top:10px">
+    <summary>自定义脚本示例</summary>
+    <div class="custom-details-body">
+      <pre class="mono" style="white-space:pre;overflow-x:auto;display:block;margin:0;font-size:11px;opacity:.9;padding-bottom:4px">// 示例：要求“所有数字常量必须按指定顺序出现”。
 // 例：SEQ=[1,1,4,5,1,4]，只允许叶子序列恰好为 1,1,4,5,1,4 的表达式。
 // 重点：把“顺序规则”放进 binaryPrune + leafOrder，尽量在扩展期早剪枝。
 
@@ -255,66 +544,64 @@ function allowCandidate(ctx){
   for(const s of leaves){
     if(isNumberSym(s)) nums.push(Number(s));
   }
-  // 这里是完整兜底逻辑：长度必须一致，逐位严格相等。
+  // 完整校验：长度必须一致，逐位严格相等。
   if(nums.length!==SEQ.length) return false;
-  for(let i=0;i<SEQ.length;i++){
+  for(let i=0;i&lt;SEQ.length;i++){
     if(nums[i]!==SEQ[i]) return false;
   }
-  // 这里是完整兜底逻辑：长度必须一致，逐位严格相等。
-  if(nums.length!==SEQ.length) return false;
-  for(let i=0;i<SEQ.length;i++){
-    if(nums[i]!==SEQ[i]) return false;
-  }
-  if(nums.length!==SEQ.length) return false;
-  for(let i=0;i<SEQ.length;i++) if(nums[i]!==SEQ[i]) return false;
   return true;
 }
 </pre>
-      </div>
-    </details>
+    </div>
+  </details>
 
-  <div class="status" id="status" style="display:none"></div>
-  <div class="pruneStats" id="pruneStats" style="display:none"></div>
+  <div class="status-pills" id="status" style="display:none"></div>
+  <div class="prune-info" id="pruneStats" style="display:none"></div>
 </div>
 
-<div class="box">
-  <div class="runtimePanel" id="runtimePanel">
-    <div class="runtimeMeta">
-      <span id="rtComplexity">复杂度：0/0</span>
-      <span id="rtElapsed">时间：0 ms</span>
-      <span id="rtVisited">visited：0</span>
-    </div>
-    <div class="runtimeBar"><div class="runtimeBarFill" id="rtBar"></div></div>
+<!-- Progress -->
+<div class="progress-card" id="progressCard">
+  <div class="rt-meta" id="rtMeta">
+    <span><span class="dot" id="rtDot"></span><span id="rtComplexity">复杂度：0/0</span></span>
+    <span id="rtElapsed">时间：0 ms</span>
+    <span id="rtVisited">evaluated：0</span>
+  </div>
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-fill" id="rtBar"></div>
   </div>
 </div>
 
-<!-- Buttons moved here: above results table -->
-<div class="toolbar" style="margin-top:12px; justify-content: flex-start; gap: 15px;">
-  <button id="btnStart" class="primaryBtn" style="min-width: 100px;">开始搜索</button>
-  <button id="btnStop" disabled style="min-width: 100px;">停止</button>
+<!-- Action Buttons -->
+<div class="action-bar" style="margin-top:14px">
+  <button id="btnStart" class="btn-primary">▶ 开始搜索</button>
+  <button id="btnStop" class="btn-stop" disabled>■ 停止</button>
 </div>
 
-<div class="toolbar" style="margin-top:10px; padding-top: 10px; border-top: 1px dashed rgba(127,127,127,0.2)">
-  <button class="copyBtn" id="btnCopyAllExpr">复制全部（表达式）</button>
-  <button class="copyBtn" id="btnCopyAllTable">复制全部（含数值）</button>
-  <span class="muted" id="copyMsg"></span>
+<!-- Results -->
+<div class="results-header">
+  <span class="results-label">搜索结果</span>
+  <button class="btn-copy" id="btnCopyAllExpr">复制表达式</button>
+  <button class="btn-copy" id="btnCopyAllTable">复制含数值</button>
+  <span class="copy-msg" id="copyMsg" style="display:none"></span>
 </div>
 
-<div class="tableWrap">
+<div class="table-wrap">
   <table>
     <thead>
       <tr>
         <th id="thType" style="width:6%" data-sort-key="searchType" class="sortable">type</th>
         <th data-sort-key="expr" class="sortable">expression</th>
-        <th style="width:12%" data-sort-key="v" class="sortable">value</th>
+        <th style="width:13%" data-sort-key="v" class="sortable">value</th>
         <th style="width:10%" data-sort-key="delta" class="sortable">distance</th>
-        <th style="width:10%" data-sort-key="acc" class="sortable">accuracy</th>
+        <th style="width:9%" data-sort-key="acc" class="sortable">accuracy</th>
         <th class="right sortable" style="width:4%" data-sort-key="cost">C</th>
-        <th style="width:2%">copy</th>
+        <th style="width:3%">copy</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
   </table>
+</div>
+
 </div>
 
 <script>
@@ -326,8 +613,8 @@ function fmt(x){
   if(Object.is(x,-0))x=0;
   const a=Math.abs(x);
   if(a===0)return"0";
-  if(a>=1e7||a<1e-6)return x.toExponential(10);
-  return x.toPrecision(14).replace(/(\.\d*?[1-9])0+$/,'$1').replace(/\.0+$/,'');
+  if(a>=1e6||a<0.001)return x.toExponential(5);
+  return x.toPrecision(7).replace(/\.?0+$/,"");
 }
 
 // ----------- base constants / ops (UI) -----------
@@ -424,9 +711,9 @@ function mountConsts(){
     const t2=document.createElement("td");t2.className="mono";t2.textContent=c.sym;
     const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(c.val);
     const t4=document.createElement("td"),i1=document.createElement("input");
-    i1.type="text";i1.placeholder="0";i1.className="miniInp cstMin mono";i1.dataset.key=c.key;t4.appendChild(i1);
+    i1.type="text";i1.placeholder="0";i1.className="mini-inp cstMin";i1.dataset.key=c.key;t4.appendChild(i1);
     const t5=document.createElement("td"),i2=document.createElement("input");
-    i2.type="text";i2.placeholder="∞";i2.className="miniInp cstMax mono";i2.dataset.key=c.key;t5.appendChild(i2);
+    i2.type="text";i2.placeholder="∞";i2.className="mini-inp cstMax";i2.dataset.key=c.key;t5.appendChild(i2);
     tr.append(t1,t2,t3,t4,t5);tb.appendChild(tr);
   }
 }
@@ -435,6 +722,7 @@ function mountOps(){
   for(const o of OP_LIST){
     const l=document.createElement("label"),ch=document.createElement("input");
     ch.type="checkbox";ch.className="opOn";ch.dataset.key=o.key;ch.checked=!!o.on;
+    l.className="check-row";
     const s=document.createElement("span");s.textContent=o.label;
     l.append(ch,s);b.appendChild(l);
   }
@@ -505,9 +793,10 @@ function updateRuntimePanel(payload){
   const elapsed=Math.max(0, Number(payload?.elapsed||0));
   const visited=Math.max(0, Number(payload?.visited||0));
   const pct=Math.max(0, Math.min(100, (c/maxC)*100));
+  const rtDotEl=$("rtDot"); if(rtDotEl) rtDotEl.className=$("progressCard").classList.contains("active")?"dot active":"dot";
   $("rtComplexity").textContent=`复杂度：${c}/${maxC}`;
   $("rtElapsed").textContent=`时间：${Math.round(elapsed)} ms`;
-  $("rtVisited").textContent=`visited：${visited.toLocaleString()}`;
+  $("rtVisited").textContent=`evaluated：${visited.toLocaleString()}`;
   $("rtBar").style.width=`${pct.toFixed(1)}%`;
 }
 
@@ -694,7 +983,7 @@ function getConsts(){
 
 async function copyText(text){
   text=String(text??"");
-  const setMsg=(s)=>{ $("copyMsg").textContent=s; setTimeout(()=>{$("copyMsg").textContent="";}, 1200); };
+  const setMsg=(s)=>{ const el=$("copyMsg"); el.textContent=s; el.style.display=s?"":"none"; setTimeout(()=>{el.textContent="";el.style.display="none";}, 1500); };
   try{
     if(navigator.clipboard && navigator.clipboard.writeText){
       await navigator.clipboard.writeText(text);
@@ -769,6 +1058,7 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
   const sorted=sortRows(lastRows);
   const tb=$("tbody");tb.innerHTML="";
   const frag=document.createDocumentFragment();
+  let _rowIdx=0;
   const useLatex = latexMode && await ensureLatexRenderer();
   for(const r of sorted){
     const tr=document.createElement("tr");
@@ -808,8 +1098,9 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
     const t6=document.createElement("td");t6.className="mono right";t6.textContent=String(r.cost);
     const t7=document.createElement("td");
     const b=document.createElement("button");
-    b.className="copyTiny"; b.textContent="复制"; b.onclick=()=>copyText(r.expr);
+    b.className="btn-copy"; b.textContent="复制"; b.onclick=()=>copyText(r.expr);
     t7.appendChild(b);
+    tr.style.animationDelay=(_rowIdx++*12)+"ms";
     tr.append(t1,t2,t3,t4,t5,t6,t7);
     frag.appendChild(tr);
   }
@@ -1167,21 +1458,21 @@ function bbScore(v, D, magA){
 let layers=new Map();
 
 function mkBucket(beam){
-  const bucket=new Map();
-  const spLim=Math.max(beam*64,50000);
-  const keepSp=Math.max(beam*20,16000);
-  function spill(){
-    const v=Array.from(bucket.values());
-    v.sort((a,b)=>a.keep-b.keep);
-    bucket.clear();
-    for(let i=0;i<Math.min(keepSp,v.length);i++)bucket.set(v[i].key,v[i]);
-  }
+  // Bounded max-heap by keep (root = worst item). Fixed cap = beam*5 items.
+  // O(log n) per insert, ~13x less memory than old Map approach.
+  const cap=Math.max(beam*5,6000);
+  const h=[];          // heap array
+  const idx=new Map(); // key -> heap position
+  function sw(i,j){const a=h[i],b=h[j];h[i]=b;h[j]=a;idx.set(b.key,i);idx.set(a.key,j);}
+  function up(i){while(i>0){const p=(i-1)>>1;if(h[p].keep>=h[i].keep)break;sw(p,i);i=p;}}
+  function dn(i){for(;;){let b=i,l=i*2+1,r=l+1;if(l<h.length&&h[l].keep>h[b].keep)b=l;if(r<h.length&&h[r].keep>h[b].keep)b=r;if(b===i)break;sw(i,b);i=b;}}
+  const bucket={values(){return h;}};
   function put(key,pack){
-    const old=bucket.get(key);
-    if(old&&pack.keep>=old.keep)return;
+    const i=idx.get(key);
+    if(i!==undefined){if(pack.keep>=h[i].keep)return;h[i]=pack;pack.key=key;dn(i);return;}
     pack.key=key;
-    bucket.set(key,pack);
-    if(bucket.size>spLim)spill();
+    if(h.length<cap){const i=h.length;h.push(pack);idx.set(key,i);up(i);}
+    else if(pack.keep<h[0].keep){idx.delete(h[0].key);h[0]=pack;idx.set(key,0);dn(0);}
   }
   return{bucket,put};
 }
@@ -1372,32 +1663,32 @@ function modeParams(mode){
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:12, keepMode:"goal",
     bbD:72, bbMagA:0.018,
-    qGoal:0.30,qBB:0.12,qMeet:0.18,qDiv:0.06,qPow:0.14,qFunc:0.08,qDepth:0.12,qMag:0.07,qIrr:0.05,
-    qPowBase:0.16, qPowExp:0.12,
+    qGoal:0.26,qBB:0.12,qMeet:0.18,qDiv:0.05,qPow:0.16,qFunc:0.08,qDepth:0.10,qMag:0.06,qIrr:0.04,
+    qPowBase:0.22, qPowExp:0.18, qFrac:0.14,
     qReq:0.14,
     meetStyle:"bin", meetPrec:12, meetQ:24576, meetR:18,
     revBeamMul:2.6, meetHitBonus:0.12,
     candEpsMul:1.35, confirmEpsMul:1.0, binSlackMul:0.28, confirmAbsFloor:0.0,
     spillMul:1.6, capMul:1.35, keepMeetDup:false,
-    meetSweepMul:0.24, meetSweepPowMul:0.42,
+    meetSweepMul:0.28, meetSweepPowMul:0.55,
     beamMul:1.42, subLayerCapMul:2.00,
-    revIdxKeyCap:340, fwdIdxKeyCap:340, meetKeyProbeCap:420, meetSweepRevCap:520, idxKeysPerItem:9, idxPerItemCap:96,
-    capUnMul:5.6, capBinMul:4.8, jumpMul:2.45, meetStage2:1, qSeed:0.22
+    revIdxKeyCap:420, fwdIdxKeyCap:420, meetKeyProbeCap:560, meetSweepRevCap:700, idxKeysPerItem:12, idxPerItemCap:128,
+    capUnMul:5.6, capBinMul:4.8, jumpMul:3.20, meetStage2:1, qSeed:0.22
   };
   return {
     keyPrec:12, bestPrec:11, keepMode:"goal",
     bbD:44, bbMagA:0.02,
-    qGoal:0.28,qBB:0.10,qMeet:0.24,qDiv:0.06,qPow:0.12,qFunc:0.08,qDepth:0.12,qMag:0.08,qIrr:0.05,
-    qPowBase:0.14, qPowExp:0.10,
+    qGoal:0.24,qBB:0.10,qMeet:0.24,qDiv:0.05,qPow:0.14,qFunc:0.08,qDepth:0.10,qMag:0.06,qIrr:0.04,
+    qPowBase:0.20, qPowExp:0.18, qFrac:0.12,
     qReq:0.12,
     meetStyle:"bin", meetPrec:11, meetQ:16384, meetR:20,
     revBeamMul:3.4, meetHitBonus:0.24,
-    candEpsMul:3.2, confirmEpsMul:1.0, binSlackMul:0.14, confirmAbsFloor:0.0,
+    candEpsMul:3.2, confirmEpsMul:1.0, binSlackMul:0.16, confirmAbsFloor:0.0,
     spillMul:1.55, capMul:1.25, keepMeetDup:false,
-    meetSweepMul:0.34, meetSweepPowMul:0.60,
+    meetSweepMul:0.38, meetSweepPowMul:0.75,
     beamMul:1.64, subLayerCapMul:2.20,
-    revIdxKeyCap:420, fwdIdxKeyCap:420, meetKeyProbeCap:560, meetSweepRevCap:760, idxKeysPerItem:12, idxPerItemCap:128,
-    capUnMul:6.5, capBinMul:5.7, jumpMul:2.70, meetStage2:1, qSeed:0.24
+    revIdxKeyCap:480, fwdIdxKeyCap:480, meetKeyProbeCap:700, meetSweepRevCap:900, idxKeysPerItem:16, idxPerItemCap:160,
+    capUnMul:6.5, capBinMul:5.7, jumpMul:3.50, meetStage2:1, qSeed:0.24
   };
 }
 
@@ -1483,6 +1774,38 @@ function meetKeys(v,goalHint=Infinity,depthHint=0){
   }
 
   _meetKeyOut.push(meetKeyPrec(v));
+  // Additional keys for power-expression meet: log(|v|) and e^v and sqrt(|v|)
+  // These allow fwd[base] to meet rev[exponent] when combined via ^ in tryMeetPair.
+  // Key insight: if fwd has value f and rev's "hole" is h with h≈log(T)/log(f),
+  // then meetKeys(f) should also include keys near log(f) so that indexing on
+  // T's log-domain gives direct hits.
+  const av=Math.abs(v);
+  if(av>1e-9 && av<1e10 && v>0){
+    // log variant - so a base value and its log get common keys
+    const lv=Math.log(v);
+    if(Number.isFinite(lv) && Math.abs(lv)<1e9){
+      // Add a quantized key in log-space
+      const sign2=lv<0?1:0;
+      const al=Math.abs(lv);
+      const e2=al>0?Math.floor(Math.log2(al)):0;
+      const sc2=al>0?Math.pow(2,e2):1;
+      const q2=Math.round((al/sc2)*MEET_Q);
+      _meetKeyOut.push("L|"+sign2+"|"+e2+"|"+q2);
+      for(let d=1;d<=Math.min(3,MEET_R);d++){
+        _meetKeyOut.push("L|"+sign2+"|"+e2+"|"+(q2-d));
+        _meetKeyOut.push("L|"+sign2+"|"+e2+"|"+(q2+d));
+      }
+    }
+  }
+  // sqrt key - for a√b pattern in meet
+  if(v>=0 && av<1e10 && av>0){
+    const sv=Math.sqrt(v);
+    const sign3=0;
+    const e3=Math.floor(Math.log2(sv+1e-30));
+    const sc3=Math.pow(2,e3);
+    const q3=Math.round((sv/sc3)*MEET_Q);
+    _meetKeyOut.push("S|0|"+e3+"|"+q3);
+  }
   return _meetKeyOut.slice();
 }
 
@@ -1943,56 +2266,45 @@ function bbScore(v,D,magA){
   const mag=magA*Math.log1p(a);
   if(a===0)return mag;
   let best=Math.abs(v-Math.round(v));
+  if(best<1e-15)return mag; // integer
   const DD=D|0;
+  // Check small denominators first - most values are near simple fractions
+  const vAbs=Math.abs(v);
   for(let d=2;d<=DD;d++){
-    const rd=Math.round(v*d);
-    const err=Math.abs(v*d-rd)/d;
-    if(err<best)best=err;
-    if(best<1e-15)break;
+    const vd=v*d;
+    const rd=Math.round(vd);
+    const err=Math.abs(vd-rd)/d;
+    if(err<best){best=err;if(best<1e-15)break;}
   }
   return best+mag;
 }
 
 function mkBucket(beam,spillMul){
-  const bucket=new Map();
-  const spLim=Math.max(beam*64,50000);
-  const keepSp=Math.max(beam*20,16000);
-  const hard=Math.floor(spLim*Math.max(0.35,Math.min(2.0,spillMul||1.0)));
-  function spill(){
-    if(bucket.size<=keepSp) return;
-    const vals=Array.from(bucket.values());
-    const heap=[];
-    for(const it of vals){
-      if(!Number.isFinite(it.keep)) continue;
-      if(heap.length<keepSp){
-        heapPushMax(heap,it,(x)=>x.keep);
-      }else if(it.keep<heap[0].keep){
-        heap[0]=it;
-        let idx=0;
-        for(;;){
-          let l=idx*2+1,r=l+1,b=idx;
-          if(l<heap.length && heap[l].keep>heap[b].keep)b=l;
-          if(r<heap.length && heap[r].keep>heap[b].keep)b=r;
-          if(b===idx)break;
-          const t=heap[idx];heap[idx]=heap[b];heap[b]=t;
-          idx=b;
-        }
-      }
-    }
-    bucket.clear();
-    for(const it of heap) bucket.set(it.key,it);
-  }
-  return{
-    bucket,
-    put(key,pack){
-      const old=bucket.get(key);
-      if(old&&pack.keep>=old.keep)return false;
-      pack.key=key;
-      bucket.set(key,pack);
-      if(bucket.size>hard)spill();
-      return true;
-    }
+  // Bounded max-heap by keep score (root = worst / highest keep = most costly item).
+  // cap = beam*5 instead of old beam*64 → ~13x memory reduction at c=13.
+  // O(log n) insert/update, no periodic sort/spill overhead.
+  const cap=Math.max(beam*5,6000);
+  const h=[];           // max-heap array
+  const kidx=new Map(); // key -> heap index
+  function sw(i,j){const a=h[i],b=h[j];h[i]=b;h[j]=a;kidx.set(b.key,i);kidx.set(a.key,j);}
+  function up(i){while(i>0){const p=(i-1)>>1;if(h[p].keep>=h[i].keep)break;sw(p,i);i=p;}}
+  function dn(i){for(;;){let b=i,l=i*2+1,r=l+1;if(l<h.length&&h[l].keep>h[b].keep)b=l;if(r<h.length&&h[r].keep>h[b].keep)b=r;if(b===i)break;sw(i,b);i=b;}}
+  const bucket={
+    get size(){return h.length;},
+    values(){return h;}
   };
+  function put(key,pack){
+    const i=kidx.get(key);
+    if(i!==undefined){
+      if(pack.keep>=h[i].keep)return false;
+      h[i]=pack;pack.key=key;dn(i);return true;
+    }
+    pack.key=key;
+    if(h.length<cap){const i=h.length;h.push(pack);kidx.set(key,i);up(i);return true;}
+    if(pack.keep<h[0].keep){kidx.delete(h[0].key);h[0]=pack;kidx.set(key,0);dn(0);return true;}
+    return false;
+  }
+  return{bucket,put};
 }
 
 // topK (heap)
@@ -2100,6 +2412,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nPowBase=Math.max(0,Math.floor(beam*(mp.qPowBase||0)));
   const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
   const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
+  const nFrac=Math.max(0,Math.floor(beam*(mp.qFrac||0)));
   const exploreRatio = mode==="speed" ? 0.035 : (mode==="accuracy" ? 0.20 : 0.18);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
@@ -2111,6 +2424,17 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   // Required-coverage quota (fix bitmask漏解 due to beam fragmentation)
   if(useBitmask && REQ_POP>0 && nReq>0){
     take(topK(items,nReq,(x)=>(x.keep - 0.35*(x.cov||0)),true,(x)=> (x.cov||0)>0), nReq);
+  }
+
+  // qFrac: keep highly rational values (small bb) in pow-useful range – key for e.g. 25/7 type bases
+  if(nFrac>0){
+    take(topK(items,nFrac,(x)=>x.bb,true,(x)=>{
+      const v=x.v;
+      if(!Number.isFinite(v)||Math.abs(v)<0.05)return false;
+      const a=Math.abs(v);
+      // Accept: nice fraction-like range (0.1..50), NOT already an integer
+      return a<50 && a>0.1 && Math.abs(v-Math.round(v))>1e-9 && x.bb<0.15;
+    }), nFrac);
   }
 
   if(allowPow && nPow>0) take(topK(items,nPow,(x)=>(x.goal+0.20*x.bb),true,(x)=>x.hasPow), nPow);
@@ -2500,6 +2824,14 @@ function collectLeaves(ast, out){
     return out;
   }
 
+  function bestInsertSorted(item){
+    // Binary insert into sorted best[] by (|delta|, cost)
+    const iD=Math.abs(item.delta), iC=item.cost||999;
+    let lo=0,hi=best.length;
+    while(lo<hi){const mid=(lo+hi)>>1;const mD=Math.abs(best[mid].delta);if(mD<iD||(mD===iD&&(best[mid].cost||999)<=iC))lo=mid+1;else hi=mid;}
+    best.splice(lo,0,item);
+  }
+
   function pushBest(obj){
     let v=obj.v;
     if(obj.ast){
@@ -2566,14 +2898,13 @@ function collectLeaves(ast, out){
       if(old && !powPrefer && !meetPrefer && (oldDelta<newDelta||(oldDelta===newDelta&&old.cost<=newCost))){
         dupesKilled++;return;
       }
-      best[idx]={expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow};
-      best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
+      best.splice(idx,1);
+      bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
       if(acc==="exact") maybeStopOnExact(delta);
       return;
     }
 
-    best.push({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
-    best.sort((a,b)=>(Math.abs(a.delta)-Math.abs(b.delta))||(a.cost-b.cost));
+    bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
     if(best.length>outN*4)best.length=outN*3;
 
     bestSeen.clear();
@@ -2657,6 +2988,10 @@ function collectLeaves(ast, out){
     let keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
     if(revHit)keep*=(1.0-(mp.meetHitBonus||0));
     if(useBitmask && REQ_POP>0) keep *= reqAdj(mask|0);
+    // Rationality bonus: highly rational values (small bb, non-solution) get
+    // a small keep reduction so they survive pruning longer as power base candidates.
+    // This helps retain (25/7)-style values even when far from target T.
+    if(bb<0.08 && goal>1e-4) keep -= 0.04*bb;
     return keep;
   }
 
@@ -2668,8 +3003,10 @@ function collectLeaves(ast, out){
   };
 
   function meetKeysCached(node){
-    if(node.mkeys) return node.mkeys;
-    const ks = meetKeys(node.v,node.goal,node.depth);
+    if(node.mkeys!=null) return node.mkeys;
+    // Recompute depth lazily if stripped
+    const dep=(node.depth!=null)?node.depth:astDepth(node.ast);
+    const ks = meetKeys(node.v,node.goal,dep);
     node.mkeys = ks;
     return ks;
   }
@@ -3005,7 +3342,7 @@ function collectLeaves(ast, out){
     const keys=meetKeys(targetVal,Math.abs(targetVal-T),6);
     const out=[];
     const seen=new Set();
-    const lim=Math.max(4, maxHits|0||24);
+    const lim=Math.max(6, maxHits|0||24);
     for(const k of keys){
       const arr=fwdIdx.get(k);
       if(!arr) continue;
@@ -3017,6 +3354,26 @@ function collectLeaves(ast, out){
         out.push(it);
       }
       if(out.length>=lim) break;
+    }
+    // Also search for log(targetVal) in index - for power base candidates
+    // If fwd has value f where log(T)/log(f) = targetVal, lookup by log key
+    if(out.length<lim && targetVal>0){
+      const logTarget=Math.log(targetVal);
+      if(Number.isFinite(logTarget)){
+        const logKeys=meetKeys(logTarget,1,3);
+        for(const k of logKeys){
+          if(k.startsWith("L|")) continue; // avoid double-lookup
+          const arr=fwdIdx.get(k);
+          if(!arr) continue;
+          for(let i=0;i<arr.length && out.length<lim;i++){
+            const it=arr[i];
+            if(seen.has(it.ast)) continue;
+            seen.add(it.ast);
+            out.push(it);
+          }
+          if(out.length>=lim) break;
+        }
+      }
     }
     return out;
   }
@@ -3057,7 +3414,7 @@ function collectLeaves(ast, out){
 
     const jm=Math.max(0.3, mp.jumpMul||1);
     if(jm<0.45) return;
-    const limItems=Math.min(layerItems.length, Math.max(14,Math.floor(beamF*((mode==="speed")?0.05:0.08)*jm)));
+    const limItems=Math.min(layerItems.length, Math.max(20,Math.floor(beamF*((mode==="speed")?0.06:0.14)*jm)));
     if(mode==="speed" && (layerItems[0]?.cost||0)<4) return;
     const logT=(T>0)?Math.log(T):NaN;
     const jumpCache=new Map();
@@ -3096,11 +3453,30 @@ function collectLeaves(ast, out){
       if(Array.isArray(opsBin) && opsBin.includes("^") && T>0){
         if(v>0 && Math.abs(v-1)>1e-12){
           const tx=logT/Math.log(v);
-          for(const b of J(tx,16)) pushJumpPair(a,b,"^");
+          const hits=Math.max(20,Math.floor(24*jm));
+          for(const b of J(tx,hits)) pushJumpPair(a,b,"^");
+          // Also search for x in neighbourhood of tx ± small offsets for rounding resilience
+          if(Number.isFinite(tx) && Math.abs(tx)<50){
+            for(const b of J(tx+1e-9,8)) pushJumpPair(a,b,"^");
+            for(const b of J(tx-1e-9,8)) pushJumpPair(a,b,"^");
+          }
         }
-        if(av>1e-12){
+        // x^a = T → x = T^(1/a)
+        if(av>1e-12 && Math.abs(v)<60){
           const base=Math.pow(T,1/v);
-          for(const b of J(base,Math.max(8,Math.floor(14*jm)))) pushJumpPair(b,a,"^");
+          const hits=Math.max(16,Math.floor(20*jm));
+          for(const b of J(base,hits)) pushJumpPair(b,a,"^");
+        }
+        // Also try log-ratio approach: given a, if T = base^a → base = T^(1/a)
+        // And for fractional exponents: T^(a/b) style via known fwd values
+        if(Number.isFinite(logT) && av>0.05 && av<50 && Math.abs(v-1)>1e-9){
+          // Try T^(1/v) and T^v as potential other-side expressions
+          const t_inv_v=Math.pow(T,1/v);
+          const t_v=Math.pow(T,v);
+          if(Number.isFinite(t_inv_v) && Math.abs(t_inv_v)<1e10)
+            for(const b of J(t_inv_v,Math.max(8,Math.floor(12*jm)))) pushJumpPair(b,a,"^");
+          if(Number.isFinite(t_v) && Math.abs(t_v)<1e10)
+            for(const b of J(t_v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"^");
         }
       }
 
@@ -3171,8 +3547,9 @@ function collectLeaves(ast, out){
 
         const base=Math.floor(Math.sqrt(beamR));
         const isPow = (op==="^");
-        const laneMul=isPow?6.0:3.0;
-        const laneMin=isPow?360:140;
+        // For ^ op: probe much wider - power base/exponent combos need high recall
+        const laneMul=isPow?10.0:3.0;
+        const laneMin=isPow?600:140;
         const cR=Math.min(rs.length,Math.max(laneMin,Math.floor(base*laneMul)));
         const cF=Math.min(fs.length,Math.max(laneMin,Math.floor(base*laneMul)));
 
@@ -3258,9 +3635,11 @@ function collectLeaves(ast, out){
     const items=Array.from(bucket.values());
     items.sort((a,b)=>a.keep-b.keep);
     const picked=items.slice(0,beamR);
-    for(const it of picked){it.cost=c;}
+    for(const it of picked){it.cost=c;it.__sc=undefined;it.revHit=undefined;it.cov=undefined;}
     rev[c]=picked;
     addRevIdx(rev[c]);
+    // Free cached mkeys after indexing - saves ~6 strings per item
+    for(const it of rev[c]){if(it.mkeys)it.mkeys=null;}
   }
 
   function meetSweepWithNewReverseLayer(rc){
@@ -3448,6 +3827,7 @@ function collectLeaves(ast, out){
         const v=applyUn(op,a.v);visited++;
         if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
         const goal=Math.abs(v-T);
+        if(goal>pruneGoalThresh)continue;
         const bb=bbScore(v,mp.bbD,mp.bbMagA);
         const mk = bidir ? meetPrimaryKey(v) : "";
         const revHit=bidir?revIdx.has(mk):false;
@@ -3484,11 +3864,11 @@ function collectLeaves(ast, out){
             if(useBitmask){
               if((a.mask&b.mask)!==0)continue;
               const mask=a.mask|b.mask;
-              const ast=mkB(op,a.ast,b.ast);
-              if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
-
               const v=applyBin(op,a.v,b.v);
               if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(Math.abs(v-T)>pruneGoalThresh)continue;
+              const ast=mkB(op,a.ast,b.ast);
+              if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
               const goal=Math.abs(v-T);
               const bb=bbScore(v,mp.bbD,mp.bbMagA);
               const mk = bidir ? meetPrimaryKey(v) : "";
@@ -3498,11 +3878,11 @@ function collectLeaves(ast, out){
             }else{
               const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
               if(!cnt)continue;
-              const ast=mkB(op,a.ast,b.ast);
-              if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
-
               const v=applyBin(op,a.v,b.v);
               if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(Math.abs(v-T)>pruneGoalThresh)continue;
+              const ast=mkB(op,a.ast,b.ast);
+              if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
               const goal=Math.abs(v-T);
               const bb=bbScore(v,mp.bbD,mp.bbMagA);
               const mk = bidir ? meetPrimaryKey(v) : "";
@@ -3576,12 +3956,20 @@ function collectLeaves(ast, out){
     const items=Array.from(bucket.values());
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
     const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
-    for(const it of picked){it.cost=c;}
+    for(const it of picked){
+      it.cost=c;
+      // Strip transient fields not needed for future expansion
+      it.hasPow=undefined; it.hasFunc=undefined; it.depth=undefined;
+      it.__sc=undefined; it.revHit=undefined; it.cov=undefined;
+    }
     return picked;
   }
 
   await initSubWorkers();
 
+  // Dynamic goal threshold: skip items much worse than best found so far
+  // Updated each complexity level; starts at Infinity
+  let pruneGoalThresh=Infinity;
   for(let c=2;c<=maxC;c++){
     if(stopFlag)break;
     if(performance.now()-t0>lim)break;
@@ -3615,6 +4003,7 @@ function collectLeaves(ast, out){
           const v=applyUn(op,a.v);visited++;
           if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
           const goal=Math.abs(v-T);
+          if(goal>pruneGoalThresh)continue;
           const bb=bbScore(v,mp.bbD,mp.bbMagA);
           const mk = bidir ? meetPrimaryKey(v) : "";
           const revHit=bidir?revIdx.has(mk):false;
@@ -3625,7 +4014,8 @@ function collectLeaves(ast, out){
             const keep=keepScore(goal,bb,revHit,a.mask);
             put(keyOf(v,a.mask,""),{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
           }else{
-            const keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
+            const rBonus=(bb<0.08&&goal>0.001)?0.04*bb:0;
+            const keep=(mp.keepMode==="goal")?(goal-rBonus):Math.min(goal,bb)-rBonus;
             put(keyOf(v,0,a.ck),{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
           }
 
@@ -3655,11 +4045,11 @@ function collectLeaves(ast, out){
               if(useBitmask){
                 if((a.mask&b.mask)!==0)continue;
                 const mask=a.mask|b.mask;
-                const ast=mkB(op,a.ast,b.ast);
-                if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
-
                 const v=applyBin(op,a.v,b.v);
                 if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+                if(Math.abs(v-T)>pruneGoalThresh)continue;
+                const ast=mkB(op,a.ast,b.ast);
+                if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
                 const goal=Math.abs(v-T);
                 const bb=bbScore(v,mp.bbD,mp.bbMagA);
                 const mk = bidir ? meetPrimaryKey(v) : "";
@@ -3669,11 +4059,11 @@ function collectLeaves(ast, out){
               }else{
                 const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
                 if(!cnt)continue;
-                const ast=mkB(op,a.ast,b.ast);
-                if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
-
                 const v=applyBin(op,a.v,b.v);
                 if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+                if(Math.abs(v-T)>pruneGoalThresh)continue;
+                const ast=mkB(op,a.ast,b.ast);
+                if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
                 const goal=Math.abs(v-T);
                 const bb=bbScore(v,mp.bbD,mp.bbMagA);
                 const mk = bidir ? meetPrimaryKey(v) : "";
@@ -3702,6 +4092,8 @@ function collectLeaves(ast, out){
     sendLayerToSubs(c);
 
     addFwdIdx(fwd[c]);
+    // Free cached mkeys after indexing
+    for(const it of fwd[c]){if(it.mkeys)it.mkeys=null;}
     tryTargetDecomposition(fwd[c], T);
 
 
@@ -3713,6 +4105,8 @@ function collectLeaves(ast, out){
     }
 
     emit(c);
+    // Update goal prune threshold: allow up to 12x best delta (keeps diversity while cutting noise)
+    if(best.length>0) pruneGoalThresh=Math.abs(best[0].delta)*20+1e-9;
     await new Promise(r=>setTimeout(r,0));
   }
 
@@ -3816,10 +4210,12 @@ $("btnStart").onclick=()=>{
   worker=buildWorker();
 
   $("btnStart").disabled=true;
+  $("btnStart").classList.add("running");
   $("btnStop").disabled=false;
   $("pruneStats").style.display="none";
-  $("copyMsg").textContent="";
+  $("copyMsg").style.display="none";
   updateRuntimePanel({c:0,maxC,elapsed:0,visited:0});
+  $("progressCard").classList.add("active");
   $("status").style.display="none";
 
   worker.onmessage=async(ev)=>{
@@ -3867,7 +4263,9 @@ $("btnStart").onclick=()=>{
       await renderResults(rows,showCounts,debugOn,latexMode);
       if(type==="done"){
         $("btnStart").disabled=false;
+        $("btnStart").classList.remove("running");
         $("btnStop").disabled=true;
+        $("progressCard").classList.remove("active");
         killWorkerImmediate();
       }
     }
@@ -3891,6 +4289,8 @@ $("btnStop").onclick=()=>{
   killWorkerImmediate();
   $("btnStop").disabled=true;
   $("btnStart").disabled=false;
+  $("btnStart").classList.remove("running");
+  $("progressCard").classList.remove("active");
 
   const debugOn=$("debugMode").checked;
   if(debugOn){
@@ -3924,6 +4324,37 @@ tuneOpsByMode($("mode").value);
 $("timeLimit").disabled=$("infiniteTime").checked;
 updateMtHint();
 hookAutoSave();
+// Animate custom-details open/close
+document.querySelectorAll('.custom-details').forEach(function(det){
+  var summary=det.querySelector('summary');
+  var body=det.querySelector('.custom-details-body');
+  // Init already-open details
+  if(det.open){body.style.maxHeight='none';body.style.opacity='1';body.style.padding='12px 14px';}
+  function doOpen(){
+    det.setAttribute('open','');
+    body.style.maxHeight=body.scrollHeight+'px';
+    body.style.opacity='1';
+    body.style.padding='12px 14px';
+    setTimeout(function(){body.style.maxHeight='none';},310);
+  }
+  function doClose(){
+    body.style.maxHeight=body.scrollHeight+'px';
+    body.style.opacity='1';
+    body.style.padding='12px 14px';
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        body.style.maxHeight='0';
+        body.style.opacity='0';
+        body.style.padding='0 14px';
+        setTimeout(function(){det.removeAttribute('open');},310);
+      });
+    });
+  }
+  summary.addEventListener('click',function(e){
+    e.preventDefault();
+    if(det.open) doClose(); else doOpen();
+  });
+});
 updateRuntimePanel({c:0,maxC:Number($("maxC").value||0),elapsed:0,visited:0});
 
 document.querySelectorAll("thead th.sortable").forEach((th)=>{
