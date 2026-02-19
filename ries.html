@@ -2989,11 +2989,27 @@ onmessage=async(ev)=>{
     rejMaskOverlap:0,rejCntLimit:0,rejEpsCand:0,rejEvalNaN:0,
     rejProbeConfirm:0,rejConfirm:0,revInvBad:0,maxConfirmErr:0,
   };
+  let dynamicCandMul=1.0, dynamicConfirmMul=1.0;
+  const strategyStats={adaptiveBoosts:0,pruneRelax:0,meetJitter:0,extraDecomp:0,stagnationLayers:0};
 
   const best=[];
   let bestDeltaSoFar=Infinity;
   const bestSeen=new Map();
   const nearSeen=new Map();
+
+  function rebuildBestCaches(){
+    bestSeen.clear();
+    nearSeen.clear();
+    const ns=Math.max(2e-6,Math.max(1,Math.abs(T))*2e-8);
+    for(let i=0;i<best.length;i++){
+      const vk=best[i].v.toPrecision(BESTP);
+      const hasPowBest=!!best[i].hasPow;
+      const kkBase=mp.keepMeetDup?(vk+"|"+(best[i].searchType||"fwd")):vk;
+      const kk=hasPowBest?(kkBase+"|pow"):kkBase;
+      bestSeen.set(kk,i);
+      nearSeen.set(Math.round(best[i].v/ns),i);
+    }
+  }
 
   function emit(c){
     const now=performance.now();
@@ -3009,6 +3025,10 @@ onmessage=async(ev)=>{
         mt:(mt&&threads>1)?("ON("+threads+")"):"OFF",
         profile:mode,
         beamF,beamR,
+        bestCount:best.length,
+        bestDeltaSoFar,
+        dynamicCandMul,dynamicConfirmMul,
+        strategyStats,
         best:best.slice(0,outN)
       }});
     }
@@ -3131,24 +3151,15 @@ function collectLeaves(ast, out){
       }
       best.splice(idx,1);
       bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
+      if(best.length>outN*4)best.length=outN*3;
+      rebuildBestCaches();
       if(acc==="exact") maybeStopOnExact(delta);
       return;
     }
 
     bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
     if(best.length>outN*4)best.length=outN*3;
-
-    bestSeen.clear();
-    nearSeen.clear();
-    for(let i=0;i<best.length;i++){
-      const vk=best[i].v.toPrecision(BESTP);
-      const hasPowBest=!!best[i].hasPow;
-      const kkBase=mp.keepMeetDup?(vk+"|"+(best[i].searchType||"fwd")):vk;
-      const kk=hasPowBest?(kkBase+"|pow"):kkBase;
-      bestSeen.set(kk,i);
-      const ns=Math.max(2e-6,Math.max(1,Math.abs(T))*2e-8);
-      nearSeen.set(Math.round(best[i].v/ns),i);
-    }
+    rebuildBestCaches();
 
     if(acc==="exact") maybeStopOnExact(delta);
   }
@@ -3415,9 +3426,7 @@ function collectLeaves(ast, out){
        r.srcOp==="asin"||r.srcOp==="acos"||r.srcOp==="atan"||
        r.srcOp==="sinh"||r.srcOp==="cosh"||r.srcOp==="tanh");
     const binSlack=(MEET_STYLE==="bin")?((mp.binSlackMul??1)*Math.max(1,MEET_R)/Math.max(1,MEET_Q))*scale:0;
-    // Discovery tolerance: wide enough to catch all real solutions
-    const epsCandMul = isPowRelated?2.8:(isTrigRelated?2.2:1.0);
-    const epsCand=(4e-10*mp.candEpsMul*epsCandMul)*scale+binSlack;
+    const epsCand=(4e-10*mp.candEpsMul*dynamicCandMul*(isPowRelated?2.8:1.0))*scale+binSlack;
     if(matchGap>epsCand){meetDbg.rejEpsCand++;return;}
     meetCandidates++;
 
@@ -3435,8 +3444,8 @@ function collectLeaves(ast, out){
     const powRisk=powStat.risk;
     const powTighten=Math.min(1.0,(1/(1+0.18*powCnt+0.06*powRisk))*(hasFunc?1.12:1.0));
 
-    const epsProbeBase=(8e-10*mp.confirmEpsMul)*Math.max(1,Math.abs(T),Math.abs(probeVal))*(1+tc*0.03);
-    const epsProbeGap=matchGap*(1.7+tc*0.09)*powTighten*(isPowRelated?1.6:(isTrigRelated?1.4:1.0));
+    const epsProbeBase=(8e-10*mp.confirmEpsMul*dynamicConfirmMul)*Math.max(1,Math.abs(T),Math.abs(probeVal))*(1+tc*0.03);
+    const epsProbeGap=matchGap*(1.7+tc*0.09)*powTighten*(isPowRelated?1.6:1.0);
     const epsProbe=Math.max(epsProbeBase,epsProbeGap,mp.confirmAbsFloor||0);
     const probeErr=Math.abs(probeVal-T);
     if(probeErr>epsProbe){
@@ -3456,8 +3465,8 @@ function collectLeaves(ast, out){
       return;
     }
 
-    const epsConfirmBase=(7e-10*mp.confirmEpsMul)*Math.max(1,Math.abs(T),Math.abs(trueVal))*(1+tc*0.025);
-    const epsConfirmGap=matchGap*(2.2+tc*0.11)*powTighten*(isPowRelated?1.5:(isTrigRelated?1.3:1.0));
+    const epsConfirmBase=(7e-10*mp.confirmEpsMul*dynamicConfirmMul)*Math.max(1,Math.abs(T),Math.abs(trueVal))*(1+tc*0.025);
+    const epsConfirmGap=matchGap*(2.2+tc*0.11)*powTighten*(isPowRelated?1.5:1.0);
     const epsConfirm=Math.max(epsConfirmBase,epsConfirmGap,mp.confirmAbsFloor||0);
     const err=Math.abs(trueVal-T);
     if(err>epsConfirm){
@@ -3531,6 +3540,33 @@ function collectLeaves(ast, out){
     }
   }
 
+  function jitterMeetProbeForward(f,lim2Cap,seenNode){
+    if(!bidir) return;
+    const scale=Math.max(1,Math.abs(f.v),Math.abs(T));
+    const eps=Math.max(3e-10*scale, Math.abs(f.v)*3e-10);
+    const probes=[f.v+eps,f.v-eps,f.v*(1+2e-10),f.v*(1-2e-10)];
+    const seenKey=new Set();
+    for(const pv of probes){
+      if(!Number.isFinite(pv) || Math.abs(pv)>CAP) continue;
+      const pkey=meetPrimaryKey(pv);
+      if(seenKey.has(pkey)) continue;
+      seenKey.add(pkey);
+      const rl=revIdx.get(pkey);
+      if(!rl) continue;
+      strategyStats.meetJitter++;
+      meetDbg.keyHits++;
+      const lim2=Math.min(rl.length,lim2Cap);
+      for(let i=0;i<lim2;i++){
+        const cand=rl[i];
+        if(seenNode.has(cand)) continue;
+        seenNode.add(cand);
+        meetDbg.pairsTried++;
+        tryMeetPair(f,cand);
+        if(stopFlag) return;
+      }
+    }
+  }
+
   function tryMeetFwdWithRevIdx(f){
     if(!bidir)return;
     const lim2Cap=Math.max(8,mp.meetKeyProbeCap|0||120);
@@ -3571,6 +3607,7 @@ function collectLeaves(ast, out){
         if(stopFlag) return;
       }
     }
+    if(!stopFlag && strategyStats.stagnationLayers>=2) jitterMeetProbeForward(f,lim2Cap,seenNode);
   }
   
 // [插入位置：在 tryMeetFwdWithRevIdx 函数结束后，buildRev 函数开始前]
@@ -3644,153 +3681,39 @@ function collectLeaves(ast, out){
     if(!Array.isArray(opsUn) || !opsUn.length) return;
     const hasUn=(op)=>opsUn.includes(op);
     const twopi=2*Math.PI;
-    const pi=Math.PI;
 
-    // Generic emitter: look for fwd value targetVal, then apply op to build result ≈ T
-    const emit=(op,tv,hits)=>{
-      if(!Number.isFinite(tv)||Math.abs(tv)>CAP)return;
-      for(const b of J(tv,hits)) pushUnaryTargetCandidate(op,b);
-    };
+    const emit=(op,tv,hits)=>{ for(const b of J(tv,hits)) pushUnaryTargetCandidate(op,b); };
 
-    // T = exp(x) → x = log(T)
-    if(hasUn("exp")&&T>0) emit("exp",Math.log(T),Math.max(10,Math.floor(14*jm)));
-
-    // T = expm1(x) = e^x-1 → x = log1p(T)
-    if(hasUn("expm1")&&T>-1) emit("expm1",Math.log1p(T),Math.max(8,Math.floor(11*jm)));
-
-    // T = log(x) → x = exp(T)
-    if(hasUn("log")&&Number.isFinite(T)){
+    if(hasUn("exp") && T>0) emit("exp",Math.log(T),Math.max(10,Math.floor(14*jm)));
+    if(hasUn("log") && Number.isFinite(T)){
       const ev=Math.exp(T);
-      if(Number.isFinite(ev)&&ev>0&&Math.abs(ev)<1e12) emit("log",ev,Math.max(8,Math.floor(12*jm)));
+      if(Number.isFinite(ev) && ev>0 && Math.abs(ev)<1e12) emit("log",ev,Math.max(8,Math.floor(12*jm)));
     }
-
-    // T = log10(x) → x = 10^T
-    if(hasUn("log10")&&Number.isFinite(T)){
-      const ev=Math.pow(10,T);
-      if(Number.isFinite(ev)&&ev>0&&Math.abs(ev)<1e12) emit("log10",ev,Math.max(6,Math.floor(10*jm)));
-    }
-
-    // T = log1p(x) → x = expm1(T) = e^T - 1
-    if(hasUn("log1p")&&Number.isFinite(T)){
-      const ev=Math.expm1(T);
-      if(Number.isFinite(ev)&&Math.abs(ev)<1e12) emit("log1p",ev,Math.max(6,Math.floor(10*jm)));
-    }
-
-    // T = sin(x) → x = arcsin(T) + 2kπ or (π - arcsin(T)) + 2kπ
-    if(hasUn("sin")&&Math.abs(T)<=1){
+    if(hasUn("sin") && Math.abs(T)<=1){
       const a=Math.asin(T);
       if(Number.isFinite(a)){
-        for(let k=-2;k<=2;k++){
-          emit("sin",a+k*twopi,Math.max(8,Math.floor(10*jm)));
-          emit("sin",(pi-a)+k*twopi,Math.max(8,Math.floor(10*jm)));
+        for(let k=-3;k<=3;k++){
+          emit("sin",a+k*twopi,Math.max(9,Math.floor(12*jm)));
+          emit("sin",(Math.PI-a)+k*twopi,Math.max(9,Math.floor(12*jm)));
         }
       }
     }
-
-    // T = cos(x) → x = ±arccos(T) + 2kπ
-    if(hasUn("cos")&&Math.abs(T)<=1){
+    if(hasUn("cos") && Math.abs(T)<=1){
       const a=Math.acos(T);
-      if(Number.isFinite(a)){
-        for(let k=-2;k<=2;k++){
-          emit("cos", a+k*twopi, Math.max(8,Math.floor(10*jm)));
-          emit("cos",-a+k*twopi, Math.max(8,Math.floor(10*jm)));
-        }
+      if(Number.isFinite(a)) for(let k=-3;k<=3;k++){
+        emit("cos",a+k*twopi,Math.max(9,Math.floor(11*jm)));
+        emit("cos",-a+k*twopi,Math.max(9,Math.floor(11*jm)));
       }
     }
-
-    // T = tan(x) → x = arctan(T) + kπ
     if(hasUn("tan")){
       const a=Math.atan(T);
-      if(Number.isFinite(a)) for(let k=-2;k<=2;k++) emit("tan",a+k*pi,Math.max(8,Math.floor(10*jm)));
+      if(Number.isFinite(a)) for(let k=-3;k<=3;k++) emit("tan",a+k*Math.PI,Math.max(9,Math.floor(11*jm)));
     }
-
-    // T = asin(x) → x = sin(T), valid for T ∈ [-π/2, π/2]
-    if(hasUn("asin")&&Math.abs(T)<=pi/2){
-      emit("asin",Math.sin(T),Math.max(6,Math.floor(9*jm)));
-    }
-
-    // T = acos(x) → x = cos(T), valid for T ∈ [0, π]
-    if(hasUn("acos")&&T>=0&&T<=pi){
-      emit("acos",Math.cos(T),Math.max(6,Math.floor(9*jm)));
-    }
-
-    // T = atan(x) → x = tan(T), valid for T ∈ (-π/2, π/2)
-    if(hasUn("atan")&&Math.abs(T)<pi/2-1e-9){
-      const tv=Math.tan(T);
-      if(Number.isFinite(tv)&&Math.abs(tv)<1e10) emit("atan",tv,Math.max(8,Math.floor(10*jm)));
-    }
-
-    // T = sinh(x) → x = arcsinh(T)
-    if(hasUn("sinh")) emit("sinh",Math.asinh(T),Math.max(8,Math.floor(12*jm)));
-
-    // T = cosh(x) → x = ±arccosh(T), T ≥ 1
-    if(hasUn("cosh")&&T>=1){
-      const a=Math.acosh(T);
-      if(Number.isFinite(a)){
-        emit("cosh", a,Math.max(6,Math.floor(10*jm)));
-        emit("cosh",-a,Math.max(6,Math.floor(10*jm)));
-      }
-    }
-
-    // T = tanh(x) → x = arctanh(T), |T| < 1
-    if(hasUn("tanh")&&Math.abs(T)<1){
-      emit("tanh",Math.atanh(T),Math.max(6,Math.floor(10*jm)));
-    }
-
-    // T = sqrt(x) → x = T², T ≥ 0
-    if(hasUn("sqrt")&&T>=0){
-      emit("sqrt",T*T,Math.max(8,Math.floor(10*jm)));
-    }
-
-    // T = cbrt(x) → x = T³
-    if(hasUn("cbrt")){
-      emit("cbrt",T*T*T,Math.max(8,Math.floor(10*jm)));
-    }
-
-    // T = square(x) = x² → x = ±sqrt(T), T ≥ 0
-    if(hasUn("square")&&T>0){
-      const s=Math.sqrt(T);
-      if(Number.isFinite(s)){
-        emit("square", s,Math.max(6,Math.floor(8*jm)));
-        emit("square",-s,Math.max(6,Math.floor(8*jm)));
-      }
-    }
-
-    // T = cube(x) = x³ → x = cbrt(T)
-    if(hasUn("cube")){
-      emit("cube",Math.cbrt(T),Math.max(6,Math.floor(8*jm)));
-    }
-
-    // T = inv(x) = 1/x → x = 1/T
-    if(hasUn("inv")&&Math.abs(T)>1e-13){
-      emit("inv",1/T,Math.max(6,Math.floor(8*jm)));
-    }
-
-    // T = neg(x) → x = -T
-    if(hasUn("neg")){
-      emit("neg",-T,Math.max(6,Math.floor(8*jm)));
-    }
-
-    // T = abs(x) → x = T or x = -T (T ≥ 0)
-    if(hasUn("abs")&&T>=0){
-      emit("abs", T,Math.max(4,Math.floor(6*jm)));
-      if(T>1e-13) emit("abs",-T,Math.max(4,Math.floor(6*jm)));
-    }
-
-    // T = frac(x) → x = T + integer (if 0 ≤ T < 1)
-    if(hasUn("frac")&&T>=0&&T<1){
-      for(let k=-2;k<=3;k++) emit("frac",T+k,Math.max(4,Math.floor(6*jm)));
-    }
-
-    // T = floor(x) → x ≈ T + 0.5 (T must be integer)
-    if(hasUn("floor")&&Number.isInteger(T)){
-      emit("floor",T+0.5,Math.max(4,Math.floor(6*jm)));
-    }
-
-    // T = ceil(x) → x ≈ T - 0.5
-    if(hasUn("ceil")&&Number.isInteger(T)){
-      emit("ceil",T-0.5,Math.max(4,Math.floor(6*jm)));
-    }
+    if(hasUn("sinh")) emit("sinh",Math.asinh(T),Math.max(9,Math.floor(13*jm)));
+    if(hasUn("tanh") && Math.abs(T)<1) emit("tanh",Math.atanh(T),Math.max(8,Math.floor(12*jm)));
+    if(hasUn("asin")) emit("asin",Math.sin(T),Math.max(8,Math.floor(10*jm)));
+    if(hasUn("acos")) emit("acos",Math.cos(T),Math.max(8,Math.floor(10*jm)));
+    if(hasUn("atan")) emit("atan",Math.tan(T),Math.max(8,Math.floor(10*jm)));
   }
 
   function pushJumpPair(a,b,op,swap=false){
@@ -4429,6 +4352,8 @@ function collectLeaves(ast, out){
   // Dynamic goal threshold: skip items much worse than best found so far
   // Updated each complexity level; starts at Infinity
   let pruneGoalThresh=Infinity;
+  let stagnationLayers=0;
+  let prevLayerBest=Infinity;
   for(let c=2;c<=maxC;c++){
     if(stopFlag)break;
     if(performance.now()-t0>lim)break;
@@ -4440,10 +4365,20 @@ function collectLeaves(ast, out){
       if(stopFlag)break;
     }
 
-    let capUn=Math.max(180,Math.floor(beamF*(mp.capUnMul||2.0)/4/constPenalty));
-    let capBin=Math.max(120,Math.floor(beamF*(mp.capBinMul||1.8)/6/constPenalty));
+    const bestNow=Math.max(1e-18,Math.abs(bestDeltaSoFar));
+    if(bestNow < prevLayerBest*0.995) stagnationLayers=0; else stagnationLayers=Math.min(10,stagnationLayers+1);
+    prevLayerBest=Math.min(prevLayerBest,bestNow);
+    strategyStats.stagnationLayers=stagnationLayers;
+
+    const stagnationBoost=1+Math.min(1.6,stagnationLayers*0.18);
+    dynamicCandMul=1+Math.min(2.4,stagnationLayers*0.22);
+    dynamicConfirmMul=1+Math.min(1.5,stagnationLayers*0.12);
+
+    let capUn=Math.max(180,Math.floor(beamF*(mp.capUnMul||2.0)/4/constPenalty*stagnationBoost));
+    let capBin=Math.max(120,Math.floor(beamF*(mp.capBinMul||1.8)/6/constPenalty*stagnationBoost));
     capUn=Math.max(50,Math.floor(capUn*mp.capMul));
     capBin=Math.max(45,Math.floor(capBin*mp.capMul));
+    if(stagnationLayers>0) strategyStats.adaptiveBoosts++;
 
     if(subWorkers.length>0){
       fwd[c]=await computeLayerMT(c,capUn,capBin);
@@ -4554,7 +4489,13 @@ function collectLeaves(ast, out){
     // Free cached mkeys after indexing
     for(const it of fwd[c]){if(it.mkeys)it.mkeys=null;}
     tryTargetDecomposition(fwd[c], T);
-
+    if(stagnationLayers>=2){
+      const prev=fwd[Math.max(1,c-1)]||[];
+      if(prev.length){
+        tryTargetDecomposition(prev.slice(0,Math.min(prev.length,Math.max(16,Math.floor(beamF*0.08)))), T);
+        strategyStats.extraDecomp++;
+      }
+    }
 
     for(const e of fwd[c]){
       pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
@@ -4565,7 +4506,11 @@ function collectLeaves(ast, out){
 
     emit(c);
     // Update goal prune threshold: allow up to 12x best delta (keeps diversity while cutting noise)
-    if(best.length>0) pruneGoalThresh=Math.abs(best[0].delta)*20+1e-9;
+    if(best.length>0){
+      const relax=1+Math.min(3.0,stagnationLayers*0.42);
+      pruneGoalThresh=Math.abs(best[0].delta)*(20*relax)+1e-9;
+      if(stagnationLayers>0) strategyStats.pruneRelax++;
+    }
     await new Promise(r=>setTimeout(r,0));
   }
 
@@ -4581,6 +4526,10 @@ function collectLeaves(ast, out){
     mt:(mt&&threads>1)?("ON("+threads+")"):"OFF",
     profile:mode,
     beamF,beamR,
+    bestCount:best.length,
+    bestDeltaSoFar,
+    dynamicCandMul,dynamicConfirmMul,
+    strategyStats,
     best:best.slice(0,outN)
   }});
 };
@@ -4689,6 +4638,8 @@ $("btnStart").onclick=()=>{
     if(type==="progress"||type==="done"){
       const rows=payload.best||[];
       const ba=rows.length?Math.abs(rows[0].delta):NaN;
+      const elapsedMs=Math.max(1,Number(payload.elapsed||0));
+      const vps=Math.round((Number(payload.visited||0)*1000)/elapsedMs);
       updateRuntimePanel(payload);
       const debugOn=$("debugMode").checked;
       if(debugOn){
@@ -4696,15 +4647,24 @@ $("btnStart").onclick=()=>{
         statusPills({
           T:fmt(lastT),status:type,profile:mode,mode:payload.mode,
           mt:payload.mt||"OFF",c:(payload.c??0)+"/"+payload.maxC,
-          elapsed_ms:payload.elapsed,visited:payload.visited,pruned:payload.pruned||0,
+          elapsed_ms:payload.elapsed,visited:payload.visited,vps:vps,
+          pruned:payload.pruned||0,bestCount:payload.bestCount||rows.length,
+          best_delta:Number.isFinite(ba)?fmt(ba):"n/a",
+          best_delta_ever:Number.isFinite(payload.bestDeltaSoFar)?fmt(payload.bestDeltaSoFar):"n/a",
           meetLookups:payload.meetLookups||0,meetCand:payload.meetCandidates||0,
-          meetOK:payload.meetConfirmed||0,best_delta:Number.isFinite(ba)?fmt(ba):"n/a"
+          meetOK:payload.meetConfirmed||0,beam:((payload.beamF||0)+"/"+(payload.beamR||0)),
+          candMul:fmt(payload.dynamicCandMul||1),cfmMul:fmt(payload.dynamicConfirmMul||1)
         });
         const ps=$("pruneStats");
         ps.style.display="block";
         ps.innerHTML=
           "<b>AST重求值修正：</b>"+(payload.reEvalFixed||0).toLocaleString()+
-          " &nbsp;|&nbsp; <b>输出同值合并：</b>"+(payload.dupesKilled||0).toLocaleString();
+          " &nbsp;|&nbsp; <b>输出同值合并：</b>"+(payload.dupesKilled||0).toLocaleString()+
+          " &nbsp;|&nbsp; <b>吞吐(v/s)：</b>"+vps.toLocaleString();
+        if(payload.strategyStats){
+          const st=payload.strategyStats;
+          ps.innerHTML+=`<br><b>策略统计</b> boost=${st.adaptiveBoosts} pruneRelax=${st.pruneRelax} jitter=${st.meetJitter} extraDecomp=${st.extraDecomp} stagnation=${st.stagnationLayers}`;
+        }
         if(payload.meetDbg){
           const d=payload.meetDbg;
           ps.innerHTML+=
