@@ -1683,17 +1683,17 @@ function modeParams(mode){
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:13, keepMode:"goal",
     bbD:72, bbMagA:0.018,
-    qGoal:0.16,qBB:0.10,qMeet:0.14,qDiv:0.04,qPow:0.12,qFunc:0.07,qDepth:0.08,qMag:0.09,qIrr:0.04,
+    qGoal:0.15,qBB:0.09,qMeet:0.14,qDiv:0.04,qPow:0.12,qFunc:0.07,qDepth:0.08,qMag:0.09,qIrr:0.04,
     qPowBase:0.18, qPowExp:0.14, qFrac:0.10,
     qReq:0.10,
     meetStyle:"bin", meetPrec:13, meetQ:24576, meetR:12,
-    revBeamMul:1.8, meetHitBonus:0.10,
+    revBeamMul:2.0, meetHitBonus:0.10,
     candEpsMul:0.85, confirmEpsMul:1.0, binSlackMul:0.30, confirmAbsFloor:0.0,
     spillMul:1.1, capMul:1.0, keepMeetDup:false,
-    meetSweepMul:0.07, meetSweepPowMul:0.13,
+    meetSweepMul:0.09, meetSweepPowMul:0.15,
     beamMul:1.0, subLayerCapMul:1.1,
-    revIdxKeyCap:150, fwdIdxKeyCap:150, meetKeyProbeCap:200, meetSweepRevCap:100, idxKeysPerItem:8, idxPerItemCap:40,
-    capUnMul:2.5, capBinMul:1.8, jumpMul:1.5, meetStage2:1, qSeed:0.12
+    revIdxKeyCap:200, fwdIdxKeyCap:200, meetKeyProbeCap:280, meetSweepRevCap:140, idxKeysPerItem:10, idxPerItemCap:50,
+    capUnMul:3.0, capBinMul:2.2, jumpMul:1.6, meetStage2:1, qSeed:0.12
   };
   return {
     keyPrec:12, bestPrec:12, keepMode:"goal",
@@ -2522,13 +2522,13 @@ function topK(items,k,scoreFn,lowerBetter=true,filterFn=null){
   return out;
 }
 
-function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
+function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_target){
   const out=[];
   const used=new Set();
   // PERF FIX: reduced keepPoolMul to prevent O(n^2) topK calls on huge pools
   // Old: accuracy=18x beam (117K items) causing slow topK ops for 20+ quota categories
-  const keepPoolMul = mode==="speed" ? 4 : (mode==="accuracy" ? 6 : 5);
-  const keepPoolFloor = mode==="speed" ? 1200 : 2000;
+  const keepPoolMul = mode==="speed" ? 5 : (mode==="accuracy" ? 8 : 7);
+  const keepPoolFloor = mode==="speed" ? 1600 : 3000;
   const keepPoolSize = Math.min(items.length, Math.max(beam*keepPoolMul, keepPoolFloor));
   const quotaPool = keepPoolSize<items.length ? topK(items,keepPoolSize,(x)=>x.keep,true) : items;
 
@@ -2767,6 +2767,51 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     }
     const divArr=Array.from(bins.values()).sort((a,b)=>a.keep-b.keep);
     take(divArr,nDiv);
+  }
+
+  // ── POWER-DECOMPOSITION quotas: retain values near T^(1/n) for outer pow/square/cube ──
+  // These are critical building blocks for expressions like (f(x))^2 = T → f(x) ≈ √T.
+  // Without dedicated quota, the beam discards values near √T as "far from T".
+  if(Number.isFinite(T_target) && T_target>0){
+    // sqrt quota: retain best items near ±√T (square-type meets)
+    const sqT=Math.sqrt(T_target);
+    const nSqrt=Math.max(0,Math.floor(beam*(mode==="speed"?0.08:0.14)));
+    if(nSqrt>0){
+      take(topK(quotaPool,nSqrt,(x)=>{
+        const d=Math.min(Math.abs(x.v-sqT),Math.abs(x.v+sqT));
+        return d/(1e-12+Math.abs(sqT));
+      },true), nSqrt);
+    }
+    // cbrt quota: retain best items near ∛T (cube-type meets)
+    const cbT=Math.cbrt(T_target);
+    const nCbrt=Math.max(0,Math.floor(beam*(mode==="speed"?0.05:0.09)));
+    if(nCbrt>0){
+      take(topK(quotaPool,nCbrt,(x)=>{
+        const d=Math.min(Math.abs(x.v-cbT),Math.abs(x.v+cbT));
+        return d/(1e-12+Math.abs(cbT));
+      },true), nCbrt);
+    }
+    // T^(1/4) and T^(1/5) quotas for deeper power chains
+    for(const n of [4,5]){
+      const pT=Math.pow(T_target,1/n);
+      if(Number.isFinite(pT) && pT > 1e-10 && pT < 1e8){
+        const nP=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.06)));
+        if(nP>0) take(topK(quotaPool,nP,(x)=>Math.abs(x.v-pT)/(1e-12+pT),true), nP);
+      }
+    }
+    // T/n quotas for additive/multiplicative decompositions (outer */+ meets)
+    for(const n of [2,3,Math.PI,Math.E]){
+      const vn=T_target/n;
+      if(Number.isFinite(vn) && Math.abs(vn)<1e8 && Math.abs(vn)>1e-12){
+        const nVn=Math.max(0,Math.floor(beam*(mode==="speed"?0.025:0.05)));
+        if(nVn>0) take(topK(quotaPool,nVn,(x)=>Math.abs(x.v-vn)/(1e-12+Math.abs(vn)),true), nVn);
+      }
+    }
+  } else if(Number.isFinite(T_target)){
+    // T < 0: try ±|T|^(1/n) for odd n (cube-root of negative)
+    const cbT=Math.cbrt(T_target);
+    const nCbrt=Math.max(0,Math.floor(beam*(mode==="speed"?0.04:0.08)));
+    if(nCbrt>0) take(topK(quotaPool,nCbrt,(x)=>Math.abs(x.v-cbT)/(1e-12+Math.abs(cbT)),true), nCbrt);
   }
 
   if(out.length<beam){
@@ -3318,14 +3363,33 @@ function collectLeaves(ast, out){
     meetDbg.fwdIdxItems=total;
   }
 
-  function keepScore(goal,bb,revHit,mask){
+  const _sqrtT = T>0 ? Math.sqrt(T) : NaN;
+  const _cbrtT = Number.isFinite(T) ? Math.cbrt(T) : NaN;
+  function keepScore(goal,bb,revHit,mask,v){
     let keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
     if(revHit)keep*=(1.0-(mp.meetHitBonus||0));
     if(useBitmask && REQ_POP>0) keep *= reqAdj(mask|0);
     // Rationality bonus: highly rational values (small bb, non-solution) get
     // a small keep reduction so they survive pruning longer as power base candidates.
-    // This helps retain (25/7)-style values even when far from target T.
     if(bb<0.08 && goal>1e-4) keep -= 0.04*bb;
+    // Power-decomposition bonus: values near T^(1/n) are crucial building blocks.
+    // e.g. if T≈25, values near 5 (=√25) or ∛25 are needed for (expr)^2=T meets.
+    // Without this bonus these get pruned since they're "far from T" by goal metric.
+    if(Number.isFinite(v) && goal>1e-6){
+      if(Number.isFinite(_sqrtT)){
+        const proxSq=Math.abs(v-_sqrtT)/(1e-9+_sqrtT);
+        if(proxSq<0.02) keep -= 0.25*(1-proxSq/0.02);
+        else if(proxSq<0.15) keep -= 0.10*(1-proxSq/0.15);
+        // Also neg-sqrt for expressions like (-√T)^2
+        const nprox=Math.abs(v+_sqrtT)/(1e-9+_sqrtT);
+        if(nprox<0.02) keep -= 0.18*(1-nprox/0.02);
+      }
+      if(Number.isFinite(_cbrtT)){
+        const proxCb=Math.abs(v-_cbrtT)/(1e-9+Math.abs(_cbrtT));
+        if(proxCb<0.02) keep -= 0.14*(1-proxCb/0.02);
+        else if(proxCb<0.12) keep -= 0.05*(1-proxCb/0.12);
+      }
+    }
     return keep;
   }
 
@@ -3453,6 +3517,46 @@ function collectLeaves(ast, out){
             pushIfNear(expr,'guided');
           }catch(e){}
         }
+
+        // motif-3: a*(b - b^(c/(b + b²*(a+1/a) - a)))^n — the target family!
+        // This captures the specific structure of the example expression.
+        for(const n of [two, three]){
+          try{
+            const inv_a = mkB('/', one, a);
+            const apInva = mkB('+', a, inv_a);
+            const bSq = mkB('^', b, two);
+            const bSqTerm = mkB('*', bSq, apInva);
+            const denom = mkB('-', mkB('+', b, bSqTerm), a);
+            for(const num of [two, three, one]){
+              try{
+                const frac = mkB('/', num, denom);
+                const bPowFrac = mkB('^', b, frac);
+                const inner = mkB('-', b, bPowFrac);
+                const prod = mkB('*', a, inner);
+                const expr = mkB('^', prod, n);
+                pushIfNear(expr,'guided_motif3');
+                // Also try (a*(b-b^frac))² via square unary if available
+                if(Array.isArray(opsUn)&&opsUn.includes("square")){
+                  const expr2 = mkU('square', prod);
+                  pushIfNear(expr2,'guided_motif3_sq');
+                }
+              }catch(e){}
+            }
+          }catch(e){}
+        }
+
+        // motif-4: a*(b - b^(n/(inner))) — simplified version probing denom variants
+        for(const sc2 of scales){
+          try{
+            // Try a*(b-b^(n/(b+b²*(a+1/a)-a)))²
+            const inv_a2 = mkB('/', one, a);
+            const sc2Denom = mkB('-', mkB('+', b, mkB('*', mkB('^',b,two), mkB('+',a,inv_a2))), a);
+            const frac2 = mkB('/', sc2.k, sc2Denom);
+            const inner2 = mkB('-', b, mkB('^', b, frac2));
+            const expr3 = mkU('square', mkB('*', a, inner2));
+            pushIfNear(expr3,'guided_motif4');
+          }catch(e){}
+        }
       }
     }
   }
@@ -3473,7 +3577,7 @@ function collectLeaves(ast, out){
         const bit=idx2bit[i];
         let mask=0;
         if(bit>=0){if(!maxBits[bit])continue;mask=1<<bit;}
-        const keep=keepScore(goal,bb,revHit,mask);
+        const keep=keepScore(goal,bb,revHit,mask,v);
         const flags=mkFlags(v,TAG_NONE,true);
         const ast=mkC(consts[i].s,v,ordLeaf(consts[i].s));
         if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
@@ -3493,7 +3597,7 @@ function collectLeaves(ast, out){
 
     const items=Array.from(bucket.values());
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask,mode);
+    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask,mode,T);
     for(const it of picked){it.cost=1;}
     fwd[1]=picked;
     addFwdIdx(fwd[1]);
@@ -3517,7 +3621,7 @@ function collectLeaves(ast, out){
     // This improves breadth structurally (not parameter-only) while staying bounded.
     const hinted=new Set();
     const hintCountByCost=new Map();
-    const maxHintTotal=72;
+    const maxHintTotal=220;  // ↑ from 72: more budget for multi-step decompositions
     let hintTotal=0;
     function pushRevHint(v,cost,wA,srcOp){
       if(!Number.isFinite(v) || Math.abs(v)>CAP) return;
@@ -3527,7 +3631,7 @@ function collectLeaves(ast, out){
       if(hinted.has(hk)) return;
       hinted.add(hk);
       const n=(hintCountByCost.get(cost)||0);
-      const capPerCost = (cost<=4)?18:10;
+      const capPerCost = (cost<=4)?24:14;  // ↑ from 18/10
       if(n>=capPerCost || hintTotal>=maxHintTotal) return;
       hintCountByCost.set(cost,n+1);
       hintTotal++;
@@ -3540,7 +3644,66 @@ function collectLeaves(ast, out){
       rev[cost].push(node);
     }
 
+    // ── Power-decomposition multi-step hints ──
+    // These seed rev with transformed versions of T (e.g. √T, ∛T, etc.)
+    // so that fwd[k] can meet rev[c-k] via outer square/cube/power.
+    // Critical for finding (f(x))^2 = T type structures.
     const favAtoms=pickInterestingAtoms(8);
+    const _unHintOps_early=["square","sqrt","cube","cbrt","exp","log"];
+    for(const op of _unHintOps_early){
+      if(!Array.isArray(opsUn)||!opsUn.includes(op)) continue;
+      const invs=invUn(op,T);
+      if(!Array.isArray(invs)) continue;
+      const w=wUn(op);
+      for(const obj of invs){
+        const vv=obj&&obj.v;
+        if(!Number.isFinite(vv)||Math.abs(vv)>CAP) continue;
+        // Level-1: op(x)=T → x=vv
+        const wA1=(a)=>mkU(op,a);
+        pushRevHint(vv,w,wA1,"earlyhint_"+op);
+        // Level-2: for atoms c, try: op(c * x) = T → x = vv/c  and  op(c + x) = T → x = vv - c
+        for(const cst of favAtoms){
+          const cv=Number(cst.v);
+          if(!Number.isFinite(cv)||cv===0) continue;
+          const cAst=mkC(cst.s,cst.v,ordLeaf(cst.s));
+          if(Array.isArray(opsBin)&&opsBin.includes("*")){
+            const x2=invBinR("*",vv,cv); // c*x=vv → x=vv/c
+            if(Number.isFinite(x2)&&Math.abs(x2)<CAP){
+              const wA2=(a)=>mkU(op,mkB("*",cAst,a));
+              pushRevHint(x2,w+wBin("*"),wA2,"earlyhint2_"+op+"_mul");
+            }
+          }
+          if(Array.isArray(opsBin)&&opsBin.includes("+")){
+            const x3=invBinR("+",vv,cv); // c+x=vv → x=vv-c
+            if(Number.isFinite(x3)&&Math.abs(x3)<CAP){
+              const wA3=(a)=>mkU(op,mkB("+",cAst,a));
+              pushRevHint(x3,w+wBin("+"),wA3,"earlyhint2_"+op+"_add");
+            }
+          }
+          if(op==="square"&&Array.isArray(opsBin)&&opsBin.includes("*")){
+            // (c*x)^2=T → x=√T/c
+            const sqT=Math.sqrt(T);
+            if(Number.isFinite(sqT)&&T>0){
+              const x4=sqT/cv;
+              if(Number.isFinite(x4)&&Math.abs(x4)<CAP){
+                const wA4=(a)=>mkB("^",mkB("*",cAst,a),mkC("2",2,ordLeaf("2")));
+                pushRevHint(x4,wBin("^")+wBin("*"),wA4,"earlyhint2_sq_cmul");
+              }
+            }
+          }
+        }
+        // Level-2b: for sqrt result vv, also add √(vv) and -√(vv) hints
+        if(op==="square"&&T>0&&Number.isFinite(vv)&&vv>0){
+          // Already covered by sqT above; also add negative sqrt
+          const wA_neg=(a)=>mkU("square",mkU("neg",a));
+          pushRevHint(vv,w,wA_neg,"earlyhint_sq_neg");
+        }
+      }
+    }
+
+    // ── 2-step binary hints: T = a OP b where b comes from a combination ──
+    // e.g. T = (fwd_expr)^2 → seed rev with fwd-side half at cost c/2
+
     for(const cst of favAtoms){
       const cv=Number(cst.v);
       if(!Number.isFinite(cv)) continue;
@@ -4491,7 +4654,7 @@ function collectLeaves(ast, out){
         if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
 
         if(useBitmask){
-          const keep=keepScore(goal,bb,revHit,a.mask);
+          const keep=keepScore(goal,bb,revHit,a.mask,v);
           put(keyOf(v,a.mask,""),{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
         }else{
           const keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
@@ -4528,7 +4691,7 @@ function collectLeaves(ast, out){
               const bb=bbScore(v,mp.bbD,mp.bbMagA);
               const mk = bidir ? meetPrimaryKey(v) : "";
               const revHit=bidir?revIdx.has(mk):false;
-              const keep=keepScore(goal,bb,revHit,mask);
+              const keep=keepScore(goal,bb,revHit,mask,v);
               // PERF: skip if bucket full and this item is definitely worse
               if(bucket.isFull() && keep>=bucket.worstKeep() && !revHit) continue;
               const ast=mkB(op,a.ast,b.ast);
@@ -4583,13 +4746,13 @@ function collectLeaves(ast, out){
             const a=fwd[it.ac][it.ai];
             const ast=mkU(it.op,a.ast);
             if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
-            const keep=keepScore(it.goal,it.bb,revHit,it.mask);
+            const keep=keepScore(it.goal,it.bb,revHit,it.mask,v);
             put(key,{v,goal:it.goal,bb:it.bb,keep,ast,mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false,extraUnFlags(it.op,a.flags)),mkey:mk});
           }else{
             const a=fwd[it.ac][it.ai],b=fwd[it.bc][it.bi];
             const ast=mkB(it.op,a.ast,b.ast);
             if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
-            const keep=keepScore(it.goal,it.bb,revHit,it.mask);
+            const keep=keepScore(it.goal,it.bb,revHit,it.mask,v);
             put(key,{v,goal:it.goal,bb:it.bb,keep,ast,mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
           }
         }else{
@@ -4614,7 +4777,7 @@ function collectLeaves(ast, out){
 
     const items=Array.from(bucket.values());
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
+    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode,T);
     for(const it of picked){
       it.cost=c;
       // Strip transient fields not needed for future expansion
@@ -4703,7 +4866,7 @@ function collectLeaves(ast, out){
           const revHit=bidir?revIdx.has(mk):false;
 
           if(useBitmask){
-            const keep=keepScore(goal,bb,revHit,a.mask);
+            const keep=keepScore(goal,bb,revHit,a.mask,v);
             // PERF: skip AST creation if bucket full and item is definitely worse
             if(bucket.isFull() && keep>=bucket.worstKeep() && !revHit) continue;
             const ast=mkU(op,a.ast);
@@ -4753,7 +4916,7 @@ function collectLeaves(ast, out){
                 const bb=bbScore(v,mp.bbD,mp.bbMagA);
                 const mk = bidir ? meetPrimaryKey(v) : "";
                 const revHit=bidir?revIdx.has(mk):false;
-                const keep=keepScore(goal,bb,revHit,mask);
+                const keep=keepScore(goal,bb,revHit,mask,v);
                 put(keyOf(v,mask,""),{v,goal,bb,keep,ast,mask,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
               }else{
                 const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
@@ -4784,7 +4947,7 @@ function collectLeaves(ast, out){
       const _t0ST=performance.now();
       const items=Array.from(bucket.values());
       for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-      const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
+      const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode,T);
       phaseTiming.selectTop+=performance.now()-_t0ST;
       for(const it of picked){it.cost=c;}
       fwd[c]=picked;
@@ -4821,9 +4984,13 @@ function collectLeaves(ast, out){
     // Floor = max(|T|, 1) × 0.5 ensures values within T's order of magnitude are ALWAYS kept.
     // FIXED 漏解: floor must preserve ALL leaf constants as building blocks
     // Old: 0.5*|T| would cut pi/e when T=25 after finding solutions near T
-    // New: ensure any leaf constant (like pi, e, sqrt2) can always be a subexpression
+    // New: ensure any leaf constant (like pi, e, sqrt2) can always be a subexpression.
+    // Also ensure values near √T, ∛T are never pruned (critical for (f(x))^n = T meets).
     const _leafMaxGoal = consts.reduce((m,c)=>Math.max(m,Math.abs(Number(c.v)-T)),0);
-    const tFloor = Math.max(_leafMaxGoal * 3.0, Math.abs(T) * 2.0, 30);
+    const _sqrtTGoal = Number.isFinite(_sqrtT) ? Math.abs(_sqrtT-T) : 0;
+    const _cbrtTGoal = Number.isFinite(_cbrtT) ? Math.abs(_cbrtT-T) : 0;
+    const _powerGoal = Math.max(_sqrtTGoal * 1.2, _cbrtTGoal * 1.2);
+    const tFloor = Math.max(_leafMaxGoal * 3.0, Math.abs(T) * 2.0, _powerGoal * 1.5, 30);
     if(best.length>0){
       const relax=1+Math.min(8.0,stagnationLayers*0.55 + strategyStats.pressureScore*0.82);
       pruneGoalThresh=Math.max(Math.abs(best[0].delta)*(80*relax)+1e-9, tFloor);
