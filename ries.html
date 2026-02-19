@@ -286,11 +286,13 @@
       color:var(--text-soft);white-space:nowrap;
       border-bottom:1px solid var(--border);
     }
-    th.sortable{cursor:pointer;user-select:none;transition:color .15s;}
-    th.sortable:hover{color:var(--text);}
+    th.sortable{cursor:pointer;user-select:none;transition:color .15s,transform .18s ease,background .18s ease;position:relative;}
+    th.sortable:hover{color:var(--text);background:rgba(255,255,255,.03);}
     th.sortable::after{content:" ↕";opacity:.3;font-size:9px;}
     th.sortable[data-sort-dir="asc"]::after{content:" ↑";opacity:.8;color:var(--accent);}
     th.sortable[data-sort-dir="desc"]::after{content:" ↓";opacity:.8;color:var(--accent);}
+    th.sortable.sorting{transform:translateY(-1px);}
+    tbody.sorting tr{animation:none!important;}
     td{
       padding:9px 10px;font-size:12px;
       border-bottom:1px solid rgba(255,255,255,.04);
@@ -303,6 +305,8 @@
     tbody tr:hover{background:rgba(255,255,255,.025);}
     tbody tr{animation:rowIn .2s ease both;}
     @keyframes rowIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+    @keyframes rowPulse{from{background:rgba(59,130,246,.16)}to{background:transparent}}
+    tbody.flash tr{animation:rowPulse .32s ease;}
 
     .tag{
       display:inline-block;padding:1px 7px;border-radius:4px;
@@ -608,7 +612,7 @@ function allowCandidate(ctx){
 (()=>{
 const $=id=>document.getElementById(id);
 
-function fmt(x){
+function fmtCompact(x){
   if(!Number.isFinite(x))return String(x);
   if(Object.is(x,-0))x=0;
   const a=Math.abs(x);
@@ -616,6 +620,18 @@ function fmt(x){
   if(a>=1e6||a<0.001)return x.toExponential(5);
   return x.toPrecision(7).replace(/\.?0+$/,"");
 }
+
+function fmtValue(x){
+  if(!Number.isFinite(x)) return String(x);
+  if(Object.is(x,-0)) x=0;
+  if(x===0) return "0";
+  const a=Math.abs(x);
+  if(a>=1e18 || a<1e-18) return x.toExponential(15).replace(/\.?0+e/,"e");
+  return x.toPrecision(16).replace(/\.?0+$/,""
+  ).replace(/\.?0+e/,"e");
+}
+
+const fmt = fmtCompact;
 
 // ----------- base constants / ops (UI) -----------
 const BASE_CONST_LIST=[
@@ -1003,20 +1019,18 @@ async function copyText(text){
 
 let lastRows=[];
 const sortState={key:null,dir:"asc"};
+const zhSorter=new Intl.Collator("zh-CN",{numeric:true,sensitivity:"base"});
+const numKeys=new Set(["v","delta","cost"]);
+const accRank={exact:0,close:1};
 function sortRows(rows){
   const arr=(rows||[]).slice();
   const k=sortState.key;
   if(!k) return arr;
   const dir=sortState.dir==="asc"?1:-1;
-  const numKeys=new Set(["v","delta","cost"]);
   arr.sort((a,b)=>{
     let av=a?.[k], bv=b?.[k];
-    if(k==="searchType") return dir*String(av||"").localeCompare(String(bv||""),"zh-CN",{numeric:true,sensitivity:"base"});
-    if(k==="acc"){
-      av=String(av||"").toLowerCase(); bv=String(bv||"").toLowerCase();
-      const rank=(x)=>x==="exact"?0:(x==="close"?1:2);
-      return dir*(rank(av)-rank(bv));
-    }
+    if(k==="searchType") return dir*zhSorter.compare(String(av||""),String(bv||""));
+    if(k==="acc") return dir*((accRank[String(av||"").toLowerCase()]??2)-(accRank[String(bv||"").toLowerCase()]??2));
     if(numKeys.has(k)){
       av=Number(av); bv=Number(bv);
       if(!Number.isFinite(av)&&!Number.isFinite(bv)) return 0;
@@ -1024,7 +1038,7 @@ function sortRows(rows){
       if(!Number.isFinite(bv)) return -1;
       return dir*(av-bv);
     }
-    return dir*String(av??"").localeCompare(String(bv??""),"zh-CN",{numeric:true,sensitivity:"base"});
+    return dir*zhSorter.compare(String(av??""),String(bv??""));
   });
   return arr;
 }
@@ -1053,10 +1067,13 @@ function setTypeColumnVisible(show){
   });
 }
 
-async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
+let renderFrame=0;
+async function renderResults(rows,showCounts,debugOn=false,latexMode=false,opts={}){
   lastRows=(rows||[]).slice();
   const sorted=sortRows(lastRows);
   const tb=$("tbody");tb.innerHTML="";
+  const silent=!!opts.silentSort;
+  if(silent){ tb.classList.add("sorting"); }
   const frag=document.createDocumentFragment();
   let _rowIdx=0;
   const useLatex = latexMode && await ensureLatexRenderer();
@@ -1092,19 +1109,22 @@ async function renderResults(rows,showCounts,debugOn=false,latexMode=false){
       d.textContent=r.countsInfo;
       t2.appendChild(d);
     }
-    const t3=document.createElement("td");t3.className="mono";t3.textContent=fmt(r.v);
-    const t4=document.createElement("td");t4.className="mono";t4.textContent=(r.delta>=0?"+":"")+fmt(r.delta);
+    const t3=document.createElement("td");t3.className="mono";t3.textContent=fmtValue(r.v);
+    const t4=document.createElement("td");t4.className="mono";t4.textContent=(r.delta>=0?"+":"")+fmtValue(r.delta);
     const t5=document.createElement("td");t5.className="mono";t5.textContent=r.acc;
     const t6=document.createElement("td");t6.className="mono right";t6.textContent=String(r.cost);
     const t7=document.createElement("td");
     const b=document.createElement("button");
     b.className="btn-copy"; b.textContent="复制"; b.onclick=()=>copyText(r.expr);
     t7.appendChild(b);
-    tr.style.animationDelay=(_rowIdx++*12)+"ms";
+    tr.style.animationDelay=silent?"0ms":(_rowIdx++*12)+"ms";
     tr.append(t1,t2,t3,t4,t5,t6,t7);
     frag.appendChild(tr);
   }
   tb.appendChild(frag);
+  if(silent){
+    requestAnimationFrame(()=>{tb.classList.remove("sorting");tb.classList.add("flash");setTimeout(()=>tb.classList.remove("flash"),340);});
+  }
   setTypeColumnVisible(debugOn);
 }
 
@@ -3386,6 +3406,49 @@ function collectLeaves(ast, out){
     return addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
   }
 
+  function pushUnaryTargetCandidate(op,b){
+    if(!b || !b.ast) return;
+    const v=applyUn(op,b.v);
+    if(!Number.isFinite(v) || Math.abs(v)>CAP) return;
+    const cost=(b.cost|0)+wUn(op);
+    if(cost>maxC+2) return;
+    const ast=mkU(op,b.ast);
+    if(LEAF_ORDER && ast.ord && !ast.ord.ok) return;
+    const scale=Math.max(1,Math.abs(T),Math.abs(v));
+    const eps=3e-10*scale*(1+cost*0.06);
+    if(Math.abs(v-T)>eps && cost>maxC) return;
+    if(useBitmask) pushBest({v,ast,cost,searchType:"meet",mask:b.mask});
+    else pushBest({v,ast,cost,searchType:"meet",cnt:b.cnt});
+  }
+
+  function tryUnaryTargetTransforms(jm,J){
+    if(!Array.isArray(opsUn) || !opsUn.length) return;
+    const hasUn=(op)=>opsUn.includes(op);
+    const twopi=2*Math.PI;
+
+    const emit=(op,tv,hits)=>{ for(const b of J(tv,hits)) pushUnaryTargetCandidate(op,b); };
+
+    if(hasUn("exp") && T>0) emit("exp",Math.log(T),Math.max(10,Math.floor(14*jm)));
+    if(hasUn("log") && Number.isFinite(T)){
+      const ev=Math.exp(T);
+      if(Number.isFinite(ev) && ev>0 && Math.abs(ev)<1e12) emit("log",ev,Math.max(8,Math.floor(12*jm)));
+    }
+    if(hasUn("sin") && Math.abs(T)<=1){
+      const a=Math.asin(T);
+      if(Number.isFinite(a)){
+        for(let k=-2;k<=2;k++){
+          emit("sin",a+k*twopi,Math.max(8,Math.floor(10*jm)));
+          emit("sin",(Math.PI-a)+k*twopi,Math.max(8,Math.floor(10*jm)));
+        }
+      }
+    }
+    if(hasUn("tan")){
+      const a=Math.atan(T);
+      if(Number.isFinite(a)) for(let k=-2;k<=2;k++) emit("tan",a+k*Math.PI,Math.max(8,Math.floor(10*jm)));
+    }
+    if(hasUn("sinh")) emit("sinh",Math.asinh(T),Math.max(8,Math.floor(12*jm)));
+  }
+
   function pushJumpPair(a,b,op,swap=false){
     const L=swap?b:a;
     const R=swap?a:b;
@@ -3426,6 +3489,8 @@ function collectLeaves(ast, out){
       jumpCache.set(kk,arr);
       return arr;
     };
+
+    tryUnaryTargetTransforms(jm,J);
 
     for(let i=0;i<limItems;i++){
       const a=layerItems[i];
@@ -4364,8 +4429,14 @@ document.querySelectorAll("thead th.sortable").forEach((th)=>{
     if(sortState.key===key) sortState.dir=(sortState.dir==="asc"?"desc":"asc");
     else { sortState.key=key; sortState.dir="asc"; }
     updateSortHeaders();
-setTypeColumnVisible($("debugMode").checked);
-    renderResults(lastRows,$("showCounts").checked,$("debugMode").checked,$("latexMode").checked);
+    setTypeColumnVisible($("debugMode").checked);
+    const frame=++renderFrame;
+    th.classList.add("sorting");
+    requestAnimationFrame(()=>{
+      if(frame!==renderFrame) return;
+      renderResults(lastRows,$("showCounts").checked,$("debugMode").checked,$("latexMode").checked,{silentSort:true})
+        .finally(()=>th.classList.remove("sorting"));
+    });
   });
 });
 updateSortHeaders();
