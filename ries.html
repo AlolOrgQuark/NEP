@@ -1672,13 +1672,13 @@ function modeParams(mode){
     qPowBase:0.08, qPowExp:0.06,
     qReq:0.06,
     meetStyle:"bin", meetPrec:10, meetQ:12288, meetR:10,
-    revBeamMul:2.2, meetHitBonus:0.22,
+    revBeamMul:2.0, meetHitBonus:0.22,
     candEpsMul:1.55, confirmEpsMul:0.92, binSlackMul:0.14, confirmAbsFloor:1.2e-6,
     spillMul:0.78, capMul:1.0, keepMeetDup:false,
     meetSweepMul:0.20, meetSweepPowMul:0.34,
-    beamMul:0.82, subLayerCapMul:1.04,
-    revIdxKeyCap:240, fwdIdxKeyCap:240, meetKeyProbeCap:320, meetSweepRevCap:420, idxKeysPerItem:12, idxPerItemCap:48,
-    capUnMul:2.9, capBinMul:2.3, jumpMul:1.25, meetStage2:1, qSeed:0.06
+    beamMul:0.92, subLayerCapMul:1.08,
+    revIdxKeyCap:240, fwdIdxKeyCap:240, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:12, idxPerItemCap:56,
+    capUnMul:3.0, capBinMul:2.6, jumpMul:1.45, meetStage2:1, qSeed:0.08
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:13, keepMode:"goal",
@@ -3069,16 +3069,34 @@ onmessage=async(ev)=>{
   let bestDeltaSoFar=Infinity;
   const bestSeen=new Map();
   const nearSeen=new Map();
+  const bestByValue=new Map();
+
+  const BEST_POOL_CAP=Math.max(outN*20, 1500);
+  const VALUE_VARIANT_CAP=Math.max(4, Math.min(12, Math.floor(outN/6)||4));
+
+  function astSig(ast){
+    if(!ast) return "na";
+    const d=astDepth(ast);
+    const db=d<=2?2:(d<=4?4:(d<=7?7:10));
+    if(ast.t===0) return "c|"+String(ast.sym);
+    if(ast.t===1) return "u|"+ast.op+"|"+db;
+    return "b|"+ast.op+"|"+db+"|"+(ast.p?"p":"np")+"|"+(ast.f?"f":"nf");
+  }
 
   function rebuildBestCaches(){
     bestSeen.clear();
     nearSeen.clear();
+    bestByValue.clear();
     const ns=Math.max(2e-6,Math.max(1,Math.abs(T))*2e-8);
     for(let i=0;i<best.length;i++){
       const vk=best[i].v.toPrecision(BESTP);
+      let arr=bestByValue.get(vk);
+      if(!arr){arr=[];bestByValue.set(vk,arr);}
+      arr.push(i);
       const hasPowBest=!!best[i].hasPow;
+      const sig=best[i].sig||"na";
       const kkBase=mp.keepMeetDup?(vk+"|"+(best[i].searchType||"fwd")):vk;
-      const kk=hasPowBest?(kkBase+"|pow"):kkBase;
+      const kk=hasPowBest?(kkBase+"|pow|"+sig):(kkBase+"|"+sig);
       bestSeen.set(kk,i);
       nearSeen.set(Math.round(best[i].v/ns),i);
     }
@@ -3176,12 +3194,13 @@ function collectLeaves(ast, out){
     const delta=v-T;
     const absDelta=Math.abs(delta);
     if(absDelta<bestDeltaSoFar) bestDeltaSoFar=absDelta;
+    const sigEarly=astSig(obj.ast);
     const nearStep=Math.max(2e-6,Math.max(1,Math.abs(T))*2e-8);
     const nearKey=Math.round(v/nearStep);
     const prevNear=nearSeen.get(nearKey);
     if(prevNear!==undefined){
       const b=best[prevNear];
-      if(b && Math.abs(b.v-v)<=nearStep*1.2){
+      if(b && (b.sig||"na")===sigEarly && Math.abs(b.v-v)<=nearStep*1.2){
         const oldScore=Math.abs(b.delta)+1e-8*(b.cost||0);
         const newScore=Math.abs(delta)+1e-8*(obj.cost||0);
         if(newScore>=oldScore) return;
@@ -3207,8 +3226,9 @@ function collectLeaves(ast, out){
     const valKey=v.toPrecision(BESTP);
     const type=obj.searchType||"fwd";
     const hasPow=!!(obj.ast&&obj.ast.p);
+    const sig=sigEarly;
     const keyBase=mp.keepMeetDup?(valKey+"|"+type):valKey;
-    const key=hasPow?(keyBase+"|pow"):keyBase;
+    const key=hasPow?(keyBase+"|pow|"+sig):(keyBase+"|"+sig);
 
     const idx=bestSeen.get(key);
     if(idx!==undefined){
@@ -3231,19 +3251,33 @@ function collectLeaves(ast, out){
         latex=obj.ast?latexA(obj.ast):expr;
       }
       best.splice(idx,1);
-      bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
-      if(best.length>outN*4)best.length=outN*3;
+      bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow,sig});
+      if(best.length>BEST_POOL_CAP*1.2)best.length=BEST_POOL_CAP;
       rebuildBestCaches();
       if(acc==="exact") maybeStopOnExact(delta);
       return;
+    }
+
+    const sameValIdx=bestByValue.get(valKey);
+    if(sameValIdx && sameValIdx.length>=VALUE_VARIANT_CAP){
+      let worstI=sameValIdx[0], worstScore=-Infinity;
+      for(const bi of sameValIdx){
+        const b=best[bi];
+        const s=Math.abs(b.delta)+1e-8*(b.cost||0);
+        if(s>worstScore){worstScore=s;worstI=bi;}
+      }
+      const newScore=Math.abs(delta)+1e-8*(obj.cost||0);
+      if(newScore>=worstScore) return;
+      best.splice(worstI,1);
+      rebuildBestCaches();
     }
 
     if(!expr){
       expr=obj.ast?strA(obj.ast):(obj.s||"?");
       latex=obj.ast?latexA(obj.ast):expr;
     }
-    bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
-    if(best.length>outN*4)best.length=outN*3;
+    bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow,sig});
+    if(best.length>BEST_POOL_CAP*1.2)best.length=BEST_POOL_CAP;
     rebuildBestCaches();
 
     if(acc==="exact") maybeStopOnExact(delta);
@@ -3453,113 +3487,8 @@ function collectLeaves(ast, out){
     return mkC(String(val),val,ordLeaf(String(val)));
   }
 
-  function pushGuidedSynthesisSeeds(){
-    if(!noConstraintFast || tCount!==0 || useBitmask) return;
-    const hasOp=(op)=> Array.isArray(opsBin) && opsBin.includes(op);
-    if(!hasOp('+')||!hasOp('-')||!hasOp('*')||!hasOp('/')||!hasOp('^')) return;
-
-    const one=getConstNodeByValue(1);
-    const two=getConstNodeByValue(2);
-    const three=getConstNodeByValue(3);
-    const scales=[{k:two,kv:2},{k:three,kv:3}];
-
-    const pushIfNear=(expr, tag='guided')=>{
-      const v=evalA(expr);
-      if(!Number.isFinite(v) || Math.abs(v)>CAP) return;
-      const cst=astCost(expr);
-      const err=Math.abs(v-T);
-      const scale=Math.max(1,Math.abs(T));
-      if(cst<=maxC+3 && err<=Math.max(2e-3,scale*8e-5)){
-        pushBest({v,ast:expr,cost:cst,searchType:tag});
-      }
-    };
-
-    const atoms=pickInterestingAtoms(9);
-    if(atoms.length<2) return;
-
-    const pairCap=Math.min(14,atoms.length*atoms.length);
-    let pairsTried=0;
-
-    for(let i=0;i<atoms.length&&pairsTried<pairCap;i++){
-      for(let j=0;j<atoms.length&&pairsTried<pairCap;j++){
-        if(i===j) continue;
-        const A=atoms[i], B=atoms[j];
-        const a=mkC(A.s,A.v,ordLeaf(A.s));
-        const b=mkC(B.s,B.v,ordLeaf(B.s));
-        pairsTried++;
-
-        // generic motif-1: (a-b) + (a^2*b)^(a^(1-a/(b-1)))
-        try{
-          const bMinus1 = mkB('-', b, one);
-          const aDiv = mkB('/', a, bMinus1);
-          const e2 = mkB('-', one, aDiv);
-          const p2 = mkB('^', a, e2);
-          const a2 = mkB('^', a, two);
-          const base = mkB('*', a2, b);
-          const p1 = mkB('^', base, p2);
-          const lhs = mkB('-', a, b);
-          const expr = mkB('+', lhs, p1);
-          pushIfNear(expr,'guided');
-        }catch(e){}
-
-        // generic motif-2 family: (a-n)+m*a^(n-a)*(1+m*a^b)
-        for(const sc of scales){
-          try{
-            const n=sc.k;
-            const left=mkB('-', a, n);
-            const nMinusA=mkB('-', n, a);
-            const pA=mkB('^', a, nMinusA);
-            const mPA=mkB('*', sc.k, pA);
-            const aPowB=mkB('^', a, b);
-            const onePlus=mkB('+', one, mkB('*', sc.k, aPowB));
-            const prod=mkB('*', mPA, onePlus);
-            const expr=mkB('+', left, prod);
-            pushIfNear(expr,'guided');
-          }catch(e){}
-        }
-
-        // motif-3: a*(b - b^(c/(b + b²*(a+1/a) - a)))^n — the target family!
-        // This captures the specific structure of the example expression.
-        for(const n of [two, three]){
-          try{
-            const inv_a = mkB('/', one, a);
-            const apInva = mkB('+', a, inv_a);
-            const bSq = mkB('^', b, two);
-            const bSqTerm = mkB('*', bSq, apInva);
-            const denom = mkB('-', mkB('+', b, bSqTerm), a);
-            for(const num of [two, three, one]){
-              try{
-                const frac = mkB('/', num, denom);
-                const bPowFrac = mkB('^', b, frac);
-                const inner = mkB('-', b, bPowFrac);
-                const prod = mkB('*', a, inner);
-                const expr = mkB('^', prod, n);
-                pushIfNear(expr,'guided_motif3');
-                // Also try (a*(b-b^frac))² via square unary if available
-                if(Array.isArray(opsUn)&&opsUn.includes("square")){
-                  const expr2 = mkU('square', prod);
-                  pushIfNear(expr2,'guided_motif3_sq');
-                }
-              }catch(e){}
-            }
-          }catch(e){}
-        }
-
-        // motif-4: a*(b - b^(n/(inner))) — simplified version probing denom variants
-        for(const sc2 of scales){
-          try{
-            // Try a*(b-b^(n/(b+b²*(a+1/a)-a)))²
-            const inv_a2 = mkB('/', one, a);
-            const sc2Denom = mkB('-', mkB('+', b, mkB('*', mkB('^',b,two), mkB('+',a,inv_a2))), a);
-            const frac2 = mkB('/', sc2.k, sc2Denom);
-            const inner2 = mkB('-', b, mkB('^', b, frac2));
-            const expr3 = mkU('square', mkB('*', a, inner2));
-            pushIfNear(expr3,'guided_motif4');
-          }catch(e){}
-        }
-      }
-    }
-  }
+  // 引擎侧不再注入“引导模板合成”候选，避免把特定结构硬编码到搜索结果中。
+  // 所有解都必须来自统一的前向/反向/meet 搜索流程。
 
 
   // init layer c=1
@@ -3605,8 +3534,6 @@ function collectLeaves(ast, out){
     for(const e of fwd[1]){e.searchType="fwd";pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:1,searchType:"fwd"});}
     emit(1);
   }
-
-  pushGuidedSynthesisSeeds();
 
   // seed reverse
   if(bidir){
@@ -4064,42 +3991,60 @@ function collectLeaves(ast, out){
   // --- 跳跃式发现（goal-driven jump, inspired by RIES-style target transforms）---
   function jumpLookupNear(targetVal, maxHits){
     if(!Number.isFinite(targetVal) || Math.abs(targetVal)>CAP) return [];
-    const keys=meetKeys(targetVal,Math.abs(targetVal-T),6);
-    const out=[];
-    const seen=new Set();
     const lim=Math.max(6, maxHits|0||24);
+    const keys=meetKeys(targetVal,Math.abs(targetVal-T),6);
+    const seen=new Set();
+    const cand=[];
+
+    const pushCand=(it,srcBias)=>{
+      if(!it || !it.ast) return;
+      if(seen.has(it.ast)) return;
+      seen.add(it.ast);
+      const d=Math.abs((it.v||0)-targetVal)/(1+Math.abs(targetVal));
+      const score=d + 0.018*(it.keep||0) + 0.002*(it.cost||0) + srcBias;
+      cand.push({it,score});
+    };
+
     for(const k of keys){
       const arr=fwdIdx.get(k);
       if(!arr) continue;
-      for(let i=0;i<arr.length && out.length<lim;i++){
-        const it=arr[i];
-        const id=it.ast;
-        if(seen.has(id)) continue;
-        seen.add(id);
-        out.push(it);
-      }
-      if(out.length>=lim) break;
+      const limArr=Math.min(arr.length,Math.max(10,Math.floor(lim*1.4)));
+      for(let i=0;i<limArr;i++) pushCand(arr[i],0.0);
     }
+
+    // band fallback improves sub-goal constant lookup when precise mantissa key misses
+    if(cand.length<lim){
+      const seenBand=new Set();
+      for(const k of keys){
+        const bk=keyBand(k);
+        if(!bk || seenBand.has(bk)) continue;
+        seenBand.add(bk);
+        const arr=fwdBandIdx.get(bk);
+        if(!arr) continue;
+        const limBand=Math.min(arr.length,Math.max(8,Math.floor(lim*0.7)));
+        for(let i=0;i<limBand;i++) pushCand(arr[i],0.012);
+      }
+    }
+
     // Also search for log(targetVal) in index - for power base candidates
-    // If fwd has value f where log(T)/log(f) = targetVal, lookup by log key
-    if(out.length<lim && targetVal>0){
+    if(targetVal>0){
       const logTarget=Math.log(targetVal);
       if(Number.isFinite(logTarget)){
         const logKeys=meetKeys(logTarget,1,3);
         for(const k of logKeys){
-          if(k.startsWith("L|")) continue; // avoid double-lookup
+          if(k.startsWith("L|")) continue;
           const arr=fwdIdx.get(k);
           if(!arr) continue;
-          for(let i=0;i<arr.length && out.length<lim;i++){
-            const it=arr[i];
-            if(seen.has(it.ast)) continue;
-            seen.add(it.ast);
-            out.push(it);
-          }
-          if(out.length>=lim) break;
+          const limLog=Math.min(arr.length,Math.max(6,Math.floor(lim*0.6)));
+          for(let i=0;i<limLog;i++) pushCand(arr[i],0.02);
         }
       }
     }
+
+    if(!cand.length) return [];
+    cand.sort((a,b)=>a.score-b.score);
+    const out=[];
+    for(let i=0;i<cand.length && out.length<lim;i++) out.push(cand[i].it);
     return out;
   }
 
@@ -4188,15 +4133,75 @@ function collectLeaves(ast, out){
     }
   }
 
-  function tryTargetDecomposition(layerItems,T){
+
+  function selectDecompAnchors(layerItems,layerCost,jm){
+    if(!Array.isArray(layerItems) || !layerItems.length) return [];
+    const cap=Math.max(24,Math.floor(beamF*((mode==="speed")?0.08:0.18)*Math.max(0.8,jm)));
+    const seen=new Set();
+    const out=[];
+    const add=(it)=>{
+      if(!it||!it.ast) return;
+      if(seen.has(it.ast)) return;
+      seen.add(it.ast);
+      out.push(it);
+    };
+
+    const src=layerItems.slice(0,Math.min(layerItems.length,cap*3));
+    // keep best-by-keep skeleton
+    src.sort((a,b)=>(a.keep??INF)-(b.keep??INF));
+    for(let i=0;i<src.length && out.length<Math.floor(cap*0.45);i++) add(src[i]);
+
+    // magnitude diversity bins
+    const magBins=new Map();
+    for(const it of src){
+      const mb=Math.floor(Math.log2(Math.abs(it.v)+1e-30));
+      const old=magBins.get(mb);
+      if(!old || (it.keep??INF)<(old.keep??INF)) magBins.set(mb,it);
+    }
+    for(const it of Array.from(magBins.values()).sort((a,b)=>(a.keep??INF)-(b.keep??INF))){
+      add(it); if(out.length>=Math.floor(cap*0.70)) break;
+    }
+
+    // operator-shape diversity
+    const shapeBins=new Map();
+    for(const it of src){
+      const root=(it.ast&&it.ast.t===2)?('b:'+it.ast.op):((it.ast&&it.ast.t===1)?('u:'+it.ast.op):'c');
+      const d=it.depth||astDepth(it.ast);
+      const dk=d<3?2:(d<6?5:8);
+      const k=root+'|'+dk;
+      const old=shapeBins.get(k);
+      if(!old || (it.keep??INF)<(old.keep??INF)) shapeBins.set(k,it);
+    }
+    for(const it of Array.from(shapeBins.values()).sort((a,b)=>(a.keep??INF)-(b.keep??INF))){
+      add(it); if(out.length>=cap) break;
+    }
+
+    // cross-layer anchors: deepen node linkage when stagnant/pressured
+    if((strategyStats.stagnationLayers>=1 || strategyStats.pressureScore>=1) && Number.isFinite(layerCost)){
+      for(let d=1;d<=2;d++){
+        const li=fwd[layerCost-d];
+        if(!Array.isArray(li)||!li.length) continue;
+        const lim=Math.min(li.length, Math.max(10,Math.floor(cap*(d===1?0.24:0.16))));
+        for(let i=0;i<lim && out.length<Math.floor(cap*1.35);i++) add(li[i]);
+      }
+    }
+
+    if(out.length>Math.floor(cap*1.35)) out.length=Math.floor(cap*1.35);
+    return out;
+  }
+
+  function tryTargetDecomposition(layerItems,T,layerCost){
     if(!Number.isFinite(T) || fwdIdx.size<8 || !layerItems || !layerItems.length) return;
 
     const jm=Math.max(0.3, mp.jumpMul||1);
     if(jm<0.45) return;
-    const limItems=Math.min(layerItems.length, Math.max(20,Math.floor(beamF*((mode==="speed")?0.06:0.14)*jm)));
-    if(mode==="speed" && (layerItems[0]?.cost||0)<4) return;
+    const anchors=selectDecompAnchors(layerItems,layerCost,jm);
+    if(!anchors.length) return;
+    const limItems=Math.min(anchors.length, Math.max(20,Math.floor(beamF*((mode==="speed")?0.06:0.14)*jm)));
+    if(mode==="speed" && (anchors[0]?.cost||0)<4) return;
     const logT=(T>0)?Math.log(T):NaN;
     const jumpCache=new Map();
+    const dynHitsMul=1+Math.min(1.8, strategyStats.stagnationLayers*0.22 + (strategyStats.pressureScore||0)*0.35);
     const J=(tv,h)=>{
       const kk=meetPrimaryKey(tv)+"|"+(h|0);
       const c=jumpCache.get(kk);
@@ -4205,29 +4210,30 @@ function collectLeaves(ast, out){
       jumpCache.set(kk,arr);
       return arr;
     };
+    const JH=(tv,base)=>J(tv,Math.max(6,Math.floor(base*dynHitsMul)));
 
-    tryUnaryTargetTransforms(jm,J);
+    tryUnaryTargetTransforms(jm,JH);
 
     for(let i=0;i<limItems;i++){
-      const a=layerItems[i];
+      const a=anchors[i];
       const v=a.v;
       if(!Number.isFinite(v)) continue;
       const av=Math.abs(v);
 
       // T = a + x / a - x
       if(HAS_SUB || ALLOW_ADD){
-        for(const b of J(T-v,Math.max(8,Math.floor(14*jm)))) pushJumpPair(a,b,"+");
-        for(const b of J(v-T,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"-");
-        for(const b of J(T+v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(b,a,"-");
+        for(const b of JH(T-v,Math.max(8,Math.floor(14*jm)))) pushJumpPair(a,b,"+");
+        for(const b of JH(v-T,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"-");
+        for(const b of JH(T+v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(b,a,"-");
       }
 
       // T = a * x, a / x, x / a
       if(HAS_MUL && av>1e-12){
-        for(const b of J(T/v,20)) pushJumpPair(a,b,"*");
+        for(const b of JH(T/v,20)) pushJumpPair(a,b,"*");
       }
       if(HAS_DIV && av>1e-12){
-        for(const b of J(v/T,Math.max(6,Math.floor(10*jm)))) if(Math.abs(T)>1e-12) pushJumpPair(a,b,"/");
-        for(const b of J(T*v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(b,a,"/");
+        for(const b of JH(v/T,Math.max(6,Math.floor(10*jm)))) if(Math.abs(T)>1e-12) pushJumpPair(a,b,"/");
+        for(const b of JH(T*v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(b,a,"/");
       }
 
       // T = a^x or x^a (pow-heavy targets)
@@ -4235,18 +4241,18 @@ function collectLeaves(ast, out){
         if(v>0 && Math.abs(v-1)>1e-12){
           const tx=logT/Math.log(v);
           const hits=Math.max(20,Math.floor(24*jm));
-          for(const b of J(tx,hits)) pushJumpPair(a,b,"^");
+          for(const b of JH(tx,hits)) pushJumpPair(a,b,"^");
           // Also search for x in neighbourhood of tx ± small offsets for rounding resilience
           if(Number.isFinite(tx) && Math.abs(tx)<50){
-            for(const b of J(tx+1e-9,8)) pushJumpPair(a,b,"^");
-            for(const b of J(tx-1e-9,8)) pushJumpPair(a,b,"^");
+            for(const b of JH(tx+1e-9,8)) pushJumpPair(a,b,"^");
+            for(const b of JH(tx-1e-9,8)) pushJumpPair(a,b,"^");
           }
         }
         // x^a = T → x = T^(1/a)
         if(av>1e-12 && Math.abs(v)<60){
           const base=Math.pow(T,1/v);
           const hits=Math.max(16,Math.floor(20*jm));
-          for(const b of J(base,hits)) pushJumpPair(b,a,"^");
+          for(const b of JH(base,hits)) pushJumpPair(b,a,"^");
         }
         // Also try log-ratio approach: given a, if T = base^a → base = T^(1/a)
         // And for fractional exponents: T^(a/b) style via known fwd values
@@ -4255,9 +4261,9 @@ function collectLeaves(ast, out){
           const t_inv_v=Math.pow(T,1/v);
           const t_v=Math.pow(T,v);
           if(Number.isFinite(t_inv_v) && Math.abs(t_inv_v)<1e10)
-            for(const b of J(t_inv_v,Math.max(8,Math.floor(12*jm)))) pushJumpPair(b,a,"^");
+            for(const b of JH(t_inv_v,Math.max(8,Math.floor(12*jm)))) pushJumpPair(b,a,"^");
           if(Number.isFinite(t_v) && Math.abs(t_v)<1e10)
-            for(const b of J(t_v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"^");
+            for(const b of JH(t_v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"^");
         }
       }
 
@@ -4265,11 +4271,11 @@ function collectLeaves(ast, out){
       if(Array.isArray(opsBin) && opsBin.includes("logab") && Number.isFinite(logT) && T!==0){
         if(v>0 && Math.abs(v-1)>1e-12){
           const tx=Math.pow(v,T);
-          for(const b of J(tx,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"logab");
+          for(const b of JH(tx,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"logab");
         }
         if(v>0){
           const base=Math.pow(v,1/T);
-          for(const b of J(base,8)) pushJumpPair(b,a,"logab");
+          for(const b of JH(base,8)) pushJumpPair(b,a,"logab");
         }
       }
 
@@ -4959,12 +4965,12 @@ function collectLeaves(ast, out){
     // Free cached mkeys after indexing
     for(const it of fwd[c]){if(it.mkeys)it.mkeys=null;}
     const _t0Dec=performance.now();
-    tryTargetDecomposition(fwd[c], T);
+    tryTargetDecomposition(fwd[c], T, c);
     phaseTiming.decompose+=performance.now()-_t0Dec;
     if(stagnationLayers>=2 || strategyStats.pressureScore>=2){
       const prev=fwd[Math.max(1,c-1)]||[];
       if(prev.length){
-        tryTargetDecomposition(prev.slice(0,Math.min(prev.length,Math.max(16,Math.floor(beamF*0.08)))), T);
+        tryTargetDecomposition(prev.slice(0,Math.min(prev.length,Math.max(16,Math.floor(beamF*0.08)))), T, Math.max(1,c-1));
         strategyStats.extraDecomp++;
       }
     }
