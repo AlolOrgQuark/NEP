@@ -1686,14 +1686,25 @@ function modeParams(mode){
     qGoal:0.36,qBB:0.06,qMeet:0.10,qDiv:0.03,qPow:0.05,qFunc:0.03,qDepth:0.06,qMag:0.08,qIrr:0.02,
     qPowBase:0.08, qPowExp:0.06,
     qReq:0.06,
-    meetStyle:"bin", meetPrec:10, meetQ:12288, meetR:10,
+    meetStyle:"bin", meetPrec:10, meetQ:12288, meetR:6,
     revBeamMul:2.0, meetHitBonus:0.22,
-    candEpsMul:1.55, confirmEpsMul:0.92, binSlackMul:0.14, confirmAbsFloor:1.2e-6,
+    // 收紧eps: 原candEpsMul=1.55导致68%eps通过但29%confirm拒绝(昂贵AST求值)
+    // 将candEpsMul从1.55→0.85, confirmEpsMul从0.92→0.75
+    candEpsMul:0.85, confirmEpsMul:0.75, binSlackMul:0.10, confirmAbsFloor:1.2e-6,
     spillMul:0.78, capMul:1.0, keepMeetDup:false,
     meetSweepMul:0.20, meetSweepPowMul:0.34,
     beamMul:0.92, subLayerCapMul:1.08,
-    revIdxKeyCap:240, fwdIdxKeyCap:240, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:12, idxPerItemCap:56,
-    capUnMul:3.0, capBinMul:2.6, jumpMul:1.45, meetStage2:1, qSeed:0.08
+    // 减小索引探针量: meetKeyProbeCap 260→120, idxKeysPerItem 12→6(speed模式只用主键+邻域键)
+    revIdxKeyCap:240, fwdIdxKeyCap:240, meetKeyProbeCap:120, meetSweepRevCap:240, idxKeysPerItem:6, idxPerItemCap:40,
+    capUnMul:3.0, capBinMul:2.6, jumpMul:1.45, meetStage2:0, qSeed:0.08,
+    // 明确设置采样率: 0.28 (原来undefined→0.50)
+    meetFwdSampleRatio:0.28,
+    // 每个fwd项最多尝试N对, 防止单项消耗过多时间
+    speedMeetMaxPairsPerItem:80,
+    // meetFwd扫描时只用主键检测revIdx命中(不生成全部transform域键)
+    speedMeetScanPrimaryOnly:true,
+    // buildRev中对非pow项跳过transform域键(只用主键+邻域)
+    speedRevMeetPrimaryOnly:true,
   };
   if(mode==="accuracy") return {
     keyPrec:14, bestPrec:13, keepMode:"goal",
@@ -1821,7 +1832,7 @@ function _bkNeighbor(prefix,val,rr){
     _meetKeyOut.push(prefix+"|"+sign+"|"+e+"|"+(q0+d));
   }
 }
-function meetKeys(v,goalHint=Infinity,depthHint=0){
+function meetKeys(v,goalHint=Infinity,depthHint=0,skipTransformDomains=false){
   if(MEET_STYLE!=="bin") return [meetKeyPrec(v)];
   if(!Number.isFinite(v)) return ["NaN"];
   if(Object.is(v,-0)) v=0;
@@ -1851,6 +1862,12 @@ function meetKeys(v,goalHint=Infinity,depthHint=0){
       _meetKeyOut.push(""+sign+"|"+e+"|"+(q0-d));
       _meetKeyOut.push(""+sign+"|"+e+"|"+(q0+d));
     }
+  }
+
+  // 在speed模式跳过变换域键时，只返回主键+邻域+精度键（共约7个）
+  if(skipTransformDomains){
+    _meetKeyOut.push(meetKeyPrec(v));
+    return _meetKeyOut.slice();
   }
 
   // ▼▼▼ 新增：在粗粒度键(±rr)之外，加一个2倍分辨率的细粒度键
@@ -2233,55 +2250,100 @@ function normalizeAST(n){
 
 // LaTeX
 function latexWrap(s){ return "("+s+")"; }
+
 function latexA(n){
-  n = normalizeAST(n);
   if(!n)return"";
   if(n.t===0){
     const s=String(n.sym||n.val||"0");
-    if(s==="π")return"\\pi";
-    if(s==="φ")return"\\varphi";
-    if(s==="√2")return"\\sqrt{2}";
-    if(s==="√3")return"\\sqrt{3}";
-    if(s==="√5")return"\\sqrt{5}";
+    if(s==="\\u03C0")return"\\\\pi ";
+    if(s==="\\u03C6")return"\\\\varphi ";
+    if(s==="\\u221A2")return"\\\\sqrt{2}";
+    if(s==="\\u221A3")return"\\\\sqrt{3}";
+    if(s==="\\u221A5")return"\\\\sqrt{5}";
+    if(s==="\\u03B3")return"\\\\gamma ";
+    if(s==="G(Catalan)")return"G";
+    if(s==="\\u03B6(3)")return"\\\\zeta(3)";
+    if(s==="ln(2)")return"\\\\ln 2";
+    if(s==="ln(10)")return"\\\\ln 10";
+    if(s==="2\\u03C0")return"2\\\\pi ";
+    if(s==="\\u03C0/2")return"\\\\frac{\\\\pi}{2}";
+    if(s==="\\u03C0/3")return"\\\\frac{\\\\pi}{3}";
+    if(s==="\\u03C0/4")return"\\\\frac{\\\\pi}{4}";
+    if(s==="1/2")return"\\\\frac{1}{2}";
+    if(s==="1/3")return"\\\\frac{1}{3}";
+    if(s==="2/3")return"\\\\frac{2}{3}";
+    if(s==="1/4")return"\\\\frac{1}{4}";
+    if(s==="3/4")return"\\\\frac{3}{4}";
+    if(s==="1/5")return"\\\\frac{1}{5}";
+    if(s==="2/5")return"\\\\frac{2}{5}";
+    if(s==="1/6")return"\\\\frac{1}{6}";
     return s;
   }
   if(n.t===1){
-    const ch0=latexA(n.ch);
-    const ch=(n.ch&&n.ch.t!==0)?latexWrap(ch0):ch0;
+    const ch=latexA(n.ch);
+    const chAtom=(!n.ch||n.ch.t===0);
+    const wrap=chAtom?ch:"\\\\left("+ch+"\\\\right)";
     switch(n.op){
-      case"neg":return"-"+ch;
-      case"sqrt":return"\\sqrt{"+((n.ch&&n.ch.t===2)?latexWrap(ch0):ch0)+"}";
-      case"cbrt":return"\\sqrt[3]{"+ch0+"}";
-      case"inv":return"\\frac{1}{"+ch0+"}";
-      case"square":return"{"+ch+"}^{2}";
-      case"cube":return"{"+ch+"}^{3}";
-      case"fact":return ch+"!";
-      case"gammafn":return"\\Gamma"+latexWrap(ch0);
-      case"exp":return"e^{"+ch0+"}";
-      case"expm1":return"e^{"+ch0+"}-1";
-      default:return"\\mathrm{"+n.op+"}"+latexWrap(ch0);
+      case"neg":return"-"+wrap;
+      case"abs":return"\\\\left|"+ch+"\\\\right|";
+      case"sqrt":return"\\\\sqrt{"+ch+"}";
+      case"cbrt":return"\\\\sqrt[3]{"+ch+"}";
+      case"inv":return"\\\\frac{1}{"+ch+"}";
+      case"square":return"{"+wrap+"}^{2}";
+      case"cube":return"{"+wrap+"}^{3}";
+      case"fact":return wrap+"!";
+      case"gammafn":return"\\\\Gamma\\\\!\\\\left("+ch+"\\\\right)";
+      case"exp":return"e^{"+ch+"}";
+      case"expm1":return"e^{"+ch+"}-1";
+      case"log":return"\\\\ln\\\\!\\\\left("+ch+"\\\\right)";
+      case"log10":return"\\\\log_{10}\\\\!\\\\left("+ch+"\\\\right)";
+      case"log1p":return"\\\\ln\\\\!\\\\left(1+"+ch+"\\\\right)";
+      case"sin":return"\\\\sin\\\\!\\\\left("+ch+"\\\\right)";
+      case"cos":return"\\\\cos\\\\!\\\\left("+ch+"\\\\right)";
+      case"tan":return"\\\\tan\\\\!\\\\left("+ch+"\\\\right)";
+      case"asin":return"\\\\arcsin\\\\!\\\\left("+ch+"\\\\right)";
+      case"acos":return"\\\\arccos\\\\!\\\\left("+ch+"\\\\right)";
+      case"atan":return"\\\\arctan\\\\!\\\\left("+ch+"\\\\right)";
+      case"sinh":return"\\\\sinh\\\\!\\\\left("+ch+"\\\\right)";
+      case"cosh":return"\\\\cosh\\\\!\\\\left("+ch+"\\\\right)";
+      case"tanh":return"\\\\tanh\\\\!\\\\left("+ch+"\\\\right)";
+      case"floor":return"\\\\lfloor "+ch+"\\\\rfloor ";
+      case"ceil":return"\\\\lceil "+ch+"\\\\rceil ";
+      case"round":return"\\\\mathrm{round}\\\\!\\\\left("+ch+"\\\\right)";
+      case"frac":return"\\\\left\\\\{"+ch+"\\\\right\\\\}";
+      case"sign":return"\\\\mathrm{sgn}\\\\!\\\\left("+ch+"\\\\right)";
+      case"erf":return"\\\\mathrm{erf}\\\\!\\\\left("+ch+"\\\\right)";
+      default:return"\\\\mathrm{"+n.op+"}\\\\!\\\\left("+ch+"\\\\right)";
     }
   }
-  if(n.op==="^"){
-    const baseStr = latexA(n.l);
-    const base = (n.l && n.l.t!==0) ? latexWrap(baseStr) : baseStr;
-    const exp  = latexA(n.r);
-    return "{"+base+"}^{"+exp+"}";
+  // binary
+  if(n.op==="/"){
+    return"\\\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
   }
-
-  let l=latexA(n.l), r=latexA(n.r);
-  if(needParen(n.l,n.op,"left")) l="("+l+")";
-  if(needParen(n.r,n.op,"right")) r="("+r+")";
-  if(n.op==="/" )return"\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  if(n.op==="*")return l+"\\cdot "+r;
+  if(n.op==="^"){
+    const bl=latexA(n.l);
+    const base=(n.l&&n.l.t!==0)?"\\\\left("+bl+"\\\\right)":bl;
+    return"{"+base+"}^{"+latexA(n.r)+"}";
+  }
+  let l=latexA(n.l),r=latexA(n.r);
+  if(needParen(n.l,n.op,"left"))l="\\\\left("+l+"\\\\right)";
+  if(needParen(n.r,n.op,"right"))r="\\\\left("+r+"\\\\right)";
+  if(n.op==="*")return l+"\\\\cdot "+r;
   if(n.op==="+"){
-    if(n.r&&n.r.t===1&&n.r.op==="neg") return l+"-"+latexA(n.r.ch);
-    if(isNegAtomNode(n.r)) return l+"-"+latexA({t:0,sym:absAtomText(n.r),val:Math.abs(n.r.val)});
+    if(n.r&&n.r.t===1&&n.r.op==="neg")return l+"-"+latexA(n.r.ch);
+    if(isNegAtomNode(n.r))return l+"-"+latexA({t:0,sym:absAtomText(n.r),val:Math.abs(n.r.val)});
     return l+"+"+r;
   }
   if(n.op==="-")return l+"-"+r;
-  if(n.op==="logab")return"\\log_{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  return"\\mathrm{"+n.op+"}"+latexWrap(latexA(n.l)+","+latexA(n.r));
+  if(n.op==="logab")return"\\\\log_{"+latexA(n.l)+"}\\\\!\\\\left("+latexA(n.r)+"\\\\right)";
+  if(n.op==="min")return"\\\\min\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
+  if(n.op==="max")return"\\\\max\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
+  if(n.op==="gcd")return"\\\\gcd\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
+  if(n.op==="lcm")return"\\\\mathrm{lcm}\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
+  if(n.op==="hypot")return"\\\\mathrm{hypot}\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
+  if(n.op==="mod")return latexA(n.l)+"\\\\bmod "+latexA(n.r);
+  if(n.op==="atan2")return"\\\\mathrm{atan2}\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
+  return"\\\\mathrm{"+n.op+"}\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
 }
 
 
@@ -2703,10 +2765,14 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
   const nTrigArg=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.07)));
   // Quota: values useful as arcsin/arccos/arctan inverses (i.e. in [-π/2..π] range)
   const nInvTrig=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.07)));
-  const exploreRatio = mode==="speed" ? 0.035 : (mode==="accuracy" ? 0.20 : 0.18);
+  const exploreRatio = mode==="speed" ? 0.035 : (mode==="accuracy" ? 0.26 : 0.22);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
-  const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.12)));
+  const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.14)));
+  // 新增：误差修正值配额 — 接近T的项（误差<2%）优先保留用于精度提升
+  const nNearT=Math.max(0,Math.floor(beam*(mode==="speed"?0.06:0.12)));
+  // 新增：变换亲和值配额 — 值接近T的各种变换（√T, ∛T, ln(T)等）的项
+  const nTransformAffin=Math.max(0,Math.floor(beam*(mode==="speed"?0.04:0.10)));
 
   // ── PRIORITY STAGE: Building-block reservoir + mandatory magnitude diversity ──
   // These run BEFORE standard quotas so they can't be crowded out by near-T items.
@@ -2924,6 +2990,27 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
 
   if(out.length<beam){
     take(topK(quotaPool,beam-out.length,(x)=>(x.keep-opPriorityAdj(x)*0.12),true), beam-out.length);
+  }
+
+  // ── 新增：误差修正值配额 — 保留误差<2%的接近T项，用于errorCorrectionSearch ──
+  if(nNearT>0 && Number.isFinite(T_target)){
+    const scale=Math.max(1,Math.abs(T_target));
+    take(topK(quotaPool,nNearT,(x)=>Math.abs(x.v-T_target)/scale,true,(x)=>Math.abs(x.v-T_target)<scale*0.03 && !used.has(x.key)), nNearT);
+  }
+  // ── 新增：变换亲和值配额 — 保留接近T各种变换的项，扩展jumpLookupNear可以找到的候选 ──
+  if(nTransformAffin>0 && Number.isFinite(T_target)){
+    const transTargets=[];
+    const absT2=Math.abs(T_target);
+    if(absT2>0) transTargets.push(Math.sqrt(absT2), -Math.sqrt(absT2), Math.cbrt(T_target));
+    if(T_target>0) transTargets.push(Math.log(T_target));
+    if(absT2>1e-12) transTargets.push(1/T_target);
+    if(Math.abs(T_target)<=1) transTargets.push(Math.asin(Math.max(-1,Math.min(1,T_target))));
+    transTargets.push(Math.atan(T_target));
+    const validTrans=transTargets.filter(v=>Number.isFinite(v)&&Math.abs(v)<1e8);
+    for(const tv of validTrans){
+      const nThis=Math.max(2,Math.floor(nTransformAffin/validTrans.length));
+      if(nThis>0) take(topK(quotaPool,nThis,(x)=>Math.abs(x.v-tv)/(1e-9+Math.abs(tv)+1),true,(x)=>!used.has(x.key)), nThis);
+    }
   }
 
   if(Number.isFinite(T_target)){
@@ -3530,9 +3617,10 @@ function collectLeaves(ast, out){
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
     const bandCap=Math.max(6, Math.floor(cap*0.35));
+    // Speed模式: rev索引使用短键(主键+邻域), 避免变换域键导致revIdxKeys爆炸
+    // 注: pow/exp/log类op的rev项保留完整键以支持跨域meet
+    const speedShortKeys = !!(mp.speedRevMeetPrimaryOnly);
     // 深层联系: revIdx的热前缀质量决定meet成功率
-    // 按cost+keepScore排序后插入，使低cost/高质量候选优先被probe命中
-    // 这与idxBetter一致但对整个items批次先预排序，减少插入时的排序开销
     const sortedItems = items.slice().sort((a,b)=>{
       const ca=a.cost??99, cb=b.cost??99;
       if(ca!==cb) return ca-cb;
@@ -3542,7 +3630,11 @@ function collectLeaves(ast, out){
       const p=it.mkey || (it.mkey = meetPrimaryKey(it.v));
       idxInsert(revIdx,p,it,cap);
       idxInsertBand(revBandIdx,p,it,bandCap);
-      const ks=meetKeysCached(it);
+      // Speed模式: 对非pow/func的rev项只用短键
+      const isPowLike = (it.srcOp==="^"||it.srcOp==="square"||it.srcOp==="cube"||
+                         it.srcOp==="exp"||it.srcOp==="log"||it.srcOp==="sqrt"||it.srcOp==="cbrt");
+      const useShort = speedShortKeys && !isPowLike;
+      const ks=meetKeysCached(it, useShort);
       let used=0;
       for(let i=0;i<ks.length&&used<maxKeys;i++){
         const k2=ks[i];
@@ -3562,11 +3654,16 @@ function collectLeaves(ast, out){
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
     const bandCap=Math.max(6, Math.floor(cap*0.35));
+    // Speed模式: fwd索引也使用短键减少内存和构建时间
+    const speedShortFwd = !!(mp.speedRevMeetPrimaryOnly);
     for(const it of items){
       const p=it.mkey || (it.mkey = meetPrimaryKey(it.v));
       idxInsert(fwdIdx,p,it,cap);
       idxInsertBand(fwdBandIdx,p,it,bandCap);
-      const ks=meetKeysCached(it);
+      // fwd项: pow结构使用完整键, 其他用短键
+      const hasPowAst = !!(it.ast && it.ast.p);
+      const useShortFwd = speedShortFwd && !hasPowAst;
+      const ks=meetKeysCached(it, useShortFwd);
       let used=0;
       for(let i=0;i<ks.length&&used<maxKeys;i++){
         const k2=ks[i];
@@ -3586,7 +3683,11 @@ function collectLeaves(ast, out){
   // 预计算T的多种变换值用于keepScore中的亲和力判断
   const _logT = T>0 ? Math.log(T) : NaN;
   const _T4th = T>0 ? Math.pow(T,0.25) : NaN;  // T^(1/4) 用于pow链深层结构
+  const _T5th = T>0 ? Math.pow(T,0.2) : NaN;   // T^(1/5) 用于深层幂次
   const _invT = Math.abs(T)>1e-12 ? 1/T : NaN;  // 1/T 用于除法组合
+  const _asinT = Math.abs(T)<=1 ? Math.asin(Math.max(-1,Math.min(1,T))) : NaN;  // asin(T)
+  const _acosT = Math.abs(T)<=1 ? Math.acos(Math.max(-1,Math.min(1,T))) : NaN;  // acos(T)
+  const _atanT = Number.isFinite(T) ? Math.atan(T) : NaN;  // atan(T)
   function keepScore(goal,bb,revHit,mask,v){
     let keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
     if(revHit)keep*=(1.0-(mp.meetHitBonus||0));
@@ -3674,12 +3775,14 @@ function collectLeaves(ast, out){
     return vk+"|"+(ck||"");
   };
 
-  function meetKeysCached(node){
-    if(node.mkeys!=null) return node.mkeys;
+  function meetKeysCached(node,skipTransform=false){
+    if(!skipTransform && node.mkeys!=null) return node.mkeys;
+    if(skipTransform && node.mkeysShort!=null) return node.mkeysShort;
     // Recompute depth lazily if stripped
     const dep=(node.depth!=null)?node.depth:astDepth(node.ast);
-    const ks = meetKeys(node.v,node.goal,dep);
-    node.mkeys = ks;
+    const ks = meetKeys(node.v,node.goal,dep,skipTransform);
+    if(!skipTransform) node.mkeys = ks;
+    else node.mkeysShort = ks;
     return ks;
   }
 
@@ -3741,6 +3844,29 @@ function collectLeaves(ast, out){
         const en=Math.exp(n);
         if(Math.abs(v-en)<0.1*en) tTransformBonus=Math.max(tTransformBonus,0.08);
       }
+    }
+    // T^(1/5) 用于 f^5=T 结构
+    if(Number.isFinite(_T5th) && _T5th>1e-9){
+      const d=Math.abs(v-_T5th)/(1e-9+_T5th);
+      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.10*(1-d/0.05));
+    }
+    // 1/T 用于除法组合 f/g=T
+    if(Number.isFinite(_invT) && Math.abs(_invT)<1e8){
+      const d=Math.abs(v-_invT)/(1e-9+Math.abs(_invT)+1);
+      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.12*(1-d/0.05));
+    }
+    // asin(T), acos(T), atan(T) — 若T在[-1,1]时特别有价值
+    if(Number.isFinite(_asinT)){
+      const d=Math.abs(v-_asinT)/(1e-9+Math.abs(_asinT)+0.1);
+      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.18*(1-d/0.05));
+    }
+    if(Number.isFinite(_acosT)){
+      const d=Math.abs(v-_acosT)/(1e-9+Math.abs(_acosT)+0.1);
+      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.18*(1-d/0.05));
+    }
+    if(Number.isFinite(_atanT)){
+      const d=Math.abs(v-_atanT)/(1e-9+Math.abs(_atanT)+0.1);
+      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.14*(1-d/0.05));
     }
 
     return Math.max(0.001, mag - trigOutBonus - trigArgBonus - ratBonus - tTransformBonus);
@@ -3962,7 +4088,7 @@ function collectLeaves(ast, out){
     }
 
     {
-      const deepHintBudget=80;
+      const deepHintBudget=120; // 扩大预算（原80）支持更多复杂结构
       let deepUsed=0;
       const level1Targets=[];
       if(T>0){
@@ -3971,6 +4097,36 @@ function collectLeaves(ast, out){
       }
       level1Targets.push({v:Math.cbrt(T),op:"cube",wA:(a)=>mkU("cube",a)});
       if(T>0) level1Targets.push({v:Math.log(T),op:"exp",wA:(a)=>mkU("exp",a)});
+
+      // ── 新增Level1目标：更多单元变换的逆 ──
+      if(opsUn.includes("inv") && Math.abs(T)>1e-12)
+        level1Targets.push({v:1/T,op:"inv",wA:(a)=>mkU("inv",a)});
+      if(opsUn.includes("neg"))
+        level1Targets.push({v:-T,op:"neg",wA:(a)=>mkU("neg",a)});
+      if(T>0 && opsUn.includes("log"))
+        level1Targets.push({v:Math.exp(T),op:"log",wA:(a)=>mkU("log",a)});
+      if(Math.abs(T)<=1 && opsUn.includes("sin")){
+        const av=Math.asin(Math.max(-1,Math.min(1,T)));
+        level1Targets.push({v:av,op:"sin",wA:(a)=>mkU("sin",a)});
+      }
+      if(Math.abs(T)<=1 && opsUn.includes("cos")){
+        const av=Math.acos(Math.max(-1,Math.min(1,T)));
+        level1Targets.push({v:av,op:"cos",wA:(a)=>mkU("cos",a)});
+      }
+      if(opsUn.includes("tan")){
+        const av=Math.atan(T);
+        level1Targets.push({v:av,op:"tan",wA:(a)=>mkU("tan",a)});
+      }
+      // 幂次根: T^(1/4), T^(1/5) 用于找 f^4=T 型结构
+      if(T>0 && opsBin.includes("^")){
+        const r4=Math.pow(T,0.25);
+        const r5=Math.pow(T,0.2);
+        const n4Ast=mkC("4",4,ordLeaf("4")), n5Ast=mkC("5",5,ordLeaf("5"));
+        if(Number.isFinite(r4))
+          level1Targets.push({v:r4,op:"^4",wA:(a)=>mkB("^",a,n4Ast)});
+        if(Number.isFinite(r5))
+          level1Targets.push({v:r5,op:"^5",wA:(a)=>mkB("^",a,n5Ast)});
+      }
 
       for(const l1 of level1Targets){
         if(!Number.isFinite(l1.v)||Math.abs(l1.v)>CAP||deepUsed>=deepHintBudget) continue;
@@ -3983,7 +4139,8 @@ function collectLeaves(ast, out){
             if(opsBin.includes("*")){
               const y=l1.v/cv;
               if(Number.isFinite(y)&&Math.abs(y)<CAP){
-                const totalCost=wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":"exp"))+wBin("*");
+                const l1cost=["^4","^5"].includes(l1.op)?wBin("^")+1:wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":(l1.op==="exp"?"exp":(l1.op==="log"?"log":l1.op))));
+                const totalCost=l1cost+wBin("*");
                 const wA2=(a)=>l1.wA(mkB("*",cAst,a));
                 pushRevHint(y,totalCost,wA2,"deep2_mul_"+l1.op);
                 deepUsed++;
@@ -4026,7 +4183,8 @@ function collectLeaves(ast, out){
             if(opsBin.includes("+")){
               const y=l1.v-cv;
               if(Number.isFinite(y)&&Math.abs(y)<CAP){
-                const totalCost=wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":"exp"))+wBin("+");
+                const l1costA=["^4","^5"].includes(l1.op)?wBin("^")+1:wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":(l1.op==="exp"?"exp":l1.op)));
+                const totalCost=l1costA+wBin("+");
                 const wA2=(a)=>l1.wA(mkB("+",cAst,a));
                 pushRevHint(y,totalCost,wA2,"deep2_add_"+l1.op);
                 deepUsed++;
@@ -4035,7 +4193,8 @@ function collectLeaves(ast, out){
             if(opsBin.includes("-")){
               const y=cv-l1.v;
               if(Number.isFinite(y)&&Math.abs(y)<CAP){
-                const totalCost=wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":"exp"))+wBin("-");
+                const l1costS=["^4","^5"].includes(l1.op)?wBin("^")+1:wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":(l1.op==="exp"?"exp":l1.op)));
+                const totalCost=l1costS+wBin("-");
                 const wA2=(a)=>l1.wA(mkB("-",cAst,a));
                 pushRevHint(y,totalCost,wA2,"deep2_sub_"+l1.op);
                 deepUsed++;
@@ -4044,7 +4203,8 @@ function collectLeaves(ast, out){
             if(opsBin.includes("^")&&Math.abs(cv)>0.1&&Math.abs(cv)<20){
               const base=Math.pow(l1.v, 1/cv);
               if(Number.isFinite(base)&&Math.abs(base)<CAP&&base>0){
-                const totalCost=wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":"exp"))+wBin("^");
+                const l1costP=["^4","^5"].includes(l1.op)?wBin("^")+1:wUn(l1.op==="square"?"square":(l1.op==="cube"?"cube":(l1.op==="exp"?"exp":l1.op)));
+                const totalCost=l1costP+wBin("^");
                 const wA2=(a)=>l1.wA(mkB("^",a,cAst));
                 pushRevHint(base,totalCost,wA2,"deep2_pow_"+l1.op);
                 deepUsed++;
@@ -4272,6 +4432,15 @@ function collectLeaves(ast, out){
   function tryMeetReverseWithFwdIdx(r){
     if(!bidir)return;
     const limKey=Math.max(8,mp.meetKeyProbeCap|0||120);
+    // Speed模式: 对非pow/func的rev项只用短键(主键+邻域), 减少buildRev的meet开销
+    // pow/func相关的rev项仍用完整键确保质量
+    const isPowOrFunc = (r.srcOp==="^"||r.srcOp==="square"||r.srcOp==="cube"||
+                          r.srcOp==="exp"||r.srcOp==="log"||r.srcOp==="sqrt"||
+                          r.srcOp==="cbrt");
+    const skipTransform = !!(mp.speedRevMeetPrimaryOnly) && !isPowOrFunc;
+    // Speed模式: 每个rev项最多尝试N对
+    const maxPairsPerItem = mp.speedMeetMaxPairsPerItem ? (mp.speedMeetMaxPairsPerItem|0) : 99999;
+    let totalPairsThisItem = 0;
     const pkey=meetPrimaryKey(r.v);
     const primary=fwdIdx.get(pkey);
     let hit=false;
@@ -4281,40 +4450,47 @@ function collectLeaves(ast, out){
       meetDbg.keyHits++;
       const lim2=Math.min(primary.length,limKey);
       for(let i=0;i<lim2;i++){
+        if(totalPairsThisItem>=maxPairsPerItem) return;
         const cand=primary[i];
         if(seenNode.has(cand)) continue;
         seenNode.add(cand);
         meetDbg.rev2fwdPairs++;
         meetDbg.pairsTried++;
+        totalPairsThisItem++;
         tryMeetPair(cand,r);
         if(stopFlag) return;
       }
     }
     if(hit && !mp.meetStage2) return;
 
-    const keys = meetKeysCached(r);
+    const keys = meetKeysCached(r, skipTransform);
     meetLookups+=keys.length;
     const seen=new Set([pkey]);
     for(const k2 of keys){
+      if(totalPairsThisItem>=maxPairsPerItem) return;
       if(seen.has(k2))continue;seen.add(k2);
       const fl=fwdIdx.get(k2);
       if(!fl)continue;
       meetDbg.keyHits++;
       const lim2=Math.min(fl.length,limKey);
       for(let i=0;i<lim2;i++){
+        if(totalPairsThisItem>=maxPairsPerItem) return;
         const cand=fl[i];
         if(seenNode.has(cand)) continue;
         seenNode.add(cand);
         meetDbg.rev2fwdPairs++;
         meetDbg.pairsTried++;
+        totalPairsThisItem++;
         tryMeetPair(cand,r);
         if(stopFlag) return;
       }
     }
-    if(!stopFlag && !hit){
+    if(!stopFlag && !hit && totalPairsThisItem<maxPairsPerItem){
       const bandHits=tryBandProbe(r,fwdBandIdx,limKey,seenNode,(cand)=>{
+        if(totalPairsThisItem>=maxPairsPerItem) return;
         meetDbg.rev2fwdPairs++;
         meetDbg.pairsTried++;
+        totalPairsThisItem++;
         tryMeetPair(cand,r);
       });
       if(bandHits>0) strategyStats.extraDecomp++;
@@ -4351,10 +4527,12 @@ function collectLeaves(ast, out){
 
   function tryMeetFwdWithRevIdx(f){
     if(!bidir)return;
-    // 早期成本预检: 如果f.cost已经接近maxC, rev[0]才能配上, 大多数情况剪枝
-    // 深层联系: fwd层cost + rev层min_cost(=0仅seed) 必须 ≤ maxC
-    // 但rev层最小cost取决于rev[0]是否有对应值。这里不能直接剪枝，保持原逻辑
     const lim2Cap=Math.max(8,mp.meetKeyProbeCap|0||120);
+    // Speed模式: 每个fwd项最多尝试N对，防止单项消耗过多时间(原来无限制)
+    const maxPairsPerItem = mp.speedMeetMaxPairsPerItem ? (mp.speedMeetMaxPairsPerItem|0) : 99999;
+    // Speed模式: 使用短键列表(主键+邻域, 跳过变换域键L/S/Q/C等)
+    const skipTransform = !!(mp.speedRevMeetPrimaryOnly);
+    let totalPairsThisItem = 0;
     const pkey=meetPrimaryKey(f.v);
     const primary=revIdx.get(pkey);
     let hit=false;
@@ -4364,37 +4542,44 @@ function collectLeaves(ast, out){
       meetDbg.keyHits++;
       const lim2=Math.min(primary.length,lim2Cap);
       for(let i=0;i<lim2;i++){
+        if(totalPairsThisItem>=maxPairsPerItem) return;
         const cand=primary[i];
         if(seenNode.has(cand)) continue;
         seenNode.add(cand);
         meetDbg.pairsTried++;
+        totalPairsThisItem++;
         tryMeetPair(f,cand);
         if(stopFlag) return;
       }
     }
     if(hit && !mp.meetStage2) return;
 
-    const keys = meetKeysCached(f);
+    const keys = meetKeysCached(f, skipTransform);
     meetLookups+=keys.length;
     const seen=new Set([pkey]);
     for(const k2 of keys){
+      if(totalPairsThisItem>=maxPairsPerItem) return;
       if(seen.has(k2))continue;seen.add(k2);
       const rl=revIdx.get(k2);
       if(!rl)continue;
       meetDbg.keyHits++;
       const lim2=Math.min(rl.length,lim2Cap);
       for(let i=0;i<lim2;i++){
+        if(totalPairsThisItem>=maxPairsPerItem) return;
         const cand=rl[i];
         if(seenNode.has(cand)) continue;
         seenNode.add(cand);
         meetDbg.pairsTried++;
+        totalPairsThisItem++;
         tryMeetPair(f,cand);
         if(stopFlag) return;
       }
     }
-    if(!stopFlag && !hit){
+    if(!stopFlag && !hit && totalPairsThisItem<maxPairsPerItem){
       const bandHits=tryBandProbe(f,revBandIdx,lim2Cap,seenNode,(cand)=>{
+        if(totalPairsThisItem>=maxPairsPerItem) return;
         meetDbg.pairsTried++;
+        totalPairsThisItem++;
         tryMeetPair(f,cand);
       });
       if(bandHits>0) strategyStats.extraDecomp++;
@@ -4453,6 +4638,32 @@ function collectLeaves(ast, out){
           if(!arr) continue;
           const limLog=Math.min(arr.length,Math.max(6,Math.floor(lim*0.6)));
           for(let i=0;i<limLog;i++) pushCand(arr[i],0.02);
+        }
+      }
+    }
+
+    // 新增：搜索 -targetVal（减法组合）和 1/targetVal（除法组合）
+    if(cand.length < lim * 2){
+      // -target → useful for a-b=target, b = a-target; store b≈-target
+      const negTarget = -targetVal;
+      if(Math.abs(negTarget) < CAP){
+        const negKeys = meetKeys(negTarget, 1, 2);
+        for(const k of negKeys.slice(0,3)){
+          const arr = fwdIdx.get(k);
+          if(!arr) continue;
+          const lim2 = Math.min(arr.length, Math.max(4,Math.floor(lim*0.4)));
+          for(let i=0;i<lim2;i++) pushCand(arr[i], 0.04);
+        }
+      }
+      // 1/target → useful for a/b=target, b = a/target; store b≈1/target
+      if(Math.abs(targetVal)>1e-10 && Math.abs(1/targetVal)<1e10){
+        const invTarget = 1/targetVal;
+        const invKeys = meetKeys(invTarget, 1, 2);
+        for(const k of invKeys.slice(0,3)){
+          const arr = fwdIdx.get(k);
+          if(!arr) continue;
+          const lim3 = Math.min(arr.length, Math.max(4,Math.floor(lim*0.4)));
+          for(let i=0;i<lim3;i++) pushCand(arr[i], 0.04);
         }
       }
     }
@@ -4845,6 +5056,587 @@ function collectLeaves(ast, out){
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // 【顿悟】errorCorrectionSearch - 误差修正顿悟搜索
+  // 核心思想：若 expr ≈ T，误差 δ = T − expr_val，则寻找 expr2 ≈ δ
+  // 使得 expr + expr2 精确等于 T。这是最强的精度提升策略。
+  // 同时处理乘法修正：若 expr * k ≈ T，寻找 k ≈ T/expr_val。
+  // ═══════════════════════════════════════════════════════════════════════
+  function errorCorrectionSearch(c){
+    if(best.length<1) return;
+    const tStart=performance.now();
+    const timeCap=(mode==="speed")?10:(mode==="accuracy"?32:18);
+    const scale=Math.max(1,Math.abs(T));
+    let found=0;
+    const maxFound=(mode==="speed")?24:(mode==="accuracy")?80:48;
+
+    // 收集当前所有fwd层中接近T的项（误差 < 5%T）
+    const nearT=[];
+    for(let fc=1;fc<=Math.min(c,maxC);fc++){
+      const ff=fwd[fc]; if(!ff) continue;
+      for(let i=0;i<Math.min(ff.length,48);i++){
+        const it=ff[i]; if(!it||!it.ast) continue;
+        const err=Math.abs(it.v-T);
+        if(err<scale*0.12 && err>scale*1e-11) nearT.push(it);
+      }
+    }
+    if(!nearT.length) return;
+    nearT.sort((a,b)=>Math.abs(a.v-T)-Math.abs(b.v-T));
+
+    for(const nt of nearT.slice(0,20)){
+      if(found>=maxFound||stopFlag||performance.now()-tStart>timeCap) break;
+      const delta=T-nt.v;            // additive error
+      const ratio=T/nt.v;            // multiplicative error
+
+      // ── 加法修正：寻找 expr2 ≈ delta ──
+      if(Math.abs(delta)>scale*1e-12 && Math.abs(delta)<scale*0.12 && ALLOW_ADD){
+        const candidates=jumpLookupNear(delta, 28);
+        for(const ec of candidates){
+          if(!ec||!ec.ast||found>=maxFound) break;
+          const tc=(nt.cost||0)+(ec.cost||0)+wBin("+");
+          if(tc>maxC) continue;
+          const merged=mergeMaskOrCnt(nt,ec); if(merged==null) continue;
+          const ast2=mkB("+",nt.ast,ec.ast);
+          if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
+          const v2=evalA(ast2);
+          if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
+          const err2=Math.abs(v2-T);
+          if(err2<Math.abs(delta)*0.98){ // 必须比原始更精确
+            found++;
+            const sv=evalAStable(ast2);
+            const fv=Number.isFinite(sv)?sv:v2;
+            if(useBitmask) pushBest({v:fv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
+            else pushBest({v:fv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
+          }
+        }
+      }
+
+      // ── 减法修正：寻找 expr2 ≈ -delta (i.e. expr - expr2 ≈ T) ──
+      if(Math.abs(delta)>scale*1e-12 && HAS_SUB){
+        const negDelta=nt.v-T;
+        if(Math.abs(negDelta)>scale*1e-12){
+          const candidates2=jumpLookupNear(negDelta, 16);
+          for(const ec of candidates2){
+            if(!ec||!ec.ast||found>=maxFound) break;
+            const tc=(nt.cost||0)+(ec.cost||0)+wBin("-");
+            if(tc>maxC) continue;
+            const merged=mergeMaskOrCnt(nt,ec); if(merged==null) continue;
+            const ast2=mkB("-",nt.ast,ec.ast);
+            if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
+            const v2=evalA(ast2);
+            if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
+            if(Math.abs(v2-T)<Math.abs(delta)*0.98){
+              found++;
+              const sv=evalAStable(ast2);
+              const fv=Number.isFinite(sv)?sv:v2;
+              if(useBitmask) pushBest({v:fv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
+              else pushBest({v:fv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
+            }
+          }
+        }
+      }
+
+      // ── 乘法修正：若 ratio ≈ k，寻找 expr2 ≈ k ──
+      if(HAS_MUL && Math.abs(ratio)>0.5 && Math.abs(ratio)<2.0 && Math.abs(ratio-1)>1e-8
+         && Number.isFinite(ratio)){
+        const candidates3=jumpLookupNear(ratio, 20);
+        for(const ec of candidates3){
+          if(!ec||!ec.ast||found>=maxFound) break;
+          const tc=(nt.cost||0)+(ec.cost||0)+wBin("*");
+          if(tc>maxC) continue;
+          const merged=mergeMaskOrCnt(nt,ec); if(merged==null) continue;
+          const ast2=mkB("*",nt.ast,ec.ast);
+          if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
+          const v2=evalA(ast2);
+          if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
+          if(Math.abs(v2-T)<Math.abs(nt.v-T)*0.98){
+            found++;
+            const sv=evalAStable(ast2);
+            const fv=Number.isFinite(sv)?sv:v2;
+            if(useBitmask) pushBest({v:fv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
+            else pushBest({v:fv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
+          }
+        }
+      }
+
+      // ── 单元修正：对接近T的表达式直接尝试所有单元逆变换 ──
+      if(Array.isArray(opsUn)){
+        for(const op of opsUn){
+          if(found>=maxFound||performance.now()-tStart>timeCap) break;
+          // 计算 op(nt.v) 并与T比较，如果接近则候选值更接近T
+          const applied=applyUn(op,nt.v);
+          if(!Number.isFinite(applied)||Math.abs(applied)>CAP) continue;
+          const tc=(nt.cost||0)+wUn(op);
+          if(tc>maxC) continue;
+          if(Math.abs(applied-T)<Math.abs(nt.v-T)*0.9){
+            const ast2=mkU(op,nt.ast);
+            if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
+            const sv=evalAStable(ast2);
+            const fv=Number.isFinite(sv)?sv:applied;
+            found++;
+            if(useBitmask) pushBest({v:fv,ast:ast2,mask:nt.mask||0,cost:tc,searchType:"meet"});
+            else pushBest({v:fv,ast:ast2,cnt:nt.cnt||EMPTY,cost:tc,searchType:"meet"});
+          }
+        }
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 【联结】crossBeamAlgebraicScan - 横向梁代数扫描
+  // 核心：对fwd各层的项目两两组合检测是否接近T
+  // 利用已排序的beam，O(n log n) 实现 a op b ≈ T
+  // ═══════════════════════════════════════════════════════════════════════
+  function crossBeamAlgebraicScan(c){
+    if(c<3) return;
+    const tStart=performance.now();
+    const timeCap=(mode==="speed")?8:(mode==="accuracy"?28:14);
+    const scale=Math.max(1,Math.abs(T));
+    const eps=scale*3e-6;
+    let tried=0;
+    const maxTried=(mode==="speed")?400:(mode==="accuracy")?1200:700;
+
+    // 收集当前层的top候选（按goal排序）
+    const pool=[];
+    const cHalf=Math.min(c,maxC);
+    for(let fc=1;fc<=cHalf;fc++){
+      const ff=fwd[fc]; if(!ff||!ff.length) continue;
+      const limF=Math.min(ff.length, mode==="speed"?24:48);
+      for(let i=0;i<limF;i++){
+        const it=ff[i]; if(it&&it.ast) pool.push(it);
+      }
+    }
+    if(pool.length<2) return;
+    pool.sort((a,b)=>(a.goal||0)-(b.goal||0));
+    const N=Math.min(pool.length, mode==="speed"?60:120);
+
+    // ── 二分搜索辅助：在已排序数组中找最接近target的项 ──
+    function bsearch(arr,target,valFn){
+      let lo=0,hi=arr.length-1,best=-1,bestD=Infinity;
+      while(lo<=hi){
+        const mid=(lo+hi)>>1;
+        const v=valFn(arr[mid]);
+        const d=Math.abs(v-target);
+        if(d<bestD){bestD=d;best=mid;}
+        if(v<target) lo=mid+1; else hi=mid-1;
+      }
+      return best;
+    }
+
+    // ── 对每个池中的项 a，寻找 b 使 a+b≈T, a*b≈T, a/b≈T ──
+    const sorted_v=pool.slice(0,N).sort((a,b)=>a.v-b.v);
+
+    for(let i=0;i<sorted_v.length;i++){
+      if(tried>=maxTried||stopFlag||performance.now()-tStart>timeCap) break;
+      const a=sorted_v[i];
+      const av=a.v;
+      if(!Number.isFinite(av)) continue;
+
+      // a + b ≈ T → b ≈ T - a
+      if(ALLOW_ADD){
+        const target=T-av;
+        const bi=bsearch(sorted_v,target,(x)=>x.v);
+        const window=Math.min(4,sorted_v.length);
+        for(let di=-window;di<=window;di++){
+          const idx2=bi+di;
+          if(idx2<0||idx2>=sorted_v.length||idx2===i) continue;
+          const b=sorted_v[idx2];
+          if(!b.ast) continue;
+          const tc=(a.cost||0)+(b.cost||0)+wBin("+");
+          if(tc>maxC) continue;
+          const v2=av+b.v;
+          if(Math.abs(v2-T)>eps) continue;
+          tried++;
+          const merged=mergeMaskOrCnt(a,b); if(merged==null) continue;
+          const ast2=mkB("+",a.ast,b.ast);
+          if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
+          const sv=evalAStable(ast2);
+          if(!Number.isFinite(sv)) continue;
+          if(useBitmask) pushBest({v:sv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
+          else pushBest({v:sv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
+          if(stopFlag) return;
+        }
+      }
+
+      // a * b ≈ T → b ≈ T/a
+      if(HAS_MUL && Math.abs(av)>1e-10){
+        const target=T/av;
+        if(Number.isFinite(target)&&Math.abs(target)<1e10){
+          const bi=bsearch(sorted_v,target,(x)=>x.v);
+          for(let di=-3;di<=3;di++){
+            const idx2=bi+di;
+            if(idx2<0||idx2>=sorted_v.length||idx2===i) continue;
+            const b=sorted_v[idx2];
+            if(!b.ast) continue;
+            const tc=(a.cost||0)+(b.cost||0)+wBin("*");
+            if(tc>maxC) continue;
+            const v2=av*b.v;
+            if(Math.abs(v2-T)>eps) continue;
+            tried++;
+            const merged=mergeMaskOrCnt(a,b); if(merged==null) continue;
+            const ast2=mkB("*",a.ast,b.ast);
+            if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
+            const sv=evalAStable(ast2);
+            if(!Number.isFinite(sv)) continue;
+            if(useBitmask) pushBest({v:sv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
+            else pushBest({v:sv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
+            if(stopFlag) return;
+          }
+        }
+      }
+
+      // a ^ b ≈ T (只当T>0且a>0)
+      if(Array.isArray(opsBin)&&opsBin.includes("^")&&T>0&&av>0&&Math.abs(av-1)>1e-10){
+        const target=Math.log(T)/Math.log(av);
+        if(Number.isFinite(target)&&Math.abs(target)<50){
+          const bi=bsearch(sorted_v,target,(x)=>x.v);
+          for(let di=-3;di<=3;di++){
+            const idx2=bi+di;
+            if(idx2<0||idx2>=sorted_v.length||idx2===i) continue;
+            const b=sorted_v[idx2];
+            if(!b.ast) continue;
+            const tc=(a.cost||0)+(b.cost||0)+wBin("^");
+            if(tc>maxC) continue;
+            const v2=safePowStable(av,b.v);
+            if(!Number.isFinite(v2)||Math.abs(v2-T)>eps*100) continue;
+            tried++;
+            const merged=mergeMaskOrCnt(a,b); if(merged==null) continue;
+            const ast2=mkB("^",a.ast,b.ast);
+            if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
+            const sv=evalAStable(ast2);
+            if(!Number.isFinite(sv)) continue;
+            if(useBitmask) pushBest({v:sv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
+            else pushBest({v:sv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
+            if(stopFlag) return;
+          }
+        }
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 【启发】heuristicConstantRelationSearch - 常数关联启发搜索
+  // 利用已知数学常数之间的代数关系：若某fwd值 v 与 T 的比接近常数的某次幂，
+  // 则直接构造表达式。类似 PSLQ 算法的整系数关系检测。
+  // ═══════════════════════════════════════════════════════════════════════
+  function heuristicConstantRelationSearch(c){
+    if(c<4||!Number.isFinite(T)||Math.abs(T)<1e-15) return;
+    const tStart=performance.now();
+    const timeCap=(mode==="speed")?6:(mode==="accuracy"?20:10);
+    const scale=Math.max(1,Math.abs(T));
+    let found=0;
+    const maxFound=(mode==="speed")?30:80;
+
+    // 所有已启用的常数
+    const allConsts=consts.filter(c=>Number.isFinite(Number(c.v)));
+    // 所有整数幂：-6..6（避免极端值）
+    const smallInts=[-5,-4,-3,-2,-1,0,1,2,3,4,5];
+    const rationalFracs=[[1,2],[1,3],[2,3],[1,4],[3,4],[1,5],[2,5],[1,6],[1,7],[1,8]];
+
+    // 检验：v 是否接近 T 乘以某个已知表达式
+    function tryProdCombo(v,ast,cost,mask_or_cnt){
+      if(!Number.isFinite(v)||Math.abs(v)>CAP||cost>maxC) return;
+      const err=Math.abs(v-T);
+      if(err<scale*3e-6){
+        found++;
+        const sv=evalAStable(ast);
+        const fv=Number.isFinite(sv)?sv:v;
+        if(useBitmask) pushBest({v:fv,ast,mask:mask_or_cnt||0,cost,searchType:"meet"});
+        else pushBest({v:fv,ast,cnt:mask_or_cnt||EMPTY,cost,searchType:"meet"});
+      }
+    }
+
+    // 收集fwd中高质量候选
+    const pool2=[];
+    for(let fc=1;fc<=Math.min(c,maxC);fc++){
+      const ff=fwd[fc]; if(!ff) continue;
+      for(let i=0;i<Math.min(ff.length,32);i++){
+        const it=ff[i]; if(it&&it.ast&&Math.abs(it.v)>1e-15) pool2.push(it);
+      }
+    }
+
+    for(const it of pool2){
+      if(found>=maxFound||stopFlag||performance.now()-tStart>timeCap) break;
+      const v=it.v;
+
+      // ── 整数幂修正：T = v * c^n ──
+      for(const cc of allConsts){
+        const cv=Number(cc.v);
+        if(!Number.isFinite(cv)||Math.abs(cv)<1e-12||Math.abs(cv-1)<1e-12) continue;
+        const cAst=getConstNodeByValue(cv);
+        const baseCost=1; // leaf cost
+        for(const n of smallInts){
+          if(n===0) continue;
+          const cn=Math.pow(cv,Math.abs(n));
+          if(!Number.isFinite(cn)||cn>1e10) continue;
+          const target=(n>0)?(v*cn):(v/cn);
+          if(!Number.isFinite(target)||Math.abs(target-T)>scale*3e-6) continue;
+          const nAst=mkC(String(Math.abs(n)),Math.abs(n),ordLeaf(String(Math.abs(n))));
+          const powAst=(n>0)?mkB("^",cAst,nAst):mkB("^",cAst,mkU("neg",nAst));
+          const tc=(it.cost||0)+wBin("*")+wBin("^")+baseCost+1;
+          if(tc>maxC) continue;
+          const finalAst=mkB("*",it.ast,powAst);
+          if(LEAF_ORDER&&finalAst.ord&&!finalAst.ord.ok) continue;
+          tryProdCombo(target,finalAst,tc,useBitmask?(it.mask||0):(it.cnt||EMPTY));
+        }
+      }
+
+      // ── 有理数倍数：T = v * (p/q) ──
+      if(HAS_DIV && found<maxFound){
+        for(const [p,q] of rationalFracs){
+          const target_pq=v*p/q;
+          if(!Number.isFinite(target_pq)||Math.abs(target_pq-T)>scale*3e-6) continue;
+          const pAst=mkC(String(p),p,ordLeaf(String(p)));
+          const qAst=mkC(String(q),q,ordLeaf(String(q)));
+          const fracAst=mkB("/",pAst,qAst);
+          const tc=(it.cost||0)+wBin("*")+wBin("/")+2;
+          if(tc>maxC) continue;
+          const finalAst=mkB("*",it.ast,fracAst);
+          if(LEAF_ORDER&&finalAst.ord&&!finalAst.ord.ok) continue;
+          tryProdCombo(target_pq,finalAst,tc,useBitmask?(it.mask||0):(it.cnt||EMPTY));
+        }
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 【跳跃】advancedDeepNestingProbe - 强化深层嵌套探针（L3+L4）
+  // 在原 deepNestingProbe 的基础上增加L3（三重逆变换）和二元跳跃
+  // ═══════════════════════════════════════════════════════════════════════
+  function advancedDeepNestingProbe(c){
+    if(!bidir||fwdIdx.size<10||c<7) return;
+    const tStart=performance.now();
+    const timeCap=(mode==="speed")?10:(mode==="accuracy")?40:20;
+    let pairsTried=0;
+    const maxPairs=(mode==="speed")?180:(mode==="accuracy")?800:400;
+    const absT=Math.abs(T);
+    if(!Number.isFinite(absT)||absT<1e-12) return;
+
+    const knownConsts=[
+      {s:"π",v:Math.PI},{s:"e",v:Math.E},{s:"2",v:2},{s:"3",v:3},
+      {s:"√2",v:Math.SQRT2},{s:"1",v:1},{s:"4",v:4},{s:"5",v:5},{s:"1/2",v:0.5},
+      {s:"6",v:6},{s:"7",v:7},{s:"8",v:8},{s:"φ",v:(1+Math.sqrt(5))/2},
+    ].filter(cc=>consts.some(uc=>Math.abs(Number(uc.v)-cc.v)<1e-14));
+
+    const unOps=Array.isArray(opsUn)?opsUn:[];
+    const binOps=Array.isArray(opsBin)?opsBin:[];
+    const unInvOps2=["sqrt","cbrt","square","cube","exp","log","neg","inv",
+                     "sin","cos","tan","asin","acos","atan","sinh","cosh","tanh"];
+
+    // ── 构建L0（与原deepNestingProbe相同）──
+    const L0=[];
+    if(absT>0&&unOps.includes("square")){
+      L0.push({v:Math.sqrt(absT),c:wUn("square"),w:(a)=>mkU("square",a)});
+      L0.push({v:-Math.sqrt(absT),c:wUn("square"),w:(a)=>mkU("square",mkU("neg",a))});
+    }
+    if(unOps.includes("cube")) L0.push({v:Math.cbrt(T),c:wUn("cube"),w:(a)=>mkU("cube",a)});
+    if(T>0&&unOps.includes("exp")) L0.push({v:Math.log(T),c:wUn("exp"),w:(a)=>mkU("exp",a)});
+    if(binOps.includes("^")){
+      for(const n of [2,3,4,5,6]){
+        const r=Math.pow(absT,1/n);
+        if(Number.isFinite(r)&&r<1e8){
+          const nAst=mkC(String(n),n,ordLeaf(String(n)));
+          L0.push({v:r,c:wBin("^"),w:(a)=>mkB("^",a,nAst)});
+          if(n%2===0) L0.push({v:-r,c:wBin("^"),w:(a)=>mkB("^",mkU("neg",a),nAst)});
+        }
+      }
+    }
+    // 补充: inv(T), neg(T)
+    if(Math.abs(T)>1e-12&&unOps.includes("inv"))
+      L0.push({v:1/T,c:wUn("inv"),w:(a)=>mkU("inv",a)});
+    if(unOps.includes("neg"))
+      L0.push({v:-T,c:wUn("neg"),w:(a)=>mkU("neg",a)});
+    // asin/acos/asin branches
+    if(Math.abs(T)<=1&&unOps.includes("sin"))
+      L0.push({v:Math.asin(Math.max(-1,Math.min(1,T))),c:wUn("sin"),w:(a)=>mkU("sin",a)});
+    if(Math.abs(T)<=1&&unOps.includes("cos"))
+      L0.push({v:Math.acos(Math.max(-1,Math.min(1,T))),c:wUn("cos"),w:(a)=>mkU("cos",a)});
+
+    // ── 构建L1: 对L0施加一层常数二元运算 ──
+    const L1=[];
+    for(const t0 of L0){
+      if(!Number.isFinite(t0.v)||Math.abs(t0.v)>1e8) continue;
+      for(const cc of knownConsts){
+        const cv=cc.v, cAst=getConstNodeByValue(cv);
+        if(HAS_MUL&&Math.abs(cv)>1e-14){
+          const x=t0.v/cv;
+          if(Number.isFinite(x)&&Math.abs(x)<1e8) L1.push({v:x,c:t0.c+wBin("*"),w:(a)=>t0.w(mkB("*",cAst,a))});
+        }
+        if(ALLOW_ADD||HAS_SUB){
+          const x=t0.v-cv;
+          if(Number.isFinite(x)&&Math.abs(x)<1e8) L1.push({v:x,c:t0.c+wBin("+"),w:(a)=>t0.w(mkB("+",cAst,a))});
+        }
+        if(HAS_SUB){
+          const x=cv-t0.v;
+          if(Number.isFinite(x)&&Math.abs(x)<1e8) L1.push({v:x,c:t0.c+wBin("-"),w:(a)=>t0.w(mkB("-",cAst,a))});
+        }
+        if(HAS_DIV&&Math.abs(cv)>1e-14){
+          const x=t0.v*cv;
+          if(Number.isFinite(x)&&Math.abs(x)<1e8) L1.push({v:x,c:t0.c+wBin("/"),w:(a)=>t0.w(mkB("/",a,cAst))});
+          const x2=cv/Math.max(1e-14,Math.abs(t0.v))*(t0.v>0?1:-1);
+          if(Number.isFinite(x2)&&Math.abs(x2)<1e8) L1.push({v:x2,c:t0.c+wBin("/"),w:(a)=>t0.w(mkB("/",cAst,a))});
+        }
+      }
+    }
+
+    // ── 构建L2: 对L1施加单元逆变换 ──
+    const L2=[];
+    for(const t1 of L1){
+      if(!Number.isFinite(t1.v)||Math.abs(t1.v)>1e8||t1.c>maxC-2) continue;
+      for(const op of unInvOps2){
+        if(!unOps.includes(op)) continue;
+        const invs=invUn(op,t1.v); if(!Array.isArray(invs)) continue;
+        for(const inv of invs){
+          if(!Number.isFinite(inv.v)||Math.abs(inv.v)>1e8) continue;
+          const tc=t1.c+wUn(op); if(tc>maxC) continue;
+          L2.push({v:inv.v,c:tc,w:(a)=>t1.w(mkU(op,a))});
+        }
+      }
+    }
+
+    // ── 构建L3（新增）: 对L2再施加一层常数二元运算 ──
+    const L3=[];
+    for(const t2 of L2.slice(0, Math.min(L2.length, 120))){
+      if(!Number.isFinite(t2.v)||Math.abs(t2.v)>1e8||t2.c>maxC-3) continue;
+      for(const cc of knownConsts.slice(0,6)){ // 只用高频常数减少爆炸
+        const cv=cc.v, cAst=getConstNodeByValue(cv);
+        if(HAS_MUL&&Math.abs(cv)>1e-14&&Math.abs(cv-1)>1e-10){
+          const x=t2.v/cv;
+          if(Number.isFinite(x)&&Math.abs(x)<1e8&&t2.c+wBin("*")<=maxC)
+            L3.push({v:x,c:t2.c+wBin("*"),w:(a)=>t2.w(mkB("*",cAst,a))});
+        }
+        if((ALLOW_ADD||HAS_SUB)&&Math.abs(cv)<50){
+          const x=t2.v-cv;
+          if(Number.isFinite(x)&&Math.abs(x)<1e8&&t2.c+wBin("+")<=maxC)
+            L3.push({v:x,c:t2.c+wBin("+"),w:(a)=>t2.w(mkB("+",cAst,a))});
+        }
+      }
+    }
+
+    // ── 去重并排序 ──
+    const allTargets=[...L0,...L1,...L2,...L3];
+    const seen2=new Map(), ded2=[];
+    for(const t of allTargets){
+      if(!Number.isFinite(t.v)) continue;
+      const qk=Math.round(t.v*1e5);
+      if(seen2.has(qk)){const old=seen2.get(qk);if(t.c<old.c){seen2.set(qk,t);ded2[ded2.indexOf(old)]=t;}}
+      else{seen2.set(qk,t);ded2.push(t);}
+    }
+    ded2.sort((a,b)=>a.c-b.c);
+
+    // ── 查找fwd中的匹配 ──
+    for(const tgt of ded2){
+      if(pairsTried>=maxPairs||stopFlag||performance.now()-tStart>timeCap) break;
+      const candidates=jumpLookupNear(tgt.v,Math.max(12,26-(tgt.c||1)));
+      for(const cand of candidates){
+        if(pairsTried>=maxPairs) break;
+        if(!cand||!cand.ast) continue;
+        const innerCost=cand.cost||astCost(cand.ast);
+        const totalCost=innerCost+tgt.c;
+        if(totalCost>maxC) continue;
+        const combined=tgt.w(cand.ast);
+        if(!combined) continue;
+        if(LEAF_ORDER&&combined.ord&&!combined.ord.ok) continue;
+        const v=evalA(combined);
+        if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+        pairsTried++;
+        const err=Math.abs(v-T);
+        if(err>Math.max(1,Math.abs(T))*0.02) continue;
+        const stableV=evalAStable(combined);
+        if(!Number.isFinite(stableV)) continue;
+        const stableErr=Math.abs(stableV-T);
+        const threshold=Math.max(bestDeltaSoFar*12,1e-5*Math.max(1,Math.abs(T)));
+        if(stableErr>threshold) continue;
+        if(useBitmask) pushBest({v:stableV,ast:combined,mask:cand.mask||0,cost:totalCost,searchType:"meet"});
+        else pushBest({v:stableV,ast:combined,cnt:cand.cnt||EMPTY,cost:totalCost,searchType:"meet"});
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 【精度】precisionRefinement - 精度淬火
+  // 对找到的近似解，通过添加极小修正项提升到更高精度
+  // 使用"误差放大"技术：将误差乘以整数因子后在fwd中寻找匹配
+  // ═══════════════════════════════════════════════════════════════════════
+  function precisionRefinement(c){
+    if(best.length<1||c<6) return;
+    const tStart=performance.now();
+    const timeCap=(mode==="speed")?6:(mode==="accuracy"?24:12);
+    const scale=Math.max(1,Math.abs(T));
+    let refined=0;
+    const maxRefined=(mode==="speed")?20:(mode==="accuracy"?60:36);
+
+    // 取最佳解中误差最小的几个
+    const topBest=best.slice(0,Math.min(best.length,8));
+    for(const bst of topBest){
+      if(refined>=maxRefined||stopFlag||performance.now()-tStart>timeCap) break;
+      const bv=bst.v;
+      const delta=T-bv;
+      if(!Number.isFinite(delta)||Math.abs(delta)<scale*1e-13||Math.abs(delta)>scale*1e-3) continue;
+
+      // 在fwd所有层中找 expr ≈ delta，然后将解组合提高精度
+      // 也试 n*delta 的倍数（1..8），然后用 /n 修正
+      for(const n of [1,2,3,4,5,6,7,8,9,10]){
+        if(stopFlag||performance.now()-tStart>timeCap) break;
+        const target=delta*n;
+        if(!Number.isFinite(target)||Math.abs(target)>scale) continue;
+        const candidates=jumpLookupNear(target,24);
+        for(const ec of candidates){
+          if(!ec||!ec.ast||refined>=maxRefined) break;
+          // 如果找到 ec ≈ n*delta，则 (bst_ast + ec/n) ≈ T
+          // 为简化：只处理 n=1 时直接加，n>1 时需要 ec/n
+          if(n===1){
+            // 无法访问bst的ast（只有v,delta），但可以从fwd找最接近bv的项
+            const bstFwdCands=jumpLookupNear(bv,12);
+            for(const fc of bstFwdCands){
+              if(!fc||!fc.ast||refined>=maxRefined) break;
+              if(!ALLOW_ADD) break;
+              const tc=(fc.cost||0)+(ec.cost||0)+wBin("+");
+              if(tc>maxC) continue;
+              const merged=mergeMaskOrCnt(fc,ec); if(merged==null) continue;
+              const ast2=mkB("+",fc.ast,ec.ast);
+              if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
+              const v2=evalA(ast2);
+              if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
+              if(Math.abs(v2-T)<Math.abs(delta)*0.9){
+                refined++;
+                const sv=evalAStable(ast2);
+                const fv=Number.isFinite(sv)?sv:v2;
+                if(useBitmask) pushBest({v:fv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
+                else pushBest({v:fv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
+              }
+            }
+          } else if(HAS_DIV){
+            // ec ≈ n*delta → ec/n ≈ delta
+            const nAst=mkC(String(n),n,ordLeaf(String(n)));
+            const ecDivN=mkB("/",ec.ast,nAst);
+            const ecDivNv=ec.v/n;
+            // 找最接近bv的fwd项
+            const bstFwdCands=jumpLookupNear(bv,8);
+            for(const fc of bstFwdCands){
+              if(!fc||!fc.ast||refined>=maxRefined) break;
+              if(!ALLOW_ADD) break;
+              const tc=(fc.cost||0)+(ec.cost||0)+wBin("+")+wBin("/")+1;
+              if(tc>maxC) continue;
+              const merged=mergeMaskOrCnt(fc,ec); if(merged==null) continue;
+              const ast2=mkB("+",fc.ast,ecDivN);
+              if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
+              const v2=evalA(ast2);
+              if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
+              if(Math.abs(v2-T)<Math.abs(delta)*0.9){
+                refined++;
+                const sv=evalAStable(ast2);
+                const fv=Number.isFinite(sv)?sv:v2;
+                if(useBitmask) pushBest({v:fv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
+                else pushBest({v:fv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   function powerChainProbe(c){
     if(c<5 || !Array.isArray(opsBin) || !opsBin.includes("^") || !Number.isFinite(T) || T<=0) return;
     const tStart=performance.now();
@@ -5141,13 +5933,14 @@ function collectLeaves(ast, out){
       }
     }
 
+    const skipTransformSweep = !!(mp.speedRevMeetPrimaryOnly);
     for(let fc=1;fc<=maxFc;fc++){
       const ff=fwd[fc];
       if(!ff||!ff.length)continue;
       const lim2=Math.min(ff.length,perLayerCap);
       for(let i=0;i<lim2;i++){
         const f=ff[i];
-        const keys = meetKeysCached(f);
+        const keys = meetKeysCached(f, skipTransformSweep);
         meetLookups+=keys.length;
         let seen=null;
         if(keys.length>1)seen=new Set();
@@ -5654,8 +6447,22 @@ function collectLeaves(ast, out){
     if(c%2===0 || stagnationLayers>=2) deepNestingProbe(c);
     if(c%3===0 || strategyStats.pressureScore>=2) powerChainProbe(c);
     if((c%4===0 || stagnationLayers>=3) && c>=8) resonanceRefine(c);
+
+    // ═══ 新增顿悟/启发/联结/跳跃探针 ═══
+    // 【顿悟】误差修正搜索: c>=5时每层运行（找到接近T的表达式后用加法/乘法精化）
+    if(c>=5 && !stopFlag) errorCorrectionSearch(c);
+    // 【联结】横向梁代数扫描: c>=4时每2层, 或停滞时每层
+    if(c>=4 && !stopFlag && (c%2===0 || stagnationLayers>=2)) crossBeamAlgebraicScan(c);
+    // 【启发】常数关联启发: c>=5时每3层, 精度模式每2层
+    if(c>=5 && !stopFlag && (c%3===0 || (mode==="accuracy"&&c%2===0))) heuristicConstantRelationSearch(c);
+    // 【跳跃】强化深层嵌套（L3+L4）: c>=7时每2层
+    if(c>=7 && !stopFlag && (c%2===1 || stagnationLayers>=3)) advancedDeepNestingProbe(c);
+    // 【精度】精度淬火: c>=8时每4层, 有好解后触发
+    if(c>=8 && !stopFlag && best.length>=2 && (c%4===0 || stagnationLayers>=3)) precisionRefinement(c);
     phaseTiming.decompose+=performance.now()-_t0Dec;
-    if(stagnationLayers>=2 || strategyStats.pressureScore>=2){
+    // Speed模式: 提高extraDecomp触发阈值(原stagnation>=2), 减少不必要的重复分解
+    const extraDecompThresh = (mode==="speed") ? 3 : 2;
+    if(stagnationLayers>=extraDecompThresh || strategyStats.pressureScore>=2){
       const prev=fwd[Math.max(1,c-1)]||[];
       if(prev.length){
         tryTargetDecomposition(prev.slice(0,Math.min(prev.length,Math.max(16,Math.floor(beamF*0.08)))), T, Math.max(1,c-1));
@@ -5664,6 +6471,46 @@ function collectLeaves(ast, out){
     }
 
     const _t0MeetFwd=performance.now();
+
+    // ▼▼▼ 智能直连发现 (Smart Direct-Connect Discovery)
+    // 与其让每个fwd项探针revIdx（O(fwdItems × keysPerItem × probeLen)），
+    // 不如反向：对rev[1..c-1]中的高质量项，直接计算它需要什么fwd值，用主键一次命中。
+    // 这是O(revItems × 1) vs 原来的O(fwdItems × 15 × probeLen)。
+    // Speed模式: 只在c>=4时启用(rev层已有足够候选), 时间预算严格
+    if(bidir && mode==="speed" && c>=4 && !stopFlag){
+      const directTimeCap = 8; // ms预算
+      const directStart = performance.now();
+      const directMaxRev = Math.min(80, beamR);
+      for(let rc=0; rc<=Math.min(c-1, maxC); rc++){
+        if(performance.now()-directStart > directTimeCap) break;
+        const rr2 = rev[rc]; if(!rr2||!rr2.length) continue;
+        const needed = c-rc; // fwd层cost必须为needed
+        const ff2 = fwd[needed]; if(!ff2||!ff2.length) continue;
+        const rLim = Math.min(rr2.length, directMaxRev);
+        for(let ri=0;ri<rLim;ri++){
+          if(performance.now()-directStart > directTimeCap) break;
+          const r2 = rr2[ri];
+          // 对每个rev项，直接查fwd中是否有值接近r2.v的候选
+          const pkey2 = r2.mkey || (r2.mkey = meetPrimaryKey(r2.v));
+          const fl2 = fwdIdx.get(pkey2);
+          if(!fl2) continue;
+          const lim3 = Math.min(fl2.length, 12);
+          for(let fi=0;fi<lim3;fi++){
+            const f2 = fl2[fi];
+            // 必须cost匹配
+            if(!f2 || (f2.cost||0)!==needed) continue;
+            meetDbg.pairsTried++;
+            meetDbg.rev2fwdPairs++;
+            tryMeetPair(f2, r2);
+            if(stopFlag) break;
+          }
+          if(stopFlag) break;
+        }
+        if(stopFlag) break;
+      }
+    }
+    // ▲▲▲ 结束智能直连发现
+
     // ▼▼▼ meetFwd 自适应采样：只对「最接近T的top-K」+「已在revIdx中命中的」项目做meet
     // 原来对全部 beamF=6800 项做 tryMeetFwdWithRevIdx，占总时间85%
     // 现在通过采样将 meet 候选削减至约 40%+revHit，大幅降低时间
@@ -5687,8 +6534,15 @@ function collectLeaves(ast, out){
             const mk2 = e.mkey || (e.mkey = meetPrimaryKey(e.v));
             if(revIdx.has(mk2)){
               meetSet.add(e);
-            } else {
+            } else if(!mp.speedMeetScanPrimaryOnly) {
+              // 非speed模式: 检查全部变换域键(代价高但召回率高)
               const ks = meetKeysCached(e);
+              for(let ki=1;ki<ks.length;ki++){
+                if(revIdx.has(ks[ki])){ meetSet.add(e); break; }
+              }
+            } else {
+              // speed模式: 只检查邻域键(2*MEET_R个), 跳过L/S/Q等变换域
+              const ks = meetKeysCached(e, true); // skipTransform=true
               for(let ki=1;ki<ks.length;ki++){
                 if(revIdx.has(ks[ki])){ meetSet.add(e); break; }
               }
@@ -5724,8 +6578,17 @@ function collectLeaves(ast, out){
           }
         }
 
-        for(const e of meetSet){
+        // Speed模式: 整个meetFwd阶段的总对数预算, 防止整层meet时间失控
+        const meetFwdTotalBudget = mp.speedMeetMaxPairsPerItem ?
+          Math.max(2000, (meetSet.size * (mp.speedMeetMaxPairsPerItem|0))) : Infinity;
+        let meetFwdTotalPairs = 0;
+        // 将meetSet按goal排序(goal小的优先probe, 最可能match)
+        const meetSetArr = Array.from(meetSet).sort((a,b)=>(a.goal||0)-(b.goal||0));
+        for(const e of meetSetArr){
+          if(meetFwdTotalPairs >= meetFwdTotalBudget) break;
+          const pairsBefore = meetDbg.pairsTried;
           tryMeetFwdWithRevIdx(e);
+          meetFwdTotalPairs += (meetDbg.pairsTried - pairsBefore);
           if(stopFlag)break;
         }
       }
