@@ -449,7 +449,6 @@
         <label class="check-row"><input id="showCounts" type="checkbox" checked/><span>显示常数计数</span></label>
         <label class="check-row"><input id="pruneEquiv" type="checkbox" checked/><span>恒等式剪枝</span></label>
         <label class="check-row"><input id="excludeExact" type="checkbox"/><span>排除 exact</span></label>
-        <label class="check-row"><input id="dedupeByValue" type="checkbox"/><span>同值仅保留最简</span></label>
         <label class="check-row"><input id="debugMode" type="checkbox"/><span>Debug 统计</span></label>
         <label class="check-row"><input id="latexMode" type="checkbox"/><span>LaTeX 渲染</span></label>
       </div>
@@ -1148,7 +1147,7 @@ function collectUIState(){
     emitInterval:$("emitInterval").value, timeLimit:$("timeLimit").value,
     infiniteTime:$("infiniteTime").checked, bidir:$("bidir").checked,
     showCounts:$("showCounts").checked, pruneEquiv:$("pruneEquiv").checked,
-    excludeExact:$("excludeExact").checked, dedupeByValue:$("dedupeByValue")?.checked||false, debugMode:$("debugMode").checked,
+    excludeExact:$("excludeExact").checked, debugMode:$("debugMode").checked,
     latexMode:$("latexMode").checked, customEnable:$("customEnable").checked,
     customBox:$("customBox").value, mt:$("mt").checked, threads:$("threads").value,
     ops,consts
@@ -1169,7 +1168,6 @@ function applyUIState(st){
   if(st.showCounts!=null)$("showCounts").checked=!!st.showCounts;
   if(st.pruneEquiv!=null)$("pruneEquiv").checked=!!st.pruneEquiv;
   if(st.excludeExact!=null)$("excludeExact").checked=!!st.excludeExact;
-  if(st.dedupeByValue!=null&&$("dedupeByValue"))$("dedupeByValue").checked=!!st.dedupeByValue;
   if(st.debugMode!=null)$("debugMode").checked=!!st.debugMode;
   if(st.latexMode!=null)$("latexMode").checked=!!st.latexMode;
   if(st.customEnable!=null)$("customEnable").checked=!!st.customEnable;
@@ -1204,7 +1202,7 @@ function scheduleSave(){
   },250);
 }
 function hookAutoSave(){
-  const ids=["target","mode","maxC","beam","divRatio","outN","emitInterval","timeLimit","infiniteTime","bidir","showCounts","pruneEquiv","excludeExact","dedupeByValue","debugMode","latexMode","customEnable","customBox","mt","threads"];
+  const ids=["target","mode","maxC","beam","divRatio","outN","emitInterval","timeLimit","infiniteTime","bidir","showCounts","pruneEquiv","excludeExact","debugMode","latexMode","customEnable","customBox","mt","threads"];
   ids.forEach(id=>{
     const el=$(id);
     el.addEventListener("input",scheduleSave);
@@ -1454,17 +1452,6 @@ function pruneBin(op,af,bf,av,bv){
 
   if(op==="*"&&(getTag(af)===TAG_INV||getTag(bf)===TAG_INV) && HAS_DIV)return true;
 
-
-  // commutative normalization for non-const nodes
-  if((op==="+"||op==="*") && !has(af,F_CONST) && !has(bf,F_CONST)){
-    if(Number.isFinite(av)&&Number.isFinite(bv)&&av>bv+1e-15) return true;
-  }
-  // associativity canonicalization (keep right-associated form)
-  if(op==="+"&&getTag(af)===TAG_ADD) return true;
-  if(op==="*"&&getTag(af)===TAG_MUL) return true;
-  // subtraction normalization for const leaves when neg exists
-  if(op==="-"&&HAS_NEG&&has(af,F_CONST)&&has(bf,F_CONST)&&av<bv) return true;
-
   const fn=CUSTOM_PRUNE_BIN.get(op);
   if(fn){ try{ if(fn(af,bf,av,bv)) return true; }catch(e){} }
   if(CONSTRAINT_BIN_FN){ try{ if(CONSTRAINT_BIN_FN({op,af,bf,av,bv})) return true; }catch(e){} }
@@ -1681,79 +1668,47 @@ function modeParams(mode){
   if(mode==="speed") return {
     keyPrec:10, bestPrec:10, keepMode:"goal",
     bbD:18, bbMagA:0.032,
-    qGoal:0.36,qBB:0.06,qMeet:0.10,qDiv:0.03,qPow:0.05,qFunc:0.03,qDepth:0.06,qMag:0.08,qIrr:0.02,
-    qPowBase:0.08, qPowExp:0.06,
-    qReq:0.06,
-    meetStyle:"bin", meetPrec:10, meetQ:12288, meetR:6,
-    revBeamMul:2.0, meetHitBonus:0.22,
-    // 收紧eps: 原candEpsMul=1.55导致68%eps通过但29%confirm拒绝(昂贵AST求值)
-    // 将candEpsMul从1.55→0.85, confirmEpsMul从0.92→0.75
-    candEpsMul:0.85, confirmEpsMul:0.75, binSlackMul:0.10, confirmAbsFloor:1.2e-6,
-    spillMul:0.78, capMul:1.0, keepMeetDup:false,
-    meetSweepMul:0.20, meetSweepPowMul:0.34,
-    beamMul:0.92, subLayerCapMul:1.08,
-    // 减小索引探针量: meetKeyProbeCap 260→120, idxKeysPerItem 12→6(speed模式只用主键+邻域键)
-    revIdxKeyCap:180, fwdIdxKeyCap:180, meetKeyProbeCap:48, meetSweepRevCap:120, idxKeysPerItem:4, idxPerItemCap:24,
-    capUnMul:3.0, capBinMul:2.6, jumpMul:1.45, meetStage2:0, qSeed:0.08,
-    // 明确设置采样率: 0.28 (原来undefined→0.50)
-    meetFwdSampleRatio:0.09,
-    // 每个fwd项最多尝试N对, 防止单项消耗过多时间
-    speedMeetMaxPairsPerItem:22,
-    // meetFwd扫描时只用主键检测revIdx命中(不生成全部transform域键)
-    speedMeetScanPrimaryOnly:true,
-    // buildRev中对非pow项跳过transform域键(只用主键+邻域)
-    speedRevMeetPrimaryOnly:true,
-    // speed模式每层meetFwd总时限(ms)
-    speedMeetLayerTimeCapMs:10,
+    qGoal:0.52,qBB:0.06,qMeet:0.12,qDiv:0.03,qPow:0.06,qFunc:0.03,qDepth:0.07,qMag:0.04,qIrr:0.03,
+    qPowBase:0.10, qPowExp:0.08,
+    qReq:0.08,
+    meetStyle:"bin", meetPrec:10, meetQ:12288, meetR:10,
+    revBeamMul:2.4, meetHitBonus:0.26,
+    candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
+    spillMul:0.55, capMul:0.9, keepMeetDup:false,
+    meetSweepMul:0.16, meetSweepPowMul:0.30,
+    beamMul:0.70, subLayerCapMul:0.86,
+    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:10, idxPerItemCap:40,
+    capUnMul:2.5, capBinMul:2.0, jumpMul:0.85, meetStage2:1, qSeed:0.05
   };
   if(mode==="accuracy") return {
-    keyPrec:14, bestPrec:13, keepMode:"goal",
+    keyPrec:14, bestPrec:12, keepMode:"goal",
     bbD:72, bbMagA:0.018,
-    qGoal:0.15,qBB:0.09,qMeet:0.14,qDiv:0.04,qPow:0.12,qFunc:0.07,qDepth:0.08,qMag:0.09,qIrr:0.04,
-    qPowBase:0.18, qPowExp:0.14, qFrac:0.10,
-    qReq:0.10,
-    meetStyle:"bin", meetPrec:13, meetQ:24576, meetR:12,
-    revBeamMul:2.0, meetHitBonus:0.10,
-    candEpsMul:0.85, confirmEpsMul:1.0, binSlackMul:0.30, confirmAbsFloor:0.0,
-    spillMul:1.1, capMul:1.0, keepMeetDup:false,
-    meetSweepMul:0.09, meetSweepPowMul:0.15,
-    beamMul:1.0, subLayerCapMul:1.1,
-    revIdxKeyCap:200, fwdIdxKeyCap:200, meetKeyProbeCap:280, meetSweepRevCap:140, idxKeysPerItem:10, idxPerItemCap:50,
-    capUnMul:3.0, capBinMul:2.2, jumpMul:1.6, meetStage2:1, qSeed:0.12,
-    meetFwdSampleRatio:0.35  // accuracy模式：严格采样，专注最接近T的候选
+    qGoal:0.26,qBB:0.12,qMeet:0.18,qDiv:0.05,qPow:0.16,qFunc:0.08,qDepth:0.10,qMag:0.06,qIrr:0.04,
+    qPowBase:0.22, qPowExp:0.18, qFrac:0.14,
+    qReq:0.14,
+    meetStyle:"bin", meetPrec:12, meetQ:24576, meetR:18,
+    revBeamMul:2.6, meetHitBonus:0.12,
+    candEpsMul:1.35, confirmEpsMul:1.0, binSlackMul:0.28, confirmAbsFloor:0.0,
+    spillMul:1.6, capMul:1.35, keepMeetDup:false,
+    meetSweepMul:0.28, meetSweepPowMul:0.55,
+    beamMul:1.42, subLayerCapMul:2.00,
+    revIdxKeyCap:420, fwdIdxKeyCap:420, meetKeyProbeCap:560, meetSweepRevCap:700, idxKeysPerItem:24, idxPerItemCap:160,
+    capUnMul:5.6, capBinMul:4.8, jumpMul:3.20, meetStage2:1, qSeed:0.22
   };
-  // === normal模式优化说明 (基于日志分析) ===
-  // 日志: meetFwd=301148ms(76%), buildRev=89200ms(23%), rejConfirm=252133/610172=41%
-  // 核心问题: candEpsMul太松→大量无效pair进入probe/confirm; meetFwdSampleRatio偏高→meet候选太多
-  // revIdx分散: 323565 keys, avgItems=2.66, 说明索引碎片化严重
-  // 优化策略:
-  // 1. candEpsMul: 1.00→0.72 - 从日志看41% confirm拒绝率, 说明候选eps太松; 收紧30%可减少~25%无效pair
-  // 2. meetFwdSampleRatio: 0.45→0.30 - meetFwd占76%时间, 采样比从45%→30%理论节省~33%时间
-  // 3. revIdxKeyCap: 130→180 - 增加每个key存储候选数量以提高召回率(当前avgItems=2.66太少)
-  // 4. idxPerItemCap: 32→48, idxKeysPerItem: 8→10 - 更多transform-domain key → 更广召回
-  // 5. meetKeyProbeCap: 160→200 - 每次查找更多候选
-  // 6. meetQ: 20480→24576 - 更细粒度量化减少漏解(桶边界问题)
-  // 7. confirmEpsMul: 1.05→0.90 - 配合candEpsMul收紧, 减少虚警
-  // 8. capUnMul/capBinMul微调: 收紧一点避免beam膨胀
   return {
-    keyPrec:13, bestPrec:12, keepMode:"goal",
-    bbD:52, bbMagA:0.02,
-    qGoal:0.20,qBB:0.07,qMeet:0.22,qDiv:0.04,qPow:0.12,qFunc:0.06,qDepth:0.07,qMag:0.08,qIrr:0.03,
-    qPowBase:0.16, qPowExp:0.12, qFrac:0.08,
-    qReq:0.10,
-    // meetQ提升: 更细粒度量化，减少桶边界漏解
-    meetStyle:"bin", meetPrec:13, meetQ:24576, meetR:10,
-    revBeamMul:1.4, meetHitBonus:0.22,
-    // 关键修复: 收紧candEps减少无效confirm, confirmEps同步收紧
-    candEpsMul:0.45, confirmEpsMul:0.55, binSlackMul:0.12, confirmAbsFloor:0.0,
-    spillMul:1.0, capMul:1.0, keepMeetDup:false,
-    meetSweepMul:0.12, meetSweepPowMul:0.20,
-    beamMul:0.90, subLayerCapMul:1.0,
-    // 增大索引容量: 提高召回
-    revIdxKeyCap:240, fwdIdxKeyCap:240, meetKeyProbeCap:280, meetSweepRevCap:140, idxKeysPerItem:14, idxPerItemCap:64,
-    capUnMul:2.5, capBinMul:2.0, jumpMul:1.55, meetStage2:1, qSeed:0.10,
-    // 关键: 降低meetFwd采样比例, 释放76%时间占用
-    meetFwdSampleRatio:0.18
+    keyPrec:12, bestPrec:11, keepMode:"goal",
+    bbD:44, bbMagA:0.02,
+    qGoal:0.24,qBB:0.10,qMeet:0.24,qDiv:0.05,qPow:0.14,qFunc:0.08,qDepth:0.10,qMag:0.06,qIrr:0.04,
+    qPowBase:0.20, qPowExp:0.18, qFrac:0.12,
+    qReq:0.12,
+    meetStyle:"bin", meetPrec:11, meetQ:16384, meetR:20,
+    revBeamMul:3.4, meetHitBonus:0.24,
+    candEpsMul:3.2, confirmEpsMul:1.0, binSlackMul:0.16, confirmAbsFloor:0.0,
+    spillMul:1.55, capMul:1.25, keepMeetDup:false,
+    meetSweepMul:0.38, meetSweepPowMul:0.75,
+    beamMul:1.64, subLayerCapMul:2.20,
+    revIdxKeyCap:480, fwdIdxKeyCap:480, meetKeyProbeCap:700, meetSweepRevCap:900, idxKeysPerItem:28, idxPerItemCap:200,
+    capUnMul:6.5, capBinMul:5.7, jumpMul:3.50, meetStage2:1, qSeed:0.24
   };
 }
 
@@ -1832,7 +1787,7 @@ function _bkNeighbor(prefix,val,rr){
     _meetKeyOut.push(prefix+"|"+sign+"|"+e+"|"+(q0+d));
   }
 }
-function meetKeys(v,goalHint=Infinity,depthHint=0,skipTransformDomains=false){
+function meetKeys(v,goalHint=Infinity,depthHint=0){
   if(MEET_STYLE!=="bin") return [meetKeyPrec(v)];
   if(!Number.isFinite(v)) return ["NaN"];
   if(Object.is(v,-0)) v=0;
@@ -1863,22 +1818,6 @@ function meetKeys(v,goalHint=Infinity,depthHint=0,skipTransformDomains=false){
       _meetKeyOut.push(""+sign+"|"+e+"|"+(q0+d));
     }
   }
-
-  // 在speed模式跳过变换域键时，只返回主键+邻域+精度键（共约7个）
-  if(skipTransformDomains){
-    _meetKeyOut.push(meetKeyPrec(v));
-    return _meetKeyOut.slice();
-  }
-
-  // ▼▼▼ 新增：在粗粒度键(±rr)之外，加一个2倍分辨率的细粒度键
-  // 解决 "ε漏解"：两值在同一粗桶边界两侧，粗键不重叠但实际值非常接近
-  {
-    const q0fine = Math.round(x * MEET_Q * 2); // 2倍分辨率
-    _meetKeyOut.push("X|"+sign+"|"+e+"|"+q0fine);
-    _meetKeyOut.push("X|"+sign+"|"+e+"|"+(q0fine-1));
-    _meetKeyOut.push("X|"+sign+"|"+e+"|"+(q0fine+1));
-  }
-  // ▲▲▲ 结束
 
   _meetKeyOut.push(meetKeyPrec(v));
 
@@ -1915,40 +1854,39 @@ function meetKeys(v,goalHint=Infinity,depthHint=0,skipTransformDomains=false){
     }
   }
 
-  // Trig/exp cross-domain keys: only include when the result range is useful.
-  // PERF FIX: these added 6-8 extra keys per value causing massive index bloat.
-  // Only include asin/acos if in [-1,1] range (for trig-output meets)
+  // --- Trig-output range key: for v ∈ [-1,1] add arcsin/arccos keys ---
+  // Helps rev[arcsin(T)] ↔ fwd[arcsin(T)] without depending on perfect primary-key match
   if(av<=1.0+1e-9){
     const as=Math.asin(Math.max(-1,Math.min(1,v)));
+    const ac=Math.acos(Math.max(-1,Math.min(1,v)));
     if(Number.isFinite(as)){const k=_bk("AS",as);if(k)_meetKeyOut.push(k);}
+    if(Number.isFinite(ac)){const k=_bk("AC",ac);if(k)_meetKeyOut.push(k);}
   }
-  // Only include exp key for small values (high probability of being log-inverse meet)
-  if(av<6){
+
+  // --- Arctan key: for any v, add atan(v) key ---
+  // Helps cos(tan(e)) style: fwd builds tan(e), rev from T through cos(?) has arccos(T)
+  // atan range is [-π/2, π/2]; adds cross-domain linkage for tan-based meets
+  if(av<1e8){
+    const at=Math.atan(v);
+    const k=_bk("AT",at);
+    if(k)_meetKeyOut.push(k);
+  }
+
+  // --- Exp/sinh/cosh-domain keys ---
+  // For small |v| (in trig argument range), add sin(v) and cos(v) keys
+  // so that fwd[v] and rev[sin(v)] (from rev applying sin-inverse) can meet
+  if(av<=Math.PI*2+0.5 && av>0){
+    const sv2=Math.sin(v), cv2=Math.cos(v);
+    if(Number.isFinite(sv2)){const k=_bk("SN",sv2);if(k)_meetKeyOut.push(k);}
+    if(Number.isFinite(cv2)){const k=_bk("CS",cv2);if(k)_meetKeyOut.push(k);}
+  }
+
+  // --- Exp key: for v in modest range, add exp(v) ---
+  // Lets fwd[v] share a key with rev[exp(v)] (from rev's log-inverse)
+  if(av<10){
     const ev=Math.exp(v);
-    if(Number.isFinite(ev)&&ev<1e8){
+    if(Number.isFinite(ev)&&ev<1e10){
       const k=_bk("E",ev);
-      if(k)_meetKeyOut.push(k);
-    }
-  }
-
-
-  // 幂域键: v^2, v^3, v^(1/3)
-  if(av>1e-9 && av<1e5){
-    const v2=v*v;
-    if(Number.isFinite(v2)&&Math.abs(v2)<1e12){
-      const k=_bk("P2",v2);
-      if(k)_meetKeyOut.push(k);
-    }
-    if(av<1e3){
-      const v3=v*v*v;
-      if(Number.isFinite(v3)&&Math.abs(v3)<1e12){
-        const k=_bk("P3",v3);
-        if(k)_meetKeyOut.push(k);
-      }
-    }
-    const vc=Math.cbrt(v);
-    if(Number.isFinite(vc)){
-      const k=_bk("P13",vc);
       if(k)_meetKeyOut.push(k);
     }
   }
@@ -2056,16 +1994,6 @@ function isComm(op){
 
 function mkC(sym,val,ord){return{t:0,sym,val,p:0,f:0,d:0,ord:ord||{has:0,ok:1,mn:0,mx:0}}}
 function mkU(op,ch){
-  // normalize exp/expm1 to canonical forms
-  if(op==="exp" && ch){
-    const eNode=mkC("e",Math.E,ordLeaf("e"));
-    return mkB("^",eNode,ch);
-  }
-  if(op==="expm1" && ch){
-    const eNode=mkC("e",Math.E,ordLeaf("e"));
-    const oneNode=mkC("1",1,ordLeaf("1"));
-    return mkB("-",mkB("^",eNode,ch),oneNode);
-  }
   const isFunc=op!=="neg"&&op!=="abs";
   return{t:1,op,ch,p:(ch&&ch.p)?1:0,f:(isFunc||((ch&&ch.f)?1:0))?1:0,d:(ch?ch.d:0)+1,ord:ordUn(ch.ord)};
 }
@@ -2191,168 +2119,96 @@ function pretty(n,parentOp=null,side=null){
   if(n.t===0)return n.sym;
   if(n.t===1){
     const op=n.op,ch=n.ch;
-    if(op==="neg"){
-      if(ch&&ch.t===1&&ch.op==="neg") return pretty(ch.ch,parentOp,side);
-      if(isNegAtomNode(ch)) return absAtomText(ch);
-      const s=pretty(ch,"neg","right");const need=prec(ch)<PREC_UN;return"−"+(need?"("+s+")":s);
-    }
+    if(op==="neg"){const s=pretty(ch,"neg","right");const need=prec(ch)<PREC_UN;return"−"+(need?"("+s+")":s);}
     if(op==="sqrt"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_UN;return"√"+(need?"("+s+")":s);}
     if(op==="cbrt"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_UN;return"∛"+(need?"("+s+")":s);}
     if(op==="inv"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_MUL;return"1/"+(need?"("+s+")":s);}
     if(op==="square"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_POSTFIX;return(need?"("+s+")":s)+"²";}
     if(op==="cube"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_POSTFIX;return(need?"("+s+")":s)+"³";}
     if(op==="fact"){const s=pretty(ch,null,null);const need=prec(ch)<PREC_POSTFIX;return(need?"("+s+")":s)+"!";}
-    if(op==="exp"){
-      const s=pretty(ch,null,null);
-      const need=prec(ch)<PREC_POW || (ch&&ch.t===2);
-      return "e^"+(need?"("+s+")":s);
-    }
-    if(op==="expm1"){
-      const s=pretty(ch,null,null);
-      const need=prec(ch)<PREC_POW || (ch&&ch.t===2);
-      return "(e^"+(need?"("+s+")":s)+"−1)";
-    }
     const s=pretty(ch,null,null);
     const name=(op==="gammafn")?"Γ":op;
     return name+"("+s+")";
   }
-  let l=pretty(n.l,n.op,"left"), r=pretty(n.r,n.op,"right");
-  if(needParen(n.l,n.op,"left")) l="("+l+")";
-  if(needParen(n.r,n.op,"right")) r="("+r+")";
-  if(n.op==="/")return l+"/"+r;
-  if(n.op==="*")return l+"*"+r;
-  if(n.op==="+"){
-    if(n.r&&n.r.t===1&&n.r.op==="neg") return l+"−"+pretty(n.r.ch,n.op,"right");
-    if(isNegAtomNode(n.r)) return l+"−"+absAtomText(n.r);
-    return l+"+"+r;
+  const op=n.op;
+  if(op==="min"||op==="max"||op==="atan2"||op==="hypot"||op==="mod"||op==="gcd"||op==="lcm"||op==="logab"){
+    return op+"("+pretty(n.l,null,null)+","+pretty(n.r,null,null)+")";
   }
-  if(n.op==="-")return l+"−"+r;
-  if(n.op==="^")return l+"^"+r;
-  return n.op+"("+l+","+r+")";
+  const L=n.l,R=n.r;
+  const ls=pretty(L,op,"left"),rs=pretty(R,op,"right");
+  if(op==="+"&&R&&R.t===1&&R.op==="neg"){
+    const rs2=pretty(R.ch,op,"right");
+    const rout2=needParen(R.ch,op,"right")?"("+rs2+")":rs2;
+    const lout2=needParen(L,op,"left")?"("+ls+")":ls;
+    return lout2+"-"+rout2;
+  }
+  if(op==="+"&&isNegAtomNode(R)){
+    const rs2=absAtomText(R);
+    const lout2=needParen(L,op,"left")?"("+ls+")":ls;
+    return lout2+"-"+rs2;
+  }
+  if(op==="-"&&ALLOW_ADD&&R&&R.t===1&&R.op==="neg"){
+    const rs2=pretty(R.ch,"+","right");
+    const rout2=needParen(R.ch,"+","right")?"("+rs2+")":rs2;
+    const lout2=needParen(L,"+","left")?"("+ls+")":ls;
+    return lout2+"+"+rout2;
+  }
+  const lout=needParen(L,op,"left")?"("+ls+")":ls;
+  const rout=needParen(R,op,"right")?"("+rs+")":rs;
+  return lout+op+rout;
 }
 function strA(n){return pretty(n,null,null);}
 
-function normalizeAST(n){
-  if(!n) return n;
-  if(n.t===0) return n;
-  if(n.t===1){
-    const ch=normalizeAST(n.ch);
-    if(n.op==="exp"){
-      const eNode=mkC("e",Math.E,ordLeaf("e"));
-      return mkB("^",eNode,ch);
-    }
-    if(n.op==="expm1"){
-      const eNode=mkC("e",Math.E,ordLeaf("e"));
-      const oneNode=mkC("1",1,ordLeaf("1"));
-      return mkB("-",mkB("^",eNode,ch),oneNode);
-    }
-    if(ch===n.ch) return n;
-    return mkU(n.op,ch);
-  }
-  if(n.t===2){
-    const l=normalizeAST(n.l), r=normalizeAST(n.r);
-    if(l===n.l&&r===n.r) return n;
-    return mkB(n.op,l,r);
-  }
-  return n;
-}
-
 // LaTeX
 function latexWrap(s){ return "("+s+")"; }
-
 function latexA(n){
   if(!n)return"";
   if(n.t===0){
     const s=String(n.sym||n.val||"0");
-    if(s==="\\u03C0")return"\\\\pi ";
-    if(s==="\\u03C6")return"\\\\varphi ";
-    if(s==="\\u221A2")return"\\\\sqrt{2}";
-    if(s==="\\u221A3")return"\\\\sqrt{3}";
-    if(s==="\\u221A5")return"\\\\sqrt{5}";
-    if(s==="\\u03B3")return"\\\\gamma ";
-    if(s==="G(Catalan)")return"G";
-    if(s==="\\u03B6(3)")return"\\\\zeta(3)";
-    if(s==="ln(2)")return"\\\\ln 2";
-    if(s==="ln(10)")return"\\\\ln 10";
-    if(s==="2\\u03C0")return"2\\\\pi ";
-    if(s==="\\u03C0/2")return"\\\\frac{\\\\pi}{2}";
-    if(s==="\\u03C0/3")return"\\\\frac{\\\\pi}{3}";
-    if(s==="\\u03C0/4")return"\\\\frac{\\\\pi}{4}";
-    if(s==="1/2")return"\\\\frac{1}{2}";
-    if(s==="1/3")return"\\\\frac{1}{3}";
-    if(s==="2/3")return"\\\\frac{2}{3}";
-    if(s==="1/4")return"\\\\frac{1}{4}";
-    if(s==="3/4")return"\\\\frac{3}{4}";
-    if(s==="1/5")return"\\\\frac{1}{5}";
-    if(s==="2/5")return"\\\\frac{2}{5}";
-    if(s==="1/6")return"\\\\frac{1}{6}";
+    if(s==="π")return"\\\\pi";
+    if(s==="φ")return"\\\\varphi";
+    if(s==="√2")return"\\\\sqrt{2}";
+    if(s==="√3")return"\\\\sqrt{3}";
+    if(s==="√5")return"\\\\sqrt{5}";
     return s;
   }
   if(n.t===1){
-    const ch=latexA(n.ch);
-    const chAtom=(!n.ch||n.ch.t===0);
-    const wrap=chAtom?ch:"\\\\left("+ch+"\\\\right)";
+    const ch0=latexA(n.ch);
+    const ch=(n.ch&&n.ch.t!==0)?latexWrap(ch0):ch0;
     switch(n.op){
-      case"neg":return"-"+wrap;
-      case"abs":return"\\\\left|"+ch+"\\\\right|";
-      case"sqrt":return"\\\\sqrt{"+ch+"}";
-      case"cbrt":return"\\\\sqrt[3]{"+ch+"}";
-      case"inv":return"\\\\frac{1}{"+ch+"}";
-      case"square":return"{"+wrap+"}^{2}";
-      case"cube":return"{"+wrap+"}^{3}";
-      case"fact":return wrap+"!";
-      case"gammafn":return"\\\\Gamma\\\\!\\\\left("+ch+"\\\\right)";
-      case"exp":return"e^{"+ch+"}";
-      case"expm1":return"e^{"+ch+"}-1";
-      case"log":return"\\\\ln\\\\!\\\\left("+ch+"\\\\right)";
-      case"log10":return"\\\\log_{10}\\\\!\\\\left("+ch+"\\\\right)";
-      case"log1p":return"\\\\ln\\\\!\\\\left(1+"+ch+"\\\\right)";
-      case"sin":return"\\\\sin\\\\!\\\\left("+ch+"\\\\right)";
-      case"cos":return"\\\\cos\\\\!\\\\left("+ch+"\\\\right)";
-      case"tan":return"\\\\tan\\\\!\\\\left("+ch+"\\\\right)";
-      case"asin":return"\\\\arcsin\\\\!\\\\left("+ch+"\\\\right)";
-      case"acos":return"\\\\arccos\\\\!\\\\left("+ch+"\\\\right)";
-      case"atan":return"\\\\arctan\\\\!\\\\left("+ch+"\\\\right)";
-      case"sinh":return"\\\\sinh\\\\!\\\\left("+ch+"\\\\right)";
-      case"cosh":return"\\\\cosh\\\\!\\\\left("+ch+"\\\\right)";
-      case"tanh":return"\\\\tanh\\\\!\\\\left("+ch+"\\\\right)";
-      case"floor":return"\\\\lfloor "+ch+"\\\\rfloor ";
-      case"ceil":return"\\\\lceil "+ch+"\\\\rceil ";
-      case"round":return"\\\\mathrm{round}\\\\!\\\\left("+ch+"\\\\right)";
-      case"frac":return"\\\\left\\\\{"+ch+"\\\\right\\\\}";
-      case"sign":return"\\\\mathrm{sgn}\\\\!\\\\left("+ch+"\\\\right)";
-      case"erf":return"\\\\mathrm{erf}\\\\!\\\\left("+ch+"\\\\right)";
-      default:return"\\\\mathrm{"+n.op+"}\\\\!\\\\left("+ch+"\\\\right)";
+      case"neg":return"-"+ch;
+      case"sqrt":return"\\\\sqrt{"+((n.ch&&n.ch.t===2)?latexWrap(ch0):ch0)+"}";
+      case"cbrt":return"\\\\sqrt[3]{"+ch0+"}";
+      case"inv":return"\\\\frac{1}{"+ch0+"}";
+      case"square":return"{"+ch+"}^{2}";
+      case"cube":return"{"+ch+"}^{3}";
+      case"fact":return ch+"!";
+      case"gammafn":return"\\\\Gamma"+latexWrap(ch0);
+      case"exp":return"e^{"+ch0+"}";
+      case"expm1":return"e^{"+ch0+"}-1";
+      default:return"\\\\mathrm{"+n.op+"}"+latexWrap(ch0);
     }
   }
-  // binary
-  if(n.op==="/"){
-    return"\\\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
-  }
   if(n.op==="^"){
-    const bl=latexA(n.l);
-    const base=(n.l&&n.l.t!==0)?"\\\\left("+bl+"\\\\right)":bl;
-    return"{"+base+"}^{"+latexA(n.r)+"}";
+    const baseStr = latexA(n.l);
+    const base = (n.l && n.l.t!==0) ? latexWrap(baseStr) : baseStr;
+    const exp  = latexA(n.r);
+    return "{"+base+"}^{"+exp+"}";
   }
-  let l=latexA(n.l),r=latexA(n.r);
-  if(needParen(n.l,n.op,"left"))l="\\\\left("+l+"\\\\right)";
-  if(needParen(n.r,n.op,"right"))r="\\\\left("+r+"\\\\right)";
+
+  let l=latexA(n.l), r=latexA(n.r);
+  if(needParen(n.l,n.op,"left")) l="("+l+")";
+  if(needParen(n.r,n.op,"right")) r="("+r+")";
+  if(n.op==="/" )return"\\\\frac{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
   if(n.op==="*")return l+"\\\\cdot "+r;
   if(n.op==="+"){
-    if(n.r&&n.r.t===1&&n.r.op==="neg")return l+"-"+latexA(n.r.ch);
-    if(isNegAtomNode(n.r))return l+"-"+latexA({t:0,sym:absAtomText(n.r),val:Math.abs(n.r.val)});
+    if(n.r&&n.r.t===1&&n.r.op==="neg") return l+"-"+latexA(n.r.ch);
+    if(isNegAtomNode(n.r)) return l+"-"+latexA({t:0,sym:absAtomText(n.r),val:Math.abs(n.r.val)});
     return l+"+"+r;
   }
   if(n.op==="-")return l+"-"+r;
-  if(n.op==="logab")return"\\\\log_{"+latexA(n.l)+"}\\\\!\\\\left("+latexA(n.r)+"\\\\right)";
-  if(n.op==="min")return"\\\\min\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
-  if(n.op==="max")return"\\\\max\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
-  if(n.op==="gcd")return"\\\\gcd\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
-  if(n.op==="lcm")return"\\\\mathrm{lcm}\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
-  if(n.op==="hypot")return"\\\\mathrm{hypot}\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
-  if(n.op==="mod")return latexA(n.l)+"\\\\bmod "+latexA(n.r);
-  if(n.op==="atan2")return"\\\\mathrm{atan2}\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
-  return"\\\\mathrm{"+n.op+"}\\\\!\\\\left("+latexA(n.l)+","+latexA(n.r)+"\\\\right)";
+  if(n.op==="logab")return"\\\\log_{"+latexA(n.l)+"}{"+latexA(n.r)+"}";
+  return"\\\\mathrm{"+n.op+"}"+latexWrap(latexA(n.l)+","+latexA(n.r));
 }
 
 
@@ -2437,28 +2293,12 @@ function pruneBin(op,af,bf,av,bv){
   if(op==="^"&&has(af,F_ONE)&&!NEED_ONE)return true;
   if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
 
-  // Only prune a + neg(x) if neg(x) is NOT a constant literal (constants can be negative)
-  if(op==="+" && HAS_SUB && (getTag(bf)===TAG_NEG||getTag(af)===TAG_NEG)){
-    // Allow: constant literals can have negative values (e.g. -3 is leaf, not neg(3))
-    const isConstLit=(f)=>has(f,F_CONST);
-    if(!isConstLit(af) && !isConstLit(bf)) return true;
-  }
+  if(op==="+" && HAS_SUB && (getTag(bf)===TAG_NEG || getTag(af)===TAG_NEG)) return true;
   if(op==="*" && HAS_DIV && (getTag(bf)===TAG_INV || getTag(af)===TAG_INV)) return true;
   if(op==="/" && HAS_MUL && getTag(bf)===TAG_INV) return true;
 
   // 交换律规范化：如果两个操作数都是常数，强制从小到大排列
   if((op==="+"||op==="*") && has(af,F_CONST) && has(bf,F_CONST) && av > bv) return true;
-
-
-  // commutative normalization for non-const nodes
-  if((op==="+"||op==="*") && !has(af,F_CONST) && !has(bf,F_CONST)){
-    if(Number.isFinite(av)&&Number.isFinite(bv)&&av>bv+1e-15) return true;
-  }
-  // associativity canonicalization (keep right-associated form)
-  if(op==="+"&&getTag(af)===TAG_ADD) return true;
-  if(op==="*"&&getTag(af)===TAG_MUL) return true;
-  // subtraction normalization for const leaves when neg exists
-  if(op==="-"&&HAS_NEG&&has(af,F_CONST)&&has(bf,F_CONST)&&av<bv) return true;
 
   const fn=CUSTOM_PRUNE_BIN.get(op);
   if(fn){ try{ if(fn(af,bf,av,bv)) return true; }catch(e){} }
@@ -2610,9 +2450,7 @@ function mkBucket(beam,spillMul){
   function dn(i){for(;;){let b=i,l=i*2+1,r=l+1;if(l<h.length&&h[l].keep>h[b].keep)b=l;if(r<h.length&&h[r].keep>h[b].keep)b=r;if(b===i)break;sw(i,b);i=b;}}
   const bucket={
     get size(){return h.length;},
-    values(){return h;},
-    isFull(){return h.length>=cap;},
-    worstKeep(){return h.length>0?h[0].keep:Infinity;}
+    values(){return h;}
   };
   function put(key,pack){
     const i=kidx.get(key);
@@ -2689,41 +2527,9 @@ function topK(items,k,scoreFn,lowerBetter=true,filterFn=null){
   return out;
 }
 
-function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_target){
+function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const out=[];
   const used=new Set();
-  // PERF FIX: reduced keepPoolMul to prevent O(n^2) topK calls on huge pools
-  // Old: accuracy=18x beam (117K items) causing slow topK ops for 20+ quota categories
-  const keepPoolMul = mode==="speed" ? 5 : (mode==="accuracy" ? 8 : 7);
-  const keepPoolFloor = mode==="speed" ? 1600 : 3000;
-  const keepPoolSize = Math.min(items.length, Math.max(beam*keepPoolMul, keepPoolFloor));
-  const quotaPool = keepPoolSize<items.length ? topK(items,keepPoolSize,(x)=>x.keep,true) : items;
-
-  const rootBest=new Map();
-  const rootFreq=new Map();
-  const rootKey=(it)=>{
-    const ast=it&&it.ast;
-    if(!ast) return "c";
-    if(ast.t===2) return "b:"+ast.op;
-    if(ast.t===1) return "u:"+ast.op;
-    return "c";
-  };
-  for(const it of quotaPool){
-    const r=rootKey(it);
-    rootFreq.set(r,(rootFreq.get(r)||0)+1);
-    const old=rootBest.get(r);
-    if(old===undefined || it.keep<old) rootBest.set(r,it.keep);
-  }
-  const opPriorityAdj=(it)=>{
-    const r=rootKey(it);
-    const freq=rootFreq.get(r)||1;
-    const bestKeep=rootBest.get(r);
-    const rarity=1/Math.sqrt(freq);
-    const quality=bestKeep===undefined ? 0 : (1/(1+bestKeep));
-    // Encourage rare/high-quality operator roots so function priorities remain heuristic and unbiased.
-    return (mode==="speed"?0.08:0.14)*rarity + (mode==="speed"?0.05:0.08)*quality;
-  };
-
   const take=(arr,limit)=>{
     for(let i=0;i<arr.length&&out.length<beam&&limit>0;i++){
       const it=arr[i];
@@ -2772,51 +2578,13 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
   const nTrigArg=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.07)));
   // Quota: values useful as arcsin/arccos/arctan inverses (i.e. in [-π/2..π] range)
   const nInvTrig=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.07)));
-  const exploreRatio = mode==="speed" ? 0.035 : (mode==="accuracy" ? 0.26 : 0.22);
+  const exploreRatio = mode==="speed" ? 0.035 : (mode==="accuracy" ? 0.20 : 0.18);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
-  const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.14)));
-  // 新增：变换亲和值配额 — 值接近T的各种变换（√T, ∛T, ln(T)等）的项
-  const nTransformAffin=Math.max(0,Math.floor(beam*(mode==="speed"?0.04:0.10)));
-
-  // ── PRIORITY STAGE: Building-block reservoir + mandatory magnitude diversity ──
-  // These run BEFORE standard quotas so they can't be crowded out by near-T items.
-  // Essential for compositions like f^g where f,g can be any value far from T.
-
-  // 1. Mandatory magnitude coverage: one best item per log2-magnitude bucket (pos + neg).
-  //    Ensures the beam always spans all scales: 0.001, 0.01, 0.1, 1, 10, 100...
-  const nMandatoryMag = Math.floor(beam * (mode==="speed" ? 0.12 : 0.18));
-  {
-    const posBuckets=new Map(), negBuckets=new Map();
-    for(const it of items){
-      const v=it.v; if(!Number.isFinite(v))continue;
-      const mb=Math.floor(Math.log2(Math.abs(v)+1e-30));
-      if(v>=0){const old=posBuckets.get(mb);if(!old||it.keep<old.keep)posBuckets.set(mb,it);}
-      else{const old=negBuckets.get(mb);if(!old||it.keep<old.keep)negBuckets.set(mb,it);}
-    }
-    take(Array.from(posBuckets.values()).sort((a,b)=>a.keep-b.keep), Math.ceil(nMandatoryMag*0.70));
-    take(Array.from(negBuckets.values()).sort((a,b)=>a.keep-b.keep), Math.ceil(nMandatoryMag*0.30));
-  }
-
-  // 2. Building-block reservoir: top items scored PURELY by rationality (bb), not goal.
-  //    Deliberately includes values far from T — they are bases/exponents for pow, sin args, etc.
-  const nBlock = Math.floor(beam * (mode==="speed" ? 0.10 : 0.16));
-  if(nBlock>0){
-    take(topK(items, nBlock, (x)=>x.bb, true, (x)=>x.bb<0.18), nBlock);
-  }
+  const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.12)));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
-
-  // ▼▼▼ 新增：强制保留 revIdx 命中的项，防止它们被 goal 更近的项挤出 beam
-  // 这些是 meet 搜索的高价值候选，即使 goal 不是最小也必须保留
-  {
-    const nRevHitForced = Math.max(0, Math.floor(beam * (mode==="speed"?0.06:0.10)));
-    if(nRevHitForced>0){
-      take(topK(items, nRevHitForced, (x)=>x.keep, true, (x)=>x.revHit && !used.has(x.key)), nRevHitForced);
-    }
-  }
-  // ▲▲▲
 
   // Required-coverage quota (fix bitmask漏解 due to beam fragmentation)
   if(useBitmask && REQ_POP>0 && nReq>0){
@@ -2825,7 +2593,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
 
   // qFrac: keep highly rational values (small bb) in pow-useful range – key for e.g. 25/7 type bases
   if(nFrac>0){
-    take(topK(quotaPool,nFrac,(x)=>x.bb,true,(x)=>{
+    take(topK(items,nFrac,(x)=>x.bb,true,(x)=>{
       const v=x.v;
       if(!Number.isFinite(v)||Math.abs(v)<0.05)return false;
       const a=Math.abs(v);
@@ -2837,7 +2605,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
   // Trig-output range: values in [-1,1] are outputs of sin/cos/tanh, needed for inverse-trig meets
   // e.g. cos(tan(e)) ≈ some value → fwd must retain cos(tan(e)) which is in [-1,1]
   if(nTrigOut>0){
-    take(topK(quotaPool,nTrigOut,(x)=>(x.goal*0.6+x.bb*0.4),true,(x)=>{
+    take(topK(items,nTrigOut,(x)=>(x.goal*0.6+x.bb*0.4),true,(x)=>{
       const a=Math.abs(x.v);
       return Number.isFinite(x.v) && a<=1.0+1e-12;
     }), nTrigOut);
@@ -2845,7 +2613,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
 
   // Trig-argument range: values in [-2π,2π] useful as sin/cos/tan arguments
   if(nTrigArg>0){
-    take(topK(quotaPool,nTrigArg,(x)=>(x.goal*0.5+x.bb*0.5),true,(x)=>{
+    take(topK(items,nTrigArg,(x)=>(x.goal*0.5+x.bb*0.5),true,(x)=>{
       const a=Math.abs(x.v);
       return Number.isFinite(x.v) && a<=Math.PI*2+0.1 && a>1e-12;
     }), nTrigArg);
@@ -2854,7 +2622,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
   // Inverse-trig range: values in arcsin/arccos/arctan ranges [-π/2, π]
   // Needed so fwd can match rev[asin(T)], rev[acos(T)], rev[atan(T)] etc.
   if(nInvTrig>0){
-    take(topK(quotaPool,nInvTrig,(x)=>(x.goal*0.4+x.bb*0.6),true,(x)=>{
+    take(topK(items,nInvTrig,(x)=>(x.goal*0.4+x.bb*0.6),true,(x)=>{
       const v=x.v;
       if(!Number.isFinite(v))return false;
       const a=Math.abs(v);
@@ -2863,7 +2631,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
     }), nInvTrig);
   }
 
-  if(allowPow && nPow>0) take(topK(quotaPool,nPow,(x)=>(x.goal+0.20*x.bb),true,(x)=>x.hasPow), nPow);
+  if(allowPow && nPow>0) take(topK(items,nPow,(x)=>(x.goal+0.20*x.bb),true,(x)=>x.hasPow), nPow);
 
   if(allowPow && nPowBase>0){
     const baseFilter=(x)=>{
@@ -2873,7 +2641,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
       const a=Math.abs(v);
       return a>0.12 && a<24 && Math.abs(a-1)>1e-12;
     };
-    take(topK(quotaPool,nPowBase,(x)=>x.bb,true,baseFilter), nPowBase);
+    take(topK(items,nPowBase,(x)=>x.bb,true,baseFilter), nPowBase);
   }
   if(allowPow && nPowExp>0){
     const expFilter=(x)=>{
@@ -2881,20 +2649,18 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
       if(!Number.isFinite(v))return false;
       return Math.abs(v)<24;
     };
-    take(topK(quotaPool,nPowExp,(x)=>(x.bb*0.7 + 0.01/(1+(x.depth||0))),false,expFilter), nPowExp);
+    take(topK(items,nPowExp,(x)=>(x.bb*0.7 + 0.01/(1+(x.depth||0))),false,expFilter), nPowExp);
   }
 
-  if(nFunc>0){
-    take(topK(quotaPool,nFunc,(x)=>(x.goal+0.16*x.bb-opPriorityAdj(x)),true,(x)=>x.hasFunc), nFunc);
-  }
+  if(nFunc>0) take(topK(items,nFunc,(x)=>(x.goal+0.16*x.bb),true,(x)=>x.hasFunc), nFunc);
 
   if(nDepth>0){
-    take(topK(quotaPool,nDepth,(x)=>-(x.depth||0),true), nDepth);
+    take(topK(items,nDepth,(x)=>-(x.depth||0),true), nDepth);
   }
 
   if(nMagD>0){
     const bins=new Map();
-    for(const it of quotaPool){
+    for(const it of items){
       const mb=Math.floor(Math.log2(Math.abs(it.v)+1e-30));
       const old=bins.get(mb);
       if(!old||it.keep<old.keep)bins.set(mb,it);
@@ -2905,24 +2671,24 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
   }
 
   if(nIrr>0){
-    take(topK(quotaPool,nIrr,(x)=> (x.bb*0.8 - x.goal*0.15 - opPriorityAdj(x)*0.25), false), nIrr);
+    take(topK(items,nIrr,(x)=> (x.bb*0.8 - x.goal*0.15), false), nIrr);
   }
 
-  take(topK(quotaPool,nBB,(x)=>x.bb,true), nBB);
+  take(topK(items,nBB,(x)=>x.bb,true), nBB);
 
   if(nSeed>0){
-    const seed=topK(quotaPool,nSeed,(x)=>((x.cost||0)*0.7 + x.bb*0.25 + x.goal*0.05 - opPriorityAdj(x)*0.25),true,(x)=>((x.cost||0)<=6)&&!used.has(x.key));
+    const seed=topK(items,nSeed,(x)=>((x.cost||0)*0.7 + x.bb*0.25 + x.goal*0.05),true,(x)=>((x.cost||0)<=6)&&!used.has(x.key));
     take(seed,nSeed);
   }
 
   if(nExplore>0){
-    const ex = topK(quotaPool,nExplore,(x)=>((x.goal*0.55)+(x.bb*0.35)-0.03*(x.depth||0)-opPriorityAdj(x)*0.45),true,(x)=>!used.has(x.key));
+    const ex = topK(items,nExplore,(x)=>((x.goal*0.55)+(x.bb*0.35)-0.03*(x.depth||0)),true,(x)=>!used.has(x.key));
     take(ex,nExplore);
   }
 
   if(nNovel>0){
     const bins=new Map();
-    for(const it of quotaPool){
+    for(const it of items){
       if(used.has(it.key)) continue;
       const root=(it.ast&&it.ast.t===2)?it.ast.op:((it.ast&&it.ast.t===1)?("u:"+it.ast.op):"c");
       const d=(it.depth||0);
@@ -2938,7 +2704,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
 
   if(nDiv>0){
     const bins=new Map();
-    for(const it of quotaPool){
+    for(const it of items){
       if(used.has(it.key))continue;
       const b=Math.floor(Math.log(Math.abs(it.v)+1e-30)*3);
       const old=bins.get(b);
@@ -2948,159 +2714,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T_targ
     take(divArr,nDiv);
   }
 
-  // ── POWER-DECOMPOSITION quotas: retain values near T^(1/n) for outer pow/square/cube ──
-  // These are critical building blocks for expressions like (f(x))^2 = T → f(x) ≈ √T.
-  // Without dedicated quota, the beam discards values near √T as "far from T".
-  if(Number.isFinite(T_target) && T_target>0){
-    // sqrt quota: retain best items near ±√T (square-type meets)
-    const sqT=Math.sqrt(T_target);
-    const nSqrt=Math.max(0,Math.floor(beam*(mode==="speed"?0.08:0.14)));
-    if(nSqrt>0){
-      take(topK(quotaPool,nSqrt,(x)=>{
-        const d=Math.min(Math.abs(x.v-sqT),Math.abs(x.v+sqT));
-        return d/(1e-12+Math.abs(sqT));
-      },true), nSqrt);
-    }
-    // cbrt quota: retain best items near ∛T (cube-type meets)
-    const cbT=Math.cbrt(T_target);
-    const nCbrt=Math.max(0,Math.floor(beam*(mode==="speed"?0.05:0.09)));
-    if(nCbrt>0){
-      take(topK(quotaPool,nCbrt,(x)=>{
-        const d=Math.min(Math.abs(x.v-cbT),Math.abs(x.v+cbT));
-        return d/(1e-12+Math.abs(cbT));
-      },true), nCbrt);
-    }
-    // T^(1/4) and T^(1/5) quotas for deeper power chains
-    for(const n of [4,5]){
-      const pT=Math.pow(T_target,1/n);
-      if(Number.isFinite(pT) && pT > 1e-10 && pT < 1e8){
-        const nP=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.06)));
-        if(nP>0) take(topK(quotaPool,nP,(x)=>Math.abs(x.v-pT)/(1e-12+pT),true), nP);
-      }
-    }
-    // T/n quotas for additive/multiplicative decompositions (outer */+ meets)
-    for(const n of [2,3,Math.PI,Math.E]){
-      const vn=T_target/n;
-      if(Number.isFinite(vn) && Math.abs(vn)<1e8 && Math.abs(vn)>1e-12){
-        const nVn=Math.max(0,Math.floor(beam*(mode==="speed"?0.025:0.05)));
-        if(nVn>0) take(topK(quotaPool,nVn,(x)=>Math.abs(x.v-vn)/(1e-12+Math.abs(vn)),true), nVn);
-      }
-    }
-  } else if(Number.isFinite(T_target)){
-    // T < 0: try ±|T|^(1/n) for odd n (cube-root of negative)
-    const cbT=Math.cbrt(T_target);
-    const nCbrt=Math.max(0,Math.floor(beam*(mode==="speed"?0.04:0.08)));
-    if(nCbrt>0) take(topK(quotaPool,nCbrt,(x)=>Math.abs(x.v-cbT)/(1e-12+Math.abs(cbT)),true), nCbrt);
-  }
-
-  // ── 子表达式目标配额 ──
-  // 保留与 T 的多级分解目标值接近的项
-  if(Number.isFinite(T_target)){
-    const absT4=Math.abs(T_target);
-    const subTargets=[];
-    if(absT4>0){
-      const sqT=Math.sqrt(absT4);
-      subTargets.push(sqT,-sqT,Math.cbrt(T_target));
-      if(T_target>0) subTargets.push(Math.log(T_target));
-      // 二级分解: √T / 常数
-      for(const c of [Math.PI,Math.E,2,3]){
-        subTargets.push(sqT/c, sqT*c, sqT-c, T_target/c);
-        // 三级: e - √T/c
-        const mid=sqT/c;
-        if(Number.isFinite(mid)) subTargets.push(Math.E-mid, Math.PI-mid);
-      }
-      // 幂根
-      for(let n=4;n<=6;n++){
-        const r=Math.pow(absT4,1/n);
-        if(Number.isFinite(r)) subTargets.push(r);
-      }
-    }
-    const nSubQ=Math.max(0,Math.floor(beam*(mode==="speed"?0.06:0.12)));
-    if(nSubQ>0){
-      for(const sv of subTargets){
-        if(!Number.isFinite(sv)||Math.abs(sv)>1e8) continue;
-        take(topK(quotaPool,Math.max(2,Math.floor(nSubQ/subTargets.length)+1),(x)=>{
-          return Math.abs(x.v-sv)/(1e-12+Math.abs(sv)+1);
-        },true),Math.max(2,Math.floor(nSubQ/subTargets.length)+1));
-      }
-    }
-  }
-
   if(out.length<beam){
-    take(topK(quotaPool,beam-out.length,(x)=>(x.keep-opPriorityAdj(x)*0.12),true), beam-out.length);
-  }
-
-  // ── 新增：变换亲和值配额 — 保留接近T各种变换的项，扩展jumpLookupNear可以找到的候选 ──
-  if(nTransformAffin>0 && Number.isFinite(T_target)){
-    const transTargets=[];
-    const absT2=Math.abs(T_target);
-    if(absT2>0) transTargets.push(Math.sqrt(absT2), -Math.sqrt(absT2), Math.cbrt(T_target));
-    if(T_target>0) transTargets.push(Math.log(T_target));
-    if(absT2>1e-12) transTargets.push(1/T_target);
-    if(Math.abs(T_target)<=1) transTargets.push(Math.asin(Math.max(-1,Math.min(1,T_target))));
-    transTargets.push(Math.atan(T_target));
-    const validTrans=transTargets.filter(v=>Number.isFinite(v)&&Math.abs(v)<1e8);
-    for(const tv of validTrans){
-      const nThis=Math.max(2,Math.floor(nTransformAffin/validTrans.length));
-      if(nThis>0) take(topK(quotaPool,nThis,(x)=>Math.abs(x.v-tv)/(1e-9+Math.abs(tv)+1),true,(x)=>!used.has(x.key)), nThis);
-    }
-  }
-
-  if(Number.isFinite(T_target)){
-    const absT=Math.abs(T_target);
-    const subExprTargets=[];
-    if(absT>0) subExprTargets.push({val:Math.sqrt(absT),w:0.18});
-    if(absT>0) subExprTargets.push({val:-Math.sqrt(absT),w:0.12});
-    if(absT>0){
-      const sqT=Math.sqrt(absT);
-      for(const c of [Math.PI, Math.E, 2, 3, Math.SQRT2]){
-        if(c>1e-12){
-          subExprTargets.push({val:sqT/c,w:0.10});
-          subExprTargets.push({val:sqT*c,w:0.06});
-          subExprTargets.push({val:sqT-c,w:0.06});
-          subExprTargets.push({val:sqT+c,w:0.04});
-        }
-      }
-    }
-    if(absT>0){
-      const sqT=Math.sqrt(absT);
-      const targets1=[sqT/Math.PI, sqT/Math.E, sqT/2, sqT/3];
-      for(const t1 of targets1){
-        if(!Number.isFinite(t1)||Math.abs(t1)>1e8) continue;
-        const t2=Math.E-t1; if(Number.isFinite(t2)&&Math.abs(t2)<1e6) subExprTargets.push({val:t2,w:0.08});
-        const t3=Math.PI-t1; if(Number.isFinite(t3)&&Math.abs(t3)<1e6) subExprTargets.push({val:t3,w:0.06});
-        if(t1>0){ const lt=Math.log(t1); if(Number.isFinite(lt)) subExprTargets.push({val:lt,w:0.05}); }
-      }
-    }
-    for(const c of [Math.PI, Math.E, 2, 3, 4, 5, 6, Math.PI*Math.PI, Math.E*Math.E]){
-      const v1=T_target/c; if(Number.isFinite(v1)&&Math.abs(v1)<1e8) subExprTargets.push({val:v1,w:0.04});
-      const v2=T_target*c; if(Number.isFinite(v2)&&Math.abs(v2)<1e8) subExprTargets.push({val:v2,w:0.03});
-    }
-    if(T_target>0){
-      subExprTargets.push({val:Math.log(T_target),w:0.08});
-      subExprTargets.push({val:Math.log(T_target)/2,w:0.05});
-    }
-    for(let n=2;n<=6;n++){
-      const r=Math.pow(absT,1/n);
-      if(Number.isFinite(r)) subExprTargets.push({val:r,w:0.06});
-      if(Number.isFinite(r)&&r>1e-9) subExprTargets.push({val:-r,w:0.03});
-    }
-    const nSubExpr=Math.max(0,Math.floor(beam*(mode==="speed"?0.06:0.14)));
-    if(nSubExpr>0 && subExprTargets.length>0){
-      for(const st of subExprTargets){
-        const tv=st.val;
-        if(!Number.isFinite(tv)) continue;
-        const nThis=Math.max(2,Math.floor(nSubExpr*st.w));
-        take(topK(quotaPool,nThis,(x)=>{
-          const d=Math.abs(x.v-tv)/(1e-12+Math.abs(tv)+1);
-          return d - 0.02*(x.bb<0.1?1:0);
-        },true), nThis);
-      }
-    }
-  }
-
-  if(out.length<beam){
-    // Fallback to full set for safety so precision does not regress when pool is too narrow.
     take(topK(items,beam-out.length,(x)=>x.keep,true), beam-out.length);
   }
   for(const it of out){
@@ -3120,7 +2734,7 @@ onmessage=async(ev)=>{
 
   let{
     T,mode,maxC,beam,divRatio,outN,timeLimit,infiniteTime,emitInterval,
-    opsUn,opsBin,consts,showCounts,bidir,pruneEquiv,excludeExact,dedupeByValue,
+    opsUn,opsBin,consts,showCounts,bidir,pruneEquiv,excludeExact,
     mt,threads,subSrc,
     customEnable,customCode
   }=msg;
@@ -3222,7 +2836,6 @@ onmessage=async(ev)=>{
   const lim=infiniteTime?Infinity:Math.max(0,timeLimit);
   divRatio=Math.max(0,Math.min(1,divRatio||0));
   excludeExact=!!excludeExact;
-  dedupeByValue=!!dedupeByValue;
   pruneEquiv=!!pruneEquiv;
   bidir=!!bidir;
   mt=!!mt;
@@ -3338,56 +2951,12 @@ onmessage=async(ev)=>{
     keyHits:0,pairsTried:0,rev2fwdPairs:0,
     rejMaskOverlap:0,rejCntLimit:0,rejEpsCand:0,rejEvalNaN:0,
     rejProbeConfirm:0,rejConfirm:0,revInvBad:0,maxConfirmErr:0,
-    pairTcSum:0,pairTcHigh:0,skipProbeCount:0,
-    probeEvals:0,trueEvals:0,probeEvalMs:0,trueEvalMs:0,
-    pairBudgetStops:0,meetTimeCapStops:0,
-    meetSetRaw:0,meetSetFinal:0,meetSetTrimmed:0,
-    shortKeyModeHits:0,longKeyModeHits:0,
   };
-  let dynamicCandMul=1.0, dynamicConfirmMul=1.0;
-  const strategyStats={adaptiveBoosts:0,pruneRelax:0,meetJitter:0,extraDecomp:0,stagnationLayers:0,forcedBoost:0,pressureScore:0};
-  // Phase timing debug (accumulated milliseconds per major phase per layer)
-  const phaseTiming={buildFwd:0,buildRev:0,meetSweep:0,selectTop:0,decompose:0,meetFwd:0,totalLayers:0};
-  function emitPhaseTimingLog(c){
-    if(typeof console!=="undefined") console.log(\`[c=\${c}] Phase timing (ms): buildFwd=\${phaseTiming.buildFwd.toFixed(0)} buildRev=\${phaseTiming.buildRev.toFixed(0)} meetSweep=\${phaseTiming.meetSweep.toFixed(0)} selectTop=\${phaseTiming.selectTop.toFixed(0)} decompose=\${phaseTiming.decompose.toFixed(0)} meetFwd=\${phaseTiming.meetFwd.toFixed(0)} layers=\${phaseTiming.totalLayers}\`);
-  }
 
   const best=[];
   let bestDeltaSoFar=Infinity;
   const bestSeen=new Map();
   const nearSeen=new Map();
-  const bestByValue=new Map();
-
-  const BEST_POOL_CAP=Math.max(outN*20, 1500);
-  const VALUE_VARIANT_CAP=Math.max(4, Math.min(12, Math.floor(outN/6)||4));
-
-  function astSig(ast){
-    if(!ast) return "na";
-    const d=astDepth(ast);
-    const db=d<=2?2:(d<=4?4:(d<=7?7:10));
-    if(ast.t===0) return "c|"+String(ast.sym);
-    if(ast.t===1) return "u|"+ast.op+"|"+db;
-    return "b|"+ast.op+"|"+db+"|"+(ast.p?"p":"np")+"|"+(ast.f?"f":"nf");
-  }
-
-  function rebuildBestCaches(){
-    bestSeen.clear();
-    nearSeen.clear();
-    bestByValue.clear();
-    const ns=Math.max(2e-6,Math.max(1,Math.abs(T))*2e-8);
-    for(let i=0;i<best.length;i++){
-      const vk=best[i].v.toPrecision(BESTP);
-      let arr=bestByValue.get(vk);
-      if(!arr){arr=[];bestByValue.set(vk,arr);}
-      arr.push(i);
-      const hasPowBest=!!best[i].hasPow;
-      const sig=best[i].sig||"na";
-      const kkBase=mp.keepMeetDup?(vk+"|"+(best[i].searchType||"fwd")):vk;
-      const kk=hasPowBest?(kkBase+"|pow|"+sig):(kkBase+"|"+sig);
-      bestSeen.set(kk,i);
-      nearSeen.set(Math.round(best[i].v/ns),i);
-    }
-  }
 
   function emit(c){
     const now=performance.now();
@@ -3403,10 +2972,6 @@ onmessage=async(ev)=>{
         mt:(mt&&threads>1)?("ON("+threads+")"):"OFF",
         profile:mode,
         beamF,beamR,
-        bestCount:best.length,
-        bestDeltaSoFar,
-        dynamicCandMul,dynamicConfirmMul,
-        strategyStats,phaseTiming,
         best:best.slice(0,outN)
       }});
     }
@@ -3478,29 +3043,24 @@ function collectLeaves(ast, out){
     if(LEAF_ORDER && obj.ast && obj.ast.ord && !obj.ast.ord.ok) return;
     if(mode!=="speed" && obj.ast && isTinyTailClone(obj.ast,T)) return;
 
+    const expr=obj.ast?strA(obj.ast):(obj.s||"?");
+    const latex=obj.ast?latexA(obj.ast):expr;
     const delta=v-T;
     const absDelta=Math.abs(delta);
     if(absDelta<bestDeltaSoFar) bestDeltaSoFar=absDelta;
-    const sigEarly=astSig(obj.ast);
     const nearStep=Math.max(2e-6,Math.max(1,Math.abs(T))*2e-8);
     const nearKey=Math.round(v/nearStep);
     const prevNear=nearSeen.get(nearKey);
     if(prevNear!==undefined){
       const b=best[prevNear];
-      if(b && (b.sig||"na")===sigEarly && Math.abs(b.v-v)<=nearStep*1.2){
+      if(b && Math.abs(b.v-v)<=nearStep*1.2){
         const oldScore=Math.abs(b.delta)+1e-8*(b.cost||0);
         const newScore=Math.abs(delta)+1e-8*(obj.cost||0);
         if(newScore>=oldScore) return;
       }
     }
     const ci=useBitmask?maskStr(obj.mask||0):cntStr(obj.cnt||EMPTY);
-    const needCustom = !!(customAllow || customScoreAdjust);
-    let expr=null, latex=null, leaves=null;
-    if(needCustom){
-      expr=obj.ast?strA(normalizeAST(obj.ast)):(obj.s||"?");
-      latex=obj.ast?latexA(normalizeAST(obj.ast)):expr;
-      leaves = obj.ast ? collectLeaves(obj.ast, []) : [];
-    }
+    const leaves = obj.ast ? collectLeaves(obj.ast, []) : [];
 
     if(customAllow){
       try{
@@ -3513,9 +3073,8 @@ function collectLeaves(ast, out){
     const valKey=v.toPrecision(BESTP);
     const type=obj.searchType||"fwd";
     const hasPow=!!(obj.ast&&obj.ast.p);
-    const sig=sigEarly;
     const keyBase=mp.keepMeetDup?(valKey+"|"+type):valKey;
-    const key=hasPow?(keyBase+"|pow|"+sig):(keyBase+"|"+sig);
+    const key=hasPow?(keyBase+"|pow"):keyBase;
 
     const idx=bestSeen.get(key);
     if(idx!==undefined){
@@ -3533,53 +3092,26 @@ function collectLeaves(ast, out){
       if(old && !powPrefer && !meetPrefer && (oldDelta<newDelta||(oldDelta===newDelta&&old.cost<=newCost))){
         dupesKilled++;return;
       }
-      if(!expr){
-        expr=obj.ast?strA(normalizeAST(obj.ast)):(obj.s||"?");
-        latex=obj.ast?latexA(normalizeAST(obj.ast)):expr;
-      }
       best.splice(idx,1);
-      bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow,sig});
-      if(best.length>BEST_POOL_CAP*1.2)best.length=BEST_POOL_CAP;
-      rebuildBestCaches();
+      bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
       if(acc==="exact") maybeStopOnExact(delta);
       return;
     }
 
-    const sameValIdx=bestByValue.get(valKey);
-    if(dedupeByValue && sameValIdx && sameValIdx.length>0){
-      let bestIdx=-1,bestCost=Infinity;
-      for(const bi of sameValIdx){
-        const b=best[bi];
-        const cst=(b?.cost||999);
-        if(cst<bestCost){bestCost=cst;bestIdx=bi;}
-      }
-      const newCost=obj.cost||999;
-      if(newCost>=bestCost){dupesKilled++;return;}
-      if(bestIdx>=0){
-        best.splice(bestIdx,1);
-        rebuildBestCaches();
-      }
-    }
-    if(sameValIdx && sameValIdx.length>=VALUE_VARIANT_CAP){
-      let worstI=sameValIdx[0], worstScore=-Infinity;
-      for(const bi of sameValIdx){
-        const b=best[bi];
-        const s=Math.abs(b.delta)+1e-8*(b.cost||0);
-        if(s>worstScore){worstScore=s;worstI=bi;}
-      }
-      const newScore=Math.abs(delta)+1e-8*(obj.cost||0);
-      if(newScore>=worstScore) return;
-      best.splice(worstI,1);
-      rebuildBestCaches();
-    }
+    bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow});
+    if(best.length>outN*4)best.length=outN*3;
 
-    if(!expr){
-      expr=obj.ast?strA(normalizeAST(obj.ast)):(obj.s||"?");
-      latex=obj.ast?latexA(normalizeAST(obj.ast)):expr;
+    bestSeen.clear();
+    nearSeen.clear();
+    for(let i=0;i<best.length;i++){
+      const vk=best[i].v.toPrecision(BESTP);
+      const hasPowBest=!!best[i].hasPow;
+      const kkBase=mp.keepMeetDup?(vk+"|"+(best[i].searchType||"fwd")):vk;
+      const kk=hasPowBest?(kkBase+"|pow"):kkBase;
+      bestSeen.set(kk,i);
+      const ns=Math.max(2e-6,Math.max(1,Math.abs(T))*2e-8);
+      nearSeen.set(Math.round(best[i].v/ns),i);
     }
-    bestInsertSorted({expr,latex,v,delta,acc,cost:obj.cost,countsInfo:ci,searchType:type,hasPow,sig});
-    if(best.length>BEST_POOL_CAP*1.2)best.length=BEST_POOL_CAP;
-    rebuildBestCaches();
 
     if(acc==="exact") maybeStopOnExact(delta);
   }
@@ -3588,97 +3120,35 @@ function collectLeaves(ast, out){
   const rev=Array.from({length:maxC+1},()=>[]);
   const revIdx=new Map();
   const fwdIdx=new Map();
-  // coarse band index: key ignores mantissa quantization (sign|exp|domain prefix)
-  // and stores a tiny hot-list. It is used as a breadth fallback when precise meet keys miss.
-  const revBandIdx=new Map();
-  const fwdBandIdx=new Map();
-
-  function idxBetter(a,b){
-    const ac=a?.cost??INF, bc=b?.cost??INF;
-    if(ac!==bc) return ac<bc;
-    const ak=a?.keep??INF, bk=b?.keep??INF;
-    if(ak!==bk) return ak<bk;
-    return Math.abs(a?.v??INF) < Math.abs(b?.v??INF);
-  }
 
   function idxInsert(map,key,it,cap){
     let arr=map.get(key);
     if(!arr){arr=[];map.set(key,arr);}
-
-    if(arr.length<cap){
-      arr.push(it);
-      // Keep hot prefix ordered so meet probing can stop early with higher quality candidates.
-      for(let j=arr.length-1;j>0;j--){
-        if(idxBetter(arr[j],arr[j-1])){ const t=arr[j-1]; arr[j-1]=arr[j]; arr[j]=t; }
-        else break;
-      }
-      return;
-    }
-
+    if(arr.length<cap){arr.push(it);return;}
     let wi=0;
     for(let i=1;i<arr.length;i++){
-      if(idxBetter(arr[wi],arr[i])) wi=i;
+      const a=arr[i], w=arr[wi];
+      if( (a.cost>w.cost) || (a.cost===w.cost && (a.keep??INF)>(w.keep??INF)) ) wi=i;
     }
-
-    if(idxBetter(it,arr[wi])){
+    const w=arr[wi];
+    if( (it.cost<w.cost) || (it.cost===w.cost && (it.keep??INF)<(w.keep??INF)) ){
       arr[wi]=it;
-      for(let j=wi;j>0;j--){
-        if(idxBetter(arr[j],arr[j-1])){ const t=arr[j-1]; arr[j-1]=arr[j]; arr[j]=t; }
-        else break;
-      }
     }
-  }
-
-  function keyBand(k){
-    if(typeof k!=="string" || !k.length) return "";
-    if(k==="NaN") return "";
-    const p=k.split("|");
-    if(p.length===3){
-      // base key: sign|exp|q
-      return p[0]+"|"+p[1];
-    }
-    if(p.length>=4){
-      // transformed key: prefix|sign|exp|q
-      return p[0]+"|"+p[1]+"|"+p[2];
-    }
-    return "";
-  }
-
-  function idxInsertBand(map,key,it,cap){
-    const bk=keyBand(key);
-    if(!bk) return;
-    idxInsert(map,bk,it,cap);
   }
 
   function addRevIdx(items){
     const cap=Math.max(8,mp.revIdxKeyCap|0||120);
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
-    const bandCap=Math.max(6, Math.floor(cap*0.35));
-    // Speed模式: rev索引使用短键(主键+邻域), 避免变换域键导致revIdxKeys爆炸
-    // 注: pow/exp/log类op的rev项保留完整键以支持跨域meet
-    const speedShortKeys = !!(mp.speedRevMeetPrimaryOnly);
-    // 深层联系: revIdx的热前缀质量决定meet成功率
-    const sortedItems = items.slice().sort((a,b)=>{
-      const ca=a.cost??99, cb=b.cost??99;
-      if(ca!==cb) return ca-cb;
-      return (a.keep??1e9)-(b.keep??1e9);
-    });
-    for(const it of sortedItems){
+    for(const it of items){
       const p=it.mkey || (it.mkey = meetPrimaryKey(it.v));
       idxInsert(revIdx,p,it,cap);
-      idxInsertBand(revBandIdx,p,it,bandCap);
-      // Speed模式: 对非pow/func的rev项只用短键
-      const isPowLike = (it.srcOp==="^"||it.srcOp==="square"||it.srcOp==="cube"||
-                         it.srcOp==="exp"||it.srcOp==="log"||it.srcOp==="sqrt"||it.srcOp==="cbrt");
-      const useShort = speedShortKeys && !isPowLike;
-      const ks=meetKeysCached(it, useShort);
+      const ks=meetKeysCached(it);
       let used=0;
       for(let i=0;i<ks.length&&used<maxKeys;i++){
         const k2=ks[i];
         if(k2===p) continue;
         idxInsert(revIdx,k2,it,perItemCap);
-        idxInsertBand(revBandIdx,k2,it,bandCap);
         used++;
       }
     }
@@ -3691,23 +3161,15 @@ function collectLeaves(ast, out){
     const cap=Math.max(8,mp.fwdIdxKeyCap|0||120);
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
-    const bandCap=Math.max(6, Math.floor(cap*0.35));
-    // Speed模式: fwd索引也使用短键减少内存和构建时间
-    const speedShortFwd = !!(mp.speedRevMeetPrimaryOnly);
     for(const it of items){
       const p=it.mkey || (it.mkey = meetPrimaryKey(it.v));
       idxInsert(fwdIdx,p,it,cap);
-      idxInsertBand(fwdBandIdx,p,it,bandCap);
-      // fwd项: pow结构使用完整键, 其他用短键
-      const hasPowAst = !!(it.ast && it.ast.p);
-      const useShortFwd = speedShortFwd && !hasPowAst;
-      const ks=meetKeysCached(it, useShortFwd);
+      const ks=meetKeysCached(it);
       let used=0;
       for(let i=0;i<ks.length&&used<maxKeys;i++){
         const k2=ks[i];
         if(k2===p) continue;
         idxInsert(fwdIdx,k2,it,perItemCap);
-        idxInsertBand(fwdBandIdx,k2,it,bandCap);
         used++;
       }
     }
@@ -3716,126 +3178,14 @@ function collectLeaves(ast, out){
     meetDbg.fwdIdxItems=total;
   }
 
-  const _sqrtT = T>0 ? Math.sqrt(T) : NaN;
-  const _cbrtT = Number.isFinite(T) ? Math.cbrt(T) : NaN;
-  // 预计算T的多种变换值用于keepScore中的亲和力判断
-  const _logT = T>0 ? Math.log(T) : NaN;
-  const _T4th = T>0 ? Math.pow(T,0.25) : NaN;  // T^(1/4) 用于pow链深层结构
-  const _T5th = T>0 ? Math.pow(T,0.2) : NaN;   // T^(1/5) 用于深层幂次
-  const _invT = Math.abs(T)>1e-12 ? 1/T : NaN;  // 1/T 用于除法组合
-  const _asinT = Math.abs(T)<=1 ? Math.asin(Math.max(-1,Math.min(1,T))) : NaN;  // asin(T)
-  const _acosT = Math.abs(T)<=1 ? Math.acos(Math.max(-1,Math.min(1,T))) : NaN;  // acos(T)
-  const _atanT = Number.isFinite(T) ? Math.atan(T) : NaN;  // atan(T)
-  function keepScore(goal,bb,revHit,mask,v){
+  function keepScore(goal,bb,revHit,mask){
     let keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
     if(revHit)keep*=(1.0-(mp.meetHitBonus||0));
     if(useBitmask && REQ_POP>0) keep *= reqAdj(mask|0);
+    // Rationality bonus: highly rational values (small bb, non-solution) get
+    // a small keep reduction so they survive pruning longer as power base candidates.
+    // This helps retain (25/7)-style values even when far from target T.
     if(bb<0.08 && goal>1e-4) keep -= 0.04*bb;
-
-    if(Number.isFinite(v) && goal>1e-6){
-      if(Number.isFinite(_sqrtT)){
-        const proxSq=Math.abs(v-_sqrtT)/(1e-9+_sqrtT);
-        if(proxSq<0.02) keep -= 0.25*(1-proxSq/0.02);
-        else if(proxSq<0.15) keep -= 0.10*(1-proxSq/0.15);
-        const nprox=Math.abs(v+_sqrtT)/(1e-9+_sqrtT);
-        if(nprox<0.02) keep -= 0.18*(1-nprox/0.02);
-      }
-      if(Number.isFinite(_cbrtT)){
-        const proxCb=Math.abs(v-_cbrtT)/(1e-9+Math.abs(_cbrtT));
-        if(proxCb<0.02) keep -= 0.14*(1-proxCb/0.02);
-        else if(proxCb<0.12) keep -= 0.05*(1-proxCb/0.12);
-      }
-      if(Number.isFinite(_T4th) && _T4th>1e-9){
-        const prox4=Math.abs(v-_T4th)/(1e-9+_T4th);
-        if(prox4<0.02) keep -= 0.10*(1-prox4/0.02);
-      }
-      if(Number.isFinite(_logT)){
-        const proxL=Math.abs(v-_logT)/(1e-9+Math.abs(_logT)+1);
-        if(proxL<0.02) keep -= 0.12*(1-proxL/0.02);
-      }
-      if(Number.isFinite(_invT) && Math.abs(_invT)<1e8){
-        const proxInv=Math.abs(v-_invT)/(1e-9+Math.abs(_invT)+1);
-        if(proxInv<0.02) keep -= 0.08*(1-proxInv/0.02);
-      }
-
-      const absV=Math.abs(v);
-      const absT2=Math.abs(T);
-      if(Number.isFinite(_sqrtT) && _sqrtT>1e-9){
-        for(const c of [Math.PI, Math.E, 2, 3, Math.SQRT2]){
-          const vc=v*c;
-          const proxMul=Math.abs(vc-_sqrtT)/(1e-9+_sqrtT);
-          if(proxMul<0.03) keep -= 0.20*(1-proxMul/0.03);
-          else if(proxMul<0.12) keep -= 0.06*(1-proxMul/0.12);
-          const vSub=Math.abs(c-v);
-          if(vSub<10 && vSub>1e-12){
-            const sq=vSub*vSub;
-            if(Math.abs(sq-absT2)<absT2*0.05) keep -= 0.12;
-          }
-        }
-      }
-      if(absV>0.01 && absV<1e5){
-        const vsq=v*v;
-        const proxSqV=Math.abs(vsq-absT2)/(1e-9+absT2);
-        if(proxSqV<0.01) keep -= 0.30*(1-proxSqV/0.01);
-        else if(proxSqV<0.08) keep -= 0.10*(1-proxSqV/0.08);
-        for(const c of [Math.PI, Math.E, 2]){
-          const target=absT2/c;
-          const prox=Math.abs(vsq-target)/(1e-9+target);
-          if(prox<0.02) keep -= 0.12*(1-prox/0.02);
-        }
-      }
-      if(absV>0.1 && absV<200){
-        const vcb=v*v*v;
-        const proxCbV=Math.abs(vcb-T)/(1e-9+absT2);
-        if(proxCbV<0.02) keep -= 0.15*(1-proxCbV/0.02);
-      }
-      if(absV<20){
-        const ev=Math.exp(v);
-        if(Number.isFinite(ev)){
-          const proxExp=Math.abs(ev-absT2)/(1e-9+absT2);
-          if(proxExp<0.02) keep -= 0.14*(1-proxExp/0.02);
-        }
-      }
-      if(absV>0.1 && absV<12){
-        for(const frac of [0.5, 1/3, 2/3, 0.25, 0.75, 1/5, 1/6, 1/7]){
-          if(Math.abs(v-frac)<0.015) keep -= 0.08;
-          if(Math.abs(v+frac)<0.015) keep -= 0.05;
-        }
-      }
-    }
-
-    // 组合亲和力：值可以与已知常数组合接近 T 的变换值
-    if(Number.isFinite(v)&&Number.isFinite(_sqrtT)&&_sqrtT>1e-9&&goal>1e-6){
-      for(const c of [Math.PI,Math.E,2,3,Math.SQRT2]){
-        // v*c ≈ √T
-        const vc=v*c;
-        const prox=Math.abs(vc-_sqrtT)/(1e-9+_sqrtT);
-        if(prox<0.03) keep-=0.18*(1-prox/0.03);
-        else if(prox<0.10) keep-=0.05*(1-prox/0.10);
-        // c-v ≈ 有用的中间值
-        const cv2=c-v;
-        if(Number.isFinite(cv2)&&Math.abs(cv2)<100){
-          const sq=cv2*cv2;
-          if(Math.abs(sq-Math.abs(T))<Math.abs(T)*0.05) keep-=0.10;
-        }
-      }
-      // v^2 ≈ T
-      if(Math.abs(v)>0.01&&Math.abs(v)<1e5){
-        const vsq=v*v;
-        const proxSq=Math.abs(vsq-Math.abs(T))/(1e-9+Math.abs(T));
-        if(proxSq<0.01) keep-=0.25*(1-proxSq/0.01);
-        else if(proxSq<0.06) keep-=0.08*(1-proxSq/0.06);
-      }
-      // e^v ≈ T
-      if(Math.abs(v)<20){
-        const ev=Math.exp(v);
-        if(Number.isFinite(ev)){
-          const proxExp=Math.abs(ev-Math.abs(T))/(1e-9+Math.abs(T));
-          if(proxExp<0.02) keep-=0.12*(1-proxExp/0.02);
-        }
-      }
-    }
-
     return keep;
   }
 
@@ -3846,14 +3196,12 @@ function collectLeaves(ast, out){
     return vk+"|"+(ck||"");
   };
 
-  function meetKeysCached(node,skipTransform=false){
-    if(!skipTransform && node.mkeys!=null) return node.mkeys;
-    if(skipTransform && node.mkeysShort!=null) return node.mkeysShort;
+  function meetKeysCached(node){
+    if(node.mkeys!=null) return node.mkeys;
     // Recompute depth lazily if stripped
     const dep=(node.depth!=null)?node.depth:astDepth(node.ast);
-    const ks = meetKeys(node.v,node.goal,dep,skipTransform);
-    if(!skipTransform) node.mkeys = ks;
-    else node.mkeysShort = ks;
+    const ks = meetKeys(node.v,node.goal,dep);
+    node.mkeys = ks;
     return ks;
   }
 
@@ -3862,103 +3210,6 @@ function collectLeaves(ast, out){
     if(n.t===0) return 1;
     if(n.t===1) return astCost(n.ch)+wUn(n.op);
     return astCost(n.l)+astCost(n.r)+wBin(n.op);
-  }
-
-  // Shared reverse scoring utility (used by seed hints + buildRev expansion).
-  function revScore(v){
-    const ab=Math.abs(v);
-    const mag=Math.log1p(ab);
-    const trigOutBonus=(ab<=1.0&&ab>1e-15)?0.22:0;
-    const trigArgBonus=(ab<=Math.PI*2+0.1)?0.10:0;
-    const rbb=bbScore(v,18,0.012);
-    const ratBonus=rbb<0.06?0.18:(rbb<0.18?0.07:0);
-
-    let tTransformBonus=0;
-    if(Number.isFinite(_sqrtT) && _sqrtT>1e-9){
-      const d=Math.abs(v-_sqrtT)/(1e-9+_sqrtT);
-      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.30*(1-d/0.05));
-    }
-    if(Number.isFinite(_cbrtT) && Math.abs(_cbrtT)>1e-9){
-      const d=Math.abs(v-_cbrtT)/(1e-9+Math.abs(_cbrtT));
-      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.20*(1-d/0.05));
-    }
-    if(Number.isFinite(_logT)){
-      const d=Math.abs(v-_logT)/(1e-9+Math.abs(_logT)+1);
-      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.18*(1-d/0.05));
-    }
-    if(Number.isFinite(_T4th) && _T4th>1e-9){
-      const d=Math.abs(v-_T4th)/(1e-9+_T4th);
-      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.12*(1-d/0.05));
-    }
-
-    if(Number.isFinite(_sqrtT) && _sqrtT>1e-9){
-      for(const c of [Math.PI, Math.E, 2, 3]){
-        const tv=_sqrtT/c;
-        if(Number.isFinite(tv)){
-          const d=Math.abs(v-tv)/(1e-9+Math.abs(tv)+1);
-          if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.22*(1-d/0.05));
-        }
-      }
-      for(const c of [Math.PI, Math.E, 2]){
-        const tv=_sqrtT/c;
-        if(Number.isFinite(tv)){
-          const sub=Math.E-tv;
-          if(Number.isFinite(sub)){
-            const d=Math.abs(v-sub)/(1e-9+Math.abs(sub)+1);
-            if(d<0.08) tTransformBonus=Math.max(tTransformBonus,0.16*(1-d/0.08));
-          }
-        }
-      }
-    }
-    if(ab>0.01 && ab<100){
-      for(let n=-3;n<=5;n++){
-        const en=Math.exp(n);
-        if(Math.abs(v-en)<0.1*en) tTransformBonus=Math.max(tTransformBonus,0.08);
-      }
-    }
-    // T^(1/5) 用于 f^5=T 结构
-    if(Number.isFinite(_T5th) && _T5th>1e-9){
-      const d=Math.abs(v-_T5th)/(1e-9+_T5th);
-      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.10*(1-d/0.05));
-    }
-    // 1/T 用于除法组合 f/g=T
-    if(Number.isFinite(_invT) && Math.abs(_invT)<1e8){
-      const d=Math.abs(v-_invT)/(1e-9+Math.abs(_invT)+1);
-      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.12*(1-d/0.05));
-    }
-    // asin(T), acos(T), atan(T) — 若T在[-1,1]时特别有价值
-    if(Number.isFinite(_asinT)){
-      const d=Math.abs(v-_asinT)/(1e-9+Math.abs(_asinT)+0.1);
-      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.18*(1-d/0.05));
-    }
-    if(Number.isFinite(_acosT)){
-      const d=Math.abs(v-_acosT)/(1e-9+Math.abs(_acosT)+0.1);
-      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.18*(1-d/0.05));
-    }
-    if(Number.isFinite(_atanT)){
-      const d=Math.abs(v-_atanT)/(1e-9+Math.abs(_atanT)+0.1);
-      if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.14*(1-d/0.05));
-    }
-
-
-    // 多步分解亲和力
-    if(Number.isFinite(_sqrtT)&&_sqrtT>1e-9){
-      for(const c of [Math.PI,Math.E,2,3]){
-        const tv=_sqrtT/c;
-        if(Number.isFinite(tv)){
-          const d=Math.abs(v-tv)/(1e-9+Math.abs(tv)+1);
-          if(d<0.05) tTransformBonus=Math.max(tTransformBonus,0.20*(1-d/0.05));
-        }
-        // e - √T/c (关键中间值)
-        const sub=Math.E-tv;
-        if(Number.isFinite(sub)){
-          const d2=Math.abs(v-sub)/(1e-9+Math.abs(sub)+1);
-          if(d2<0.06) tTransformBonus=Math.max(tTransformBonus,0.15*(1-d2/0.06));
-        }
-      }
-    }
-
-    return Math.max(0.001, mag - trigOutBonus - trigArgBonus - ratBonus - tTransformBonus);
   }
 
   function pickInterestingAtoms(limit=10){
@@ -3984,8 +3235,73 @@ function collectLeaves(ast, out){
     return mkC(String(val),val,ordLeaf(String(val)));
   }
 
-  // 引擎侧不再注入“引导模板合成”候选，避免把特定结构硬编码到搜索结果中。
-  // 所有解都必须来自统一的前向/反向/meet 搜索流程。
+  function pushGuidedSynthesisSeeds(){
+    if(!noConstraintFast || tCount!==0 || useBitmask) return;
+    const hasOp=(op)=> Array.isArray(opsBin) && opsBin.includes(op);
+    if(!hasOp('+')||!hasOp('-')||!hasOp('*')||!hasOp('/')||!hasOp('^')) return;
+
+    const one=getConstNodeByValue(1);
+    const two=getConstNodeByValue(2);
+    const three=getConstNodeByValue(3);
+    const scales=[{k:two,kv:2},{k:three,kv:3}];
+
+    const pushIfNear=(expr, tag='guided')=>{
+      const v=evalA(expr);
+      if(!Number.isFinite(v) || Math.abs(v)>CAP) return;
+      const cst=astCost(expr);
+      const err=Math.abs(v-T);
+      const scale=Math.max(1,Math.abs(T));
+      if(cst<=maxC+3 && err<=Math.max(2e-3,scale*8e-5)){
+        pushBest({v,ast:expr,cost:cst,searchType:tag});
+      }
+    };
+
+    const atoms=pickInterestingAtoms(9);
+    if(atoms.length<2) return;
+
+    const pairCap=Math.min(14,atoms.length*atoms.length);
+    let pairsTried=0;
+
+    for(let i=0;i<atoms.length&&pairsTried<pairCap;i++){
+      for(let j=0;j<atoms.length&&pairsTried<pairCap;j++){
+        if(i===j) continue;
+        const A=atoms[i], B=atoms[j];
+        const a=mkC(A.s,A.v,ordLeaf(A.s));
+        const b=mkC(B.s,B.v,ordLeaf(B.s));
+        pairsTried++;
+
+        // generic motif-1: (a-b) + (a^2*b)^(a^(1-a/(b-1)))
+        try{
+          const bMinus1 = mkB('-', b, one);
+          const aDiv = mkB('/', a, bMinus1);
+          const e2 = mkB('-', one, aDiv);
+          const p2 = mkB('^', a, e2);
+          const a2 = mkB('^', a, two);
+          const base = mkB('*', a2, b);
+          const p1 = mkB('^', base, p2);
+          const lhs = mkB('-', a, b);
+          const expr = mkB('+', lhs, p1);
+          pushIfNear(expr,'guided');
+        }catch(e){}
+
+        // generic motif-2 family: (a-n)+m*a^(n-a)*(1+m*a^b)
+        for(const sc of scales){
+          try{
+            const n=sc.k;
+            const left=mkB('-', a, n);
+            const nMinusA=mkB('-', n, a);
+            const pA=mkB('^', a, nMinusA);
+            const mPA=mkB('*', sc.k, pA);
+            const aPowB=mkB('^', a, b);
+            const onePlus=mkB('+', one, mkB('*', sc.k, aPowB));
+            const prod=mkB('*', mPA, onePlus);
+            const expr=mkB('+', left, prod);
+            pushIfNear(expr,'guided');
+          }catch(e){}
+        }
+      }
+    }
+  }
 
 
   // init layer c=1
@@ -4003,7 +3319,7 @@ function collectLeaves(ast, out){
         const bit=idx2bit[i];
         let mask=0;
         if(bit>=0){if(!maxBits[bit])continue;mask=1<<bit;}
-        const keep=keepScore(goal,bb,revHit,mask,v);
+        const keep=keepScore(goal,bb,revHit,mask);
         const flags=mkFlags(v,TAG_NONE,true);
         const ast=mkC(consts[i].s,v,ordLeaf(consts[i].s));
         if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
@@ -4023,7 +3339,7 @@ function collectLeaves(ast, out){
 
     const items=Array.from(bucket.values());
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask,mode,T);
+    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask,mode);
     for(const it of picked){it.cost=1;}
     fwd[1]=picked;
     addFwdIdx(fwd[1]);
@@ -4032,6 +3348,8 @@ function collectLeaves(ast, out){
     emit(1);
   }
 
+  pushGuidedSynthesisSeeds();
+
   // seed reverse
   if(bidir){
     const seedMask=0;
@@ -4039,242 +3357,11 @@ function collectLeaves(ast, out){
     const seedCk=tCount?ckFromCnt(seedCnt):"";
     const mk = meetPrimaryKey(T);
     rev[0]=[{v:T,wA:(a)=>a,mask:seedMask,cnt:seedCnt,ck:seedCk,flags:mkFlags(T,TAG_NONE,true),cost:0,score:0,srcOp:"seed",mkey:mk}];
-
-    // Target-anchored reverse hints: seed a tiny frontier of transformed targets so
-    // hard composed structures can meet earlier without waiting many reverse layers.
-    // This improves breadth structurally (not parameter-only) while staying bounded.
-    const hinted=new Set();
-    const hintCountByCost=new Map();
-    const maxHintTotal=220;  // ↑ from 72: more budget for multi-step decompositions
-    let hintTotal=0;
-    function pushRevHint(v,cost,wA,srcOp){
-      if(!Number.isFinite(v) || Math.abs(v)>CAP) return;
-      cost=cost|0;
-      if(cost<=0 || cost>maxC) return;
-      const hk=vKey(v)+"|"+cost+"|"+srcOp;
-      if(hinted.has(hk)) return;
-      hinted.add(hk);
-      const n=(hintCountByCost.get(cost)||0);
-      const capPerCost = (cost<=4)?24:14;  // ↑ from 18/10
-      if(n>=capPerCost || hintTotal>=maxHintTotal) return;
-      hintCountByCost.set(cost,n+1);
-      hintTotal++;
-      const mkey=meetPrimaryKey(v);
-      const score=revScore(v);
-      const node=useBitmask
-        ?{v,wA,mask:seedMask,flags:mkFlags(v,TAG_NONE,false),keep:score,goal:score,bb:score,cost,srcOp,mkey}
-        :{v,wA,cnt:seedCnt,ck:seedCk,flags:mkFlags(v,TAG_NONE,false),keep:score,goal:score,bb:score,cost,srcOp,mkey};
-      if(!rev[cost]) rev[cost]=[];
-      rev[cost].push(node);
-    }
-
-    // ── Power-decomposition multi-step hints ──
-    // These seed rev with transformed versions of T (e.g. √T, ∛T, etc.)
-    // so that fwd[k] can meet rev[c-k] via outer square/cube/power.
-    // Critical for finding (f(x))^2 = T type structures.
-    const favAtoms=pickInterestingAtoms(8);
-    const _unHintOps_early=["square","sqrt","cube","cbrt","exp","log"];
-    for(const op of _unHintOps_early){
-      if(!Array.isArray(opsUn)||!opsUn.includes(op)) continue;
-      const invs=invUn(op,T);
-      if(!Array.isArray(invs)) continue;
-      const w=wUn(op);
-      for(const obj of invs){
-        const vv=obj&&obj.v;
-        if(!Number.isFinite(vv)||Math.abs(vv)>CAP) continue;
-        // Level-1: op(x)=T → x=vv
-        const wA1=(a)=>mkU(op,a);
-        pushRevHint(vv,w,wA1,"earlyhint_"+op);
-        // Level-2: for atoms c, try: op(c * x) = T → x = vv/c  and  op(c + x) = T → x = vv - c
-        for(const cst of favAtoms){
-          const cv=Number(cst.v);
-          if(!Number.isFinite(cv)||cv===0) continue;
-          const cAst=mkC(cst.s,cst.v,ordLeaf(cst.s));
-          if(Array.isArray(opsBin)&&opsBin.includes("*")){
-            const x2=invBinR("*",vv,cv); // c*x=vv → x=vv/c
-            if(Number.isFinite(x2)&&Math.abs(x2)<CAP){
-              const wA2=(a)=>mkU(op,mkB("*",cAst,a));
-              pushRevHint(x2,w+wBin("*"),wA2,"earlyhint2_"+op+"_mul");
-            }
-          }
-          if(Array.isArray(opsBin)&&opsBin.includes("+")){
-            const x3=invBinR("+",vv,cv); // c+x=vv → x=vv-c
-            if(Number.isFinite(x3)&&Math.abs(x3)<CAP){
-              const wA3=(a)=>mkU(op,mkB("+",cAst,a));
-              pushRevHint(x3,w+wBin("+"),wA3,"earlyhint2_"+op+"_add");
-            }
-          }
-          if(op==="square"&&Array.isArray(opsBin)&&opsBin.includes("*")){
-            // (c*x)^2=T → x=√T/c
-            const sqT=Math.sqrt(T);
-            if(Number.isFinite(sqT)&&T>0){
-              const x4=sqT/cv;
-              if(Number.isFinite(x4)&&Math.abs(x4)<CAP){
-                const wA4=(a)=>mkB("^",mkB("*",cAst,a),mkC("2",2,ordLeaf("2")));
-                pushRevHint(x4,wBin("^")+wBin("*"),wA4,"earlyhint2_sq_cmul");
-              }
-            }
-          }
-        }
-        // Level-2b: for sqrt result vv, also add √(vv) and -√(vv) hints
-        if(op==="square"&&T>0&&Number.isFinite(vv)&&vv>0){
-          // Already covered by sqT above; also add negative sqrt
-          const wA_neg=(a)=>mkU("square",mkU("neg",a));
-          pushRevHint(vv,w,wA_neg,"earlyhint_sq_neg");
-        }
-      }
-    }
-
-    // ── 2-step binary hints: T = a OP b where b comes from a combination ──
-    // e.g. T = (fwd_expr)^2 → seed rev with fwd-side half at cost c/2
-
-    for(const cst of favAtoms){
-      const cv=Number(cst.v);
-      if(!Number.isFinite(cv)) continue;
-      const cAst=mkC(cst.s,cst.v,ordLeaf(cst.s));
-      if(Array.isArray(opsBin)){
-        if(opsBin.includes("*") && cv!==0){
-          const x=invBinR("*",T,cv);
-          pushRevHint(x,wBin("*"),(a)=>mkB("*",cAst,a),"hint_mul_r");
-        }
-        if(opsBin.includes("/") && cv!==0){
-          const x=invBinR("/",T,cv);
-          pushRevHint(x,wBin("/"),(a)=>mkB("/",cAst,a),"hint_div_r");
-          const y=invBinL("/",T,cv);
-          pushRevHint(y,wBin("/"),(a)=>mkB("/",a,cAst),"hint_div_l");
-        }
-        if(opsBin.includes("+") ){
-          const x=invBinR("+",T,cv);
-          pushRevHint(x,wBin("+"),(a)=>mkB("+",cAst,a),"hint_add_r");
-        }
-        if(opsBin.includes("-") ){
-          const x=invBinR("-",T,cv);
-          pushRevHint(x,wBin("-"),(a)=>mkB("-",cAst,a),"hint_sub_r");
-          const y=invBinL("-",T,cv);
-          pushRevHint(y,wBin("-"),(a)=>mkB("-",a,cAst),"hint_sub_l");
-        }
-        if(opsBin.includes("^") && T>0 && cv>0 && Math.abs(cv-1)>1e-12){
-          const x=invBinR("^",T,cv);
-          pushRevHint(x,wBin("^"),(a)=>mkB("^",cAst,a),"hint_pow_exp");
-          const y=invBinL("^",T,cv);
-          pushRevHint(y,wBin("^"),(a)=>mkB("^",a,cAst),"hint_pow_base");
-        }
-      }
-    }
-
-    if(Array.isArray(opsUn)){
-      const unHintOps=["log","exp","sqrt","cbrt","square","cube","sin","cos","tan","asin","acos","atan"];
-      for(const op of unHintOps){
-        if(!opsUn.includes(op)) continue;
-        const invs=invUn(op,T);
-        if(!Array.isArray(invs)) continue;
-        const w=wUn(op);
-        for(const obj of invs){
-          const vv=obj&&obj.v;
-          pushRevHint(vv,w,(a)=>mkU(op,a),"hint_"+op);
-        }
-      }
-    }
-
-    {
-      const deepBudget=100;
-      let deepUsed=0;
-      const L0=[];
-      // T=x^2
-      if(T>0&&Array.isArray(opsUn)&&opsUn.includes("square"))
-        L0.push({v:Math.sqrt(T),c:wUn("square"),w:(a)=>mkU("square",a)});
-      if(T>0) L0.push({v:-Math.sqrt(T),c:wUn("square"),w:(a)=>mkU("square",mkU("neg",a))});
-      // T=x^3
-      if(Array.isArray(opsUn)&&opsUn.includes("cube"))
-        L0.push({v:Math.cbrt(T),c:wUn("cube"),w:(a)=>mkU("cube",a)});
-      // T=exp(x)
-      if(T>0&&Array.isArray(opsUn)&&opsUn.includes("exp"))
-        L0.push({v:Math.log(T),c:wUn("exp"),w:(a)=>mkU("exp",a)});
-      // T=x^n via ^
-      if(Array.isArray(opsBin)&&opsBin.includes("^")){
-        for(const n of [2,3,4,5]){
-          const r=Math.pow(Math.abs(T),1/n);
-          if(Number.isFinite(r)&&r<1e8){
-            const nA=mkC(String(n),n,ordLeaf(String(n)));
-            L0.push({v:r,c:wBin("^"),w:(a)=>mkB("^",a,nA)});
-          }
-        }
-      }
-
-      for(const t0 of L0){
-        if(!Number.isFinite(t0.v)||deepUsed>=deepBudget) continue;
-        for(const cst of favAtoms){
-          if(deepUsed>=deepBudget) break;
-          const cv=Number(cst.v),cA=mkC(cst.s,cst.v,ordLeaf(cst.s));
-          if(!Number.isFinite(cv)||Math.abs(cv)<1e-14) continue;
-
-          // t0.v = c*x
-          if(Array.isArray(opsBin)&&opsBin.includes("*")){
-            const x=t0.v/cv;
-            if(Number.isFinite(x)&&Math.abs(x)<CAP){
-              const tc=t0.c+wBin("*");
-              const wA=(a)=>t0.w(mkB("*",cA,a));
-              pushRevHint(x,tc,wA,"deep2_mul");deepUsed++;
-
-              // 三级: x = c2 - z
-              for(const c2 of favAtoms.slice(0,4)){
-                if(deepUsed>=deepBudget) break;
-                const cv2=Number(c2.v),cA2=mkC(c2.s,c2.v,ordLeaf(c2.s));
-                if(!Number.isFinite(cv2)) continue;
-                if(Array.isArray(opsBin)&&opsBin.includes("-")){
-                  const z=cv2-x;
-                  if(Number.isFinite(z)&&Math.abs(z)<CAP){
-                    pushRevHint(z,tc+wBin("-"),(a)=>t0.w(mkB("*",cA,mkB("-",cA2,a))),"deep3_sub");
-                    deepUsed++;
-                  }
-                }
-                if(Array.isArray(opsBin)&&opsBin.includes("+")){
-                  const z=x-cv2;
-                  if(Number.isFinite(z)&&Math.abs(z)<CAP){
-                    pushRevHint(z,tc+wBin("+"),(a)=>t0.w(mkB("*",cA,mkB("+",cA2,a))),"deep3_add");
-                    deepUsed++;
-                  }
-                }
-              }
-            }
-          }
-          // t0.v = c+x
-          if(Array.isArray(opsBin)&&opsBin.includes("+")){
-            const x=t0.v-cv;
-            if(Number.isFinite(x)&&Math.abs(x)<CAP){
-              pushRevHint(x,t0.c+wBin("+"),(a)=>t0.w(mkB("+",cA,a)),"deep2_add");
-              deepUsed++;
-            }
-          }
-          // t0.v = c-x
-          if(Array.isArray(opsBin)&&opsBin.includes("-")){
-            const x=cv-t0.v;
-            if(Number.isFinite(x)&&Math.abs(x)<CAP){
-              pushRevHint(x,t0.c+wBin("-"),(a)=>t0.w(mkB("-",cA,a)),"deep2_sub");
-              deepUsed++;
-            }
-          }
-          // t0.v = x^c (幂分解)
-          if(Array.isArray(opsBin)&&opsBin.includes("^")&&Math.abs(cv)>0.1&&Math.abs(cv)<20){
-            const base=Math.pow(t0.v,1/cv);
-            if(Number.isFinite(base)&&Math.abs(base)<CAP&&base>0){
-              pushRevHint(base,t0.c+wBin("^"),(a)=>t0.w(mkB("^",a,cA)),"deep2_pow");
-              deepUsed++;
-            }
-          }
-        }
-      }
-    }
-
-    for(let c=0;c<=maxC;c++){
-      if(Array.isArray(rev[c]) && rev[c].length) addRevIdx(rev[c]);
-    }
+    addRevIdx(rev[0]);
   }
 
   function tryMeetPair(f,r){
     const tc=f.cost+r.cost;
-    meetDbg.pairTcSum+=(Number.isFinite(tc)?tc:0);
-    if(tc>=10) meetDbg.pairTcHigh++;
     if(tc>maxC)return;
 
     if(useBitmask){if((f.mask&r.mask)!==0){meetDbg.rejMaskOverlap++;return;}}
@@ -4283,61 +3370,7 @@ function collectLeaves(ast, out){
     const scale=Math.max(1,Math.abs(T),Math.abs(f.v),Math.abs(r.v));
     const matchGap=Math.abs(f.v-r.v);
 
-    // === 超快速预过滤: 基于量级差异，深层联系: 
-    // 如果fwd和rev的值在log域相差超过一定范围，它们的meet误差会被非线性放大
-    // 这比计算isPowRelated更廉价，可以提前拒绝大量明显不匹配的pair
-    // 对于matchGap/scale > 2e-7的pair，confirm成功概率极低(经验值)
-    if(matchGap > 2e-7 * scale && tc > 10) { meetDbg.rejEpsCand++; return; }
-
-    // ▼▼▼ 快速通道：matchGap 极小时直接进入 trueVal 确认，跳过 probe 估算
-    const ultraCloseGap = 3e-13 * scale;
-    const ultraClose = (matchGap <= ultraCloseGap);
-
-    // 高复杂度+大幅值时的快速拒绝，减少无效confirm
-    if(!ultraClose && tc>=12){
-      const m=Math.max(Math.abs(f.v),Math.abs(r.v));
-      if(m>80 && matchGap>6e-11*scale){ meetDbg.rejEpsCand++; return; }
-    }
-
     const isPowRelated = (r.srcOp==="^") || (f.hasPow) || (r.wA && r.srcOp==="pow");
-    if(meetDbg.maxConfirmErr > 100 && isPowRelated){
-      const fMag=Math.abs(f.v), rMag=Math.abs(r.v);
-      if(fMag>10 && rMag>10 && matchGap > 1e-9*scale){
-        meetDbg.rejEpsCand++;
-        return;
-      }
-    }
-    if(meetDbg.maxConfirmErr > 1000){
-      if(isPowRelated && matchGap > 3e-11*scale){
-        meetDbg.rejEpsCand++;
-        return;
-      }
-    }
-    // FIXED: for pow-related candidates, apply much stricter initial reject to avoid
-    // runaway evaluation of e.g. base^exponent that produces astronomically large errors
-    // (maxConfirmErr was ~1e12 indicating this was a real problem)
-    if(isPowRelated && Math.abs(f.v)>50 && Math.abs(r.v)>50) { meetDbg.rejEpsCand++; return; }
-    // 历史误差自适应: maxConfirmErr 极大时更激进过滤 pow
-    if(meetDbg.maxConfirmErr>500 && isPowRelated){
-      const fM=Math.abs(f.v),rM=Math.abs(r.v);
-      if(fM>15&&rM>15&&matchGap>2e-10*scale){meetDbg.rejEpsCand++;return;}
-    }
-    if(meetDbg.maxConfirmErr>5000 && isPowRelated && matchGap>5e-12*scale){
-      meetDbg.rejEpsCand++;return;
-    }
-    // ▼▼▼ 新增：多级 pow 幅值预过滤，大幅削减无效 confirm (原64868次)
-    // 当 pow 关系表达式的值域较大时，微小 matchGap 在确认阶段会被非线性放大为巨大误差
-    if(isPowRelated){
-      const fMag = Math.abs(f.v), rMag = Math.abs(r.v);
-      const powScale = Math.max(fMag, rMag);
-      // 级别1: 极大值情形 — pow结果爆炸式放大，过滤掉非常接近但不可靠的候选
-      if(powScale > 200 && matchGap > 5e-8 * scale) { meetDbg.rejEpsCand++; return; }
-      // 级别2: 大值情形
-      if(powScale > 30 && matchGap > 3e-8 * scale) { meetDbg.rejEpsCand++; return; }
-      // 级别3: 对任何 pow 相关，要求 matchGap 比普通情形更紧
-      if(matchGap > 8e-9 * scale && tc > 8) { meetDbg.rejEpsCand++; return; }
-    }
-    // ▲▲▲ 结束新增
     // isTrigRelated: if either side involves trig ops, allow slightly larger cand epsilon
     // because trig functions have larger float sensitivity near extrema
     const isTrigRelated = (f.ast && f.ast.f) ||
@@ -4345,10 +3378,15 @@ function collectLeaves(ast, out){
        r.srcOp==="asin"||r.srcOp==="acos"||r.srcOp==="atan"||
        r.srcOp==="sinh"||r.srcOp==="cosh"||r.srcOp==="tanh");
     const binSlack=(MEET_STYLE==="bin")?((mp.binSlackMul??1)*Math.max(1,MEET_R)/Math.max(1,MEET_Q))*scale:0;
-    const speedTight=(mode==="speed"&&((strategyStats.pressureScore||0)>=2||meetDbg.maxConfirmErr>1e9))?0.55:1.0;
-    const epsCand=(4e-10*mp.candEpsMul*dynamicCandMul*speedTight*(isPowRelated?2.8:1.0))*scale+binSlack;
+    // Discovery tolerance: wide enough to catch all real solutions
+    const epsCandMul = isPowRelated?2.8:(isTrigRelated?2.2:1.0);
+    const epsCand=(4e-10*mp.candEpsMul*epsCandMul)*scale+binSlack;
     if(matchGap>epsCand){meetDbg.rejEpsCand++;return;}
     meetCandidates++;
+
+    const probeAST=r.wA?r.wA(mkC("#",f.v,ordLeaf("#"))):mkC("#",f.v,ordLeaf("#"));
+    const probeVal=evalA(probeAST);
+    if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){meetDbg.rejEvalNaN++;return;}
 
     const combinedAST=r.wA?r.wA(f.ast):f.ast;
 
@@ -4360,56 +3398,29 @@ function collectLeaves(ast, out){
     const powRisk=powStat.risk;
     const powTighten=Math.min(1.0,(1/(1+0.18*powCnt+0.06*powRisk))*(hasFunc?1.12:1.0));
 
-    const forceDeeperConfirm=(strategyStats.pressureScore>=2 && (isPowRelated || hasFunc));
-    const skipProbe =
-      ultraClose || // ◀ 极近匹配直接跳过 probe
-      ((mode!=="speed") && (matchGap<=epsCand*0.10 && (tc<=Math.max(8,Math.floor(maxC*0.72)) || forceDeeperConfirm))) ||
-      ((mode==="speed") && (matchGap<=epsCand*0.06 && tc<=6)) ||
-      ((mode!=="speed") && forceDeeperConfirm && matchGap<=epsCand*0.22);
-
-    let probeVal=f.v;
-    if(skipProbe) meetDbg.skipProbeCount++;
-    if(!skipProbe){
-      const probeAST=r.wA?r.wA(mkC("#",f.v,ordLeaf("#"))):mkC("#",f.v,ordLeaf("#"));
-      const _tp0=performance.now();
-      probeVal=evalA(probeAST);
-      meetDbg.probeEvals++;
-      meetDbg.probeEvalMs+=performance.now()-_tp0;
-      if(!Number.isFinite(probeVal)||Math.abs(probeVal)>CAP){meetDbg.rejEvalNaN++;return;}
-
-      const epsProbeBase=(8e-10*mp.confirmEpsMul*dynamicConfirmMul)*Math.max(1,Math.abs(T),Math.abs(probeVal))*(1+tc*0.03);
-      const epsProbeGap=matchGap*(1.7+tc*0.09)*powTighten*(isPowRelated?1.6:1.0);
-      const epsProbe=Math.max(epsProbeBase,epsProbeGap,mp.confirmAbsFloor||0);
-      const probeErr=Math.abs(probeVal-T);
-      if(probeErr>epsProbe){
-        if(!forceDeeperConfirm || probeErr>epsProbe*1.45){
-          meetDbg.rejProbeConfirm++;
-          if(probeErr>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=probeErr;
-          return;
-        }
-      }
+    const epsProbeBase=(8e-10*mp.confirmEpsMul)*Math.max(1,Math.abs(T),Math.abs(probeVal))*(1+tc*0.03);
+    const epsProbeGap=matchGap*(1.7+tc*0.09)*powTighten*(isPowRelated?1.6:(isTrigRelated?1.4:1.0));
+    const epsProbe=Math.max(epsProbeBase,epsProbeGap,mp.confirmAbsFloor||0);
+    const probeErr=Math.abs(probeVal-T);
+    if(probeErr>epsProbe){
+      meetDbg.rejProbeConfirm++;
+      if(probeErr>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=probeErr;
+      return;
     }
 
-    const _tt0=performance.now();
     const trueVal=evalA(combinedAST);
-    meetDbg.trueEvals++;
-    meetDbg.trueEvalMs+=performance.now()-_tt0;
     if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){meetDbg.rejEvalNaN++;return;}
 
-    if(!skipProbe){
-      const structuralDrift=Math.abs(trueVal-probeVal);
-      const driftCap=matchGap*(3.4+tc*0.18)*(1+powCnt*0.22)/(1+0.10*powRisk)+3e-12*scale;
-      if(structuralDrift>driftCap){
-        if(!forceDeeperConfirm || structuralDrift>driftCap*1.35){
-          meetDbg.rejProbeConfirm++;
-          if(structuralDrift>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=structuralDrift;
-          return;
-        }
-      }
+    const structuralDrift=Math.abs(trueVal-probeVal);
+    const driftCap=matchGap*(3.4+tc*0.18)*(1+powCnt*0.22)/(1+0.10*powRisk)+3e-12*scale;
+    if(structuralDrift>driftCap){
+      meetDbg.rejProbeConfirm++;
+      if(structuralDrift>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=structuralDrift;
+      return;
     }
 
-    const epsConfirmBase=(7e-10*mp.confirmEpsMul*dynamicConfirmMul)*Math.max(1,Math.abs(T),Math.abs(trueVal))*(1+tc*0.025);
-    const epsConfirmGap=matchGap*(2.2+tc*0.11)*powTighten*(isPowRelated?1.5:1.0);
+    const epsConfirmBase=(7e-10*mp.confirmEpsMul)*Math.max(1,Math.abs(T),Math.abs(trueVal))*(1+tc*0.025);
+    const epsConfirmGap=matchGap*(2.2+tc*0.11)*powTighten*(isPowRelated?1.5:(isTrigRelated?1.3:1.0));
     const epsConfirm=Math.max(epsConfirmBase,epsConfirmGap,mp.confirmAbsFloor||0);
     const err=Math.abs(trueVal-T);
     if(err>epsConfirm){
@@ -4439,86 +3450,9 @@ function collectLeaves(ast, out){
     }
   }
 
-  function jitterMeetProbeReverse(r,lim2Cap,seenNode){
-    if(!bidir) return;
-    const scale=Math.max(1,Math.abs(r.v),Math.abs(T));
-    const eps=Math.max(3e-10*scale, Math.abs(r.v)*3e-10);
-    const probes=[r.v+eps,r.v-eps,r.v*(1+2e-10),r.v*(1-2e-10)];
-    const seenKey=new Set();
-    for(const pv of probes){
-      if(!Number.isFinite(pv) || Math.abs(pv)>CAP) continue;
-      const pkey=meetPrimaryKey(pv);
-      if(seenKey.has(pkey)) continue;
-      seenKey.add(pkey);
-      const fl=fwdIdx.get(pkey);
-      if(!fl) continue;
-      strategyStats.meetJitter++;
-      meetDbg.keyHits++;
-      const lim2=Math.min(fl.length,lim2Cap);
-      for(let i=0;i<lim2;i++){
-        const cand=fl[i];
-        if(seenNode.has(cand)) continue;
-        seenNode.add(cand);
-        meetDbg.rev2fwdPairs++;
-        meetDbg.pairsTried++;
-        tryMeetPair(cand,r);
-        if(stopFlag) return;
-      }
-    }
-  }
-
-  function tryBandProbe(target, bandMap, lim2Cap, seenNode, pairCb){
-    const tVal=target&&Number.isFinite(target.v)?target.v:NaN;
-    const tAbs=Math.abs(tVal);
-    const relTol=Math.max(8/Math.max(256,MEET_Q), (Math.max(1,MEET_R)+2)/Math.max(256,MEET_Q));
-    const baseBudget=(strategyStats.pressureScore>=1)?10:18;
-    const budget=Math.max(6, baseBudget - Math.max(0,(target?.cost|0)-8));
-    let consumed=0;
-    const keys=meetKeysCached(target);
-    const seenBand=new Set();
-    let hitCount=0;
-    for(const k of keys){
-      if(consumed>=budget) break;
-      const bk=keyBand(k);
-      if(!bk || seenBand.has(bk)) continue;
-      seenBand.add(bk);
-      const arr=bandMap.get(bk);
-      if(!arr) continue;
-      meetDbg.keyHits++;
-      const lim=Math.min(arr.length,Math.max(4,Math.floor(lim2Cap*0.35)));
-      for(let i=0;i<lim;i++){
-        if(consumed>=budget) break;
-        const cand=arr[i];
-        if(seenNode.has(cand)) continue;
-        const cv=(cand&&Number.isFinite(cand.v))?cand.v:NaN;
-        if(!Number.isFinite(cv)) continue;
-        const cAbs=Math.abs(cv);
-        const sc=Math.max(1,tAbs,cAbs);
-        if(Math.abs(cv-tVal)>relTol*sc) continue;
-        seenNode.add(cand);
-        pairCb(cand);
-        consumed++;
-        hitCount++;
-        if(stopFlag) return hitCount;
-      }
-    }
-    return hitCount;
-  }
-
   function tryMeetReverseWithFwdIdx(r){
     if(!bidir)return;
-    const baseLimKey=Math.max(8,mp.meetKeyProbeCap|0||120);
-    const stressMul=((strategyStats.pressureScore||0)>=3||meetDbg.maxConfirmErr>1e7)?0.55:1.0;
-    const limKey=Math.max(8,Math.floor(baseLimKey*stressMul));
-    // Speed模式: 对非pow/func的rev项只用短键(主键+邻域), 减少buildRev的meet开销
-    // pow/func相关的rev项仍用完整键确保质量
-    const isPowOrFunc = (r.srcOp==="^"||r.srcOp==="square"||r.srcOp==="cube"||
-                          r.srcOp==="exp"||r.srcOp==="log"||r.srcOp==="sqrt"||
-                          r.srcOp==="cbrt");
-    const skipTransform = ((!!(mp.speedRevMeetPrimaryOnly) || stressMul<1.0) && !isPowOrFunc);
-    // Speed模式: 每个rev项最多尝试N对
-    const maxPairsPerItem = mp.speedMeetMaxPairsPerItem ? (mp.speedMeetMaxPairsPerItem|0) : 99999;
-    let totalPairsThisItem = 0;
+    const limKey=Math.max(8,mp.meetKeyProbeCap|0||120);
     const pkey=meetPrimaryKey(r.v);
     const primary=fwdIdx.get(pkey);
     let hit=false;
@@ -4528,77 +3462,33 @@ function collectLeaves(ast, out){
       meetDbg.keyHits++;
       const lim2=Math.min(primary.length,limKey);
       for(let i=0;i<lim2;i++){
-        if(totalPairsThisItem>=maxPairsPerItem){meetDbg.pairBudgetStops++;return;}
         const cand=primary[i];
         if(seenNode.has(cand)) continue;
         seenNode.add(cand);
         meetDbg.rev2fwdPairs++;
         meetDbg.pairsTried++;
-        totalPairsThisItem++;
         tryMeetPair(cand,r);
         if(stopFlag) return;
       }
     }
     if(hit && !mp.meetStage2) return;
 
-    if(skipTransform) meetDbg.shortKeyModeHits++; else meetDbg.longKeyModeHits++;
-    const keys = meetKeysCached(r, skipTransform);
+    const keys = meetKeysCached(r);
     meetLookups+=keys.length;
     const seen=new Set([pkey]);
     for(const k2 of keys){
-      if(totalPairsThisItem>=maxPairsPerItem){meetDbg.pairBudgetStops++;return;}
       if(seen.has(k2))continue;seen.add(k2);
       const fl=fwdIdx.get(k2);
       if(!fl)continue;
       meetDbg.keyHits++;
       const lim2=Math.min(fl.length,limKey);
       for(let i=0;i<lim2;i++){
-        if(totalPairsThisItem>=maxPairsPerItem){meetDbg.pairBudgetStops++;return;}
         const cand=fl[i];
         if(seenNode.has(cand)) continue;
         seenNode.add(cand);
         meetDbg.rev2fwdPairs++;
         meetDbg.pairsTried++;
-        totalPairsThisItem++;
         tryMeetPair(cand,r);
-        if(stopFlag) return;
-      }
-    }
-    if(!stopFlag && !hit && totalPairsThisItem<maxPairsPerItem){
-      const bandHits=tryBandProbe(r,fwdBandIdx,limKey,seenNode,(cand)=>{
-        if(totalPairsThisItem>=maxPairsPerItem){meetDbg.pairBudgetStops++;return;}
-        meetDbg.rev2fwdPairs++;
-        meetDbg.pairsTried++;
-        totalPairsThisItem++;
-        tryMeetPair(cand,r);
-      });
-      if(bandHits>0) strategyStats.meetJitter++;
-    }
-    if(!stopFlag && strategyStats.stagnationLayers>=3) jitterMeetProbeReverse(r,limKey,seenNode);
-  }
-
-  function jitterMeetProbeForward(f,lim2Cap,seenNode){
-    if(!bidir) return;
-    const scale=Math.max(1,Math.abs(f.v),Math.abs(T));
-    const eps=Math.max(3e-10*scale, Math.abs(f.v)*3e-10);
-    const probes=[f.v+eps,f.v-eps,f.v*(1+2e-10),f.v*(1-2e-10)];
-    const seenKey=new Set();
-    for(const pv of probes){
-      if(!Number.isFinite(pv) || Math.abs(pv)>CAP) continue;
-      const pkey=meetPrimaryKey(pv);
-      if(seenKey.has(pkey)) continue;
-      seenKey.add(pkey);
-      const rl=revIdx.get(pkey);
-      if(!rl) continue;
-      strategyStats.meetJitter++;
-      meetDbg.keyHits++;
-      const lim2=Math.min(rl.length,lim2Cap);
-      for(let i=0;i<lim2;i++){
-        const cand=rl[i];
-        if(seenNode.has(cand)) continue;
-        seenNode.add(cand);
-        meetDbg.pairsTried++;
-        tryMeetPair(f,cand);
         if(stopFlag) return;
       }
     }
@@ -4606,14 +3496,7 @@ function collectLeaves(ast, out){
 
   function tryMeetFwdWithRevIdx(f){
     if(!bidir)return;
-    const baseLim2Cap=Math.max(8,mp.meetKeyProbeCap|0||120);
-    const stressMul=((strategyStats.pressureScore||0)>=3||meetDbg.maxConfirmErr>1e7)?0.55:1.0;
-    const lim2Cap=Math.max(8,Math.floor(baseLim2Cap*stressMul));
-    // Speed模式: 每个fwd项最多尝试N对，防止单项消耗过多时间(原来无限制)
-    const maxPairsPerItem = mp.speedMeetMaxPairsPerItem ? (mp.speedMeetMaxPairsPerItem|0) : 99999;
-    // Speed模式: 使用短键列表(主键+邻域, 跳过变换域键L/S/Q/C等)
-    const skipTransform = (!!(mp.speedRevMeetPrimaryOnly) || stressMul<1.0);
-    let totalPairsThisItem = 0;
+    const lim2Cap=Math.max(8,mp.meetKeyProbeCap|0||120);
     const pkey=meetPrimaryKey(f.v);
     const primary=revIdx.get(pkey);
     let hit=false;
@@ -4623,50 +3506,34 @@ function collectLeaves(ast, out){
       meetDbg.keyHits++;
       const lim2=Math.min(primary.length,lim2Cap);
       for(let i=0;i<lim2;i++){
-        if(totalPairsThisItem>=maxPairsPerItem) return;
         const cand=primary[i];
         if(seenNode.has(cand)) continue;
         seenNode.add(cand);
         meetDbg.pairsTried++;
-        totalPairsThisItem++;
         tryMeetPair(f,cand);
         if(stopFlag) return;
       }
     }
     if(hit && !mp.meetStage2) return;
 
-    if(skipTransform) meetDbg.shortKeyModeHits++; else meetDbg.longKeyModeHits++;
-    const keys = meetKeysCached(f, skipTransform);
+    const keys = meetKeysCached(f);
     meetLookups+=keys.length;
     const seen=new Set([pkey]);
     for(const k2 of keys){
-      if(totalPairsThisItem>=maxPairsPerItem) return;
       if(seen.has(k2))continue;seen.add(k2);
       const rl=revIdx.get(k2);
       if(!rl)continue;
       meetDbg.keyHits++;
       const lim2=Math.min(rl.length,lim2Cap);
       for(let i=0;i<lim2;i++){
-        if(totalPairsThisItem>=maxPairsPerItem) return;
         const cand=rl[i];
         if(seenNode.has(cand)) continue;
         seenNode.add(cand);
         meetDbg.pairsTried++;
-        totalPairsThisItem++;
         tryMeetPair(f,cand);
         if(stopFlag) return;
       }
     }
-    if(!stopFlag && !hit && totalPairsThisItem<maxPairsPerItem){
-      const bandHits=tryBandProbe(f,revBandIdx,lim2Cap,seenNode,(cand)=>{
-        if(totalPairsThisItem>=maxPairsPerItem) return;
-        meetDbg.pairsTried++;
-        totalPairsThisItem++;
-        tryMeetPair(f,cand);
-      });
-      if(bandHits>0) strategyStats.meetJitter++;
-    }
-    if(!stopFlag && strategyStats.stagnationLayers>=3) jitterMeetProbeForward(f,lim2Cap,seenNode);
   }
   
 // [插入位置：在 tryMeetFwdWithRevIdx 函数结束后，buildRev 函数开始前]
@@ -4674,86 +3541,42 @@ function collectLeaves(ast, out){
   // --- 跳跃式发现（goal-driven jump, inspired by RIES-style target transforms）---
   function jumpLookupNear(targetVal, maxHits){
     if(!Number.isFinite(targetVal) || Math.abs(targetVal)>CAP) return [];
-    const lim=Math.max(6, maxHits|0||24);
     const keys=meetKeys(targetVal,Math.abs(targetVal-T),6);
+    const out=[];
     const seen=new Set();
-    const cand=[];
-
-    const pushCand=(it,srcBias)=>{
-      if(!it || !it.ast) return;
-      if(seen.has(it.ast)) return;
-      seen.add(it.ast);
-      const d=Math.abs((it.v||0)-targetVal)/(1+Math.abs(targetVal));
-      const score=d + 0.018*(it.keep||0) + 0.002*(it.cost||0) + srcBias;
-      cand.push({it,score});
-    };
-
+    const lim=Math.max(6, maxHits|0||24);
     for(const k of keys){
       const arr=fwdIdx.get(k);
       if(!arr) continue;
-      const limArr=Math.min(arr.length,Math.max(10,Math.floor(lim*1.4)));
-      for(let i=0;i<limArr;i++) pushCand(arr[i],0.0);
-    }
-
-    // band fallback improves sub-goal constant lookup when precise mantissa key misses
-    if(cand.length<lim){
-      const seenBand=new Set();
-      for(const k of keys){
-        const bk=keyBand(k);
-        if(!bk || seenBand.has(bk)) continue;
-        seenBand.add(bk);
-        const arr=fwdBandIdx.get(bk);
-        if(!arr) continue;
-        const limBand=Math.min(arr.length,Math.max(8,Math.floor(lim*0.7)));
-        for(let i=0;i<limBand;i++) pushCand(arr[i],0.012);
+      for(let i=0;i<arr.length && out.length<lim;i++){
+        const it=arr[i];
+        const id=it.ast;
+        if(seen.has(id)) continue;
+        seen.add(id);
+        out.push(it);
       }
+      if(out.length>=lim) break;
     }
-
     // Also search for log(targetVal) in index - for power base candidates
-    if(targetVal>0){
+    // If fwd has value f where log(T)/log(f) = targetVal, lookup by log key
+    if(out.length<lim && targetVal>0){
       const logTarget=Math.log(targetVal);
       if(Number.isFinite(logTarget)){
         const logKeys=meetKeys(logTarget,1,3);
         for(const k of logKeys){
-          if(k.startsWith("L|")) continue;
+          if(k.startsWith("L|")) continue; // avoid double-lookup
           const arr=fwdIdx.get(k);
           if(!arr) continue;
-          const limLog=Math.min(arr.length,Math.max(6,Math.floor(lim*0.6)));
-          for(let i=0;i<limLog;i++) pushCand(arr[i],0.02);
+          for(let i=0;i<arr.length && out.length<lim;i++){
+            const it=arr[i];
+            if(seen.has(it.ast)) continue;
+            seen.add(it.ast);
+            out.push(it);
+          }
+          if(out.length>=lim) break;
         }
       }
     }
-
-    // 新增：搜索 -targetVal（减法组合）和 1/targetVal（除法组合）
-    if(cand.length < lim * 2){
-      // -target → useful for a-b=target, b = a-target; store b≈-target
-      const negTarget = -targetVal;
-      if(Math.abs(negTarget) < CAP){
-        const negKeys = meetKeys(negTarget, 1, 2);
-        for(const k of negKeys.slice(0,3)){
-          const arr = fwdIdx.get(k);
-          if(!arr) continue;
-          const lim2 = Math.min(arr.length, Math.max(4,Math.floor(lim*0.4)));
-          for(let i=0;i<lim2;i++) pushCand(arr[i], 0.04);
-        }
-      }
-      // 1/target → useful for a/b=target, b = a/target; store b≈1/target
-      if(Math.abs(targetVal)>1e-10 && Math.abs(1/targetVal)<1e10){
-        const invTarget = 1/targetVal;
-        const invKeys = meetKeys(invTarget, 1, 2);
-        for(const k of invKeys.slice(0,3)){
-          const arr = fwdIdx.get(k);
-          if(!arr) continue;
-          const lim3 = Math.min(arr.length, Math.max(4,Math.floor(lim*0.4)));
-          for(let i=0;i<lim3;i++) pushCand(arr[i], 0.04);
-        }
-      }
-    }
-
-    if(!cand.length) return [];
-    cand.sort((a,b)=>a.score-b.score);
-    const out=[];
-    for(let i=0;i<cand.length && out.length<lim;i++) out.push(cand[i].it);
     return out;
   }
 
@@ -4784,39 +3607,153 @@ function collectLeaves(ast, out){
     if(!Array.isArray(opsUn) || !opsUn.length) return;
     const hasUn=(op)=>opsUn.includes(op);
     const twopi=2*Math.PI;
+    const pi=Math.PI;
 
-    const emit=(op,tv,hits)=>{ for(const b of J(tv,hits)) pushUnaryTargetCandidate(op,b); };
+    // Generic emitter: look for fwd value targetVal, then apply op to build result ≈ T
+    const emit=(op,tv,hits)=>{
+      if(!Number.isFinite(tv)||Math.abs(tv)>CAP)return;
+      for(const b of J(tv,hits)) pushUnaryTargetCandidate(op,b);
+    };
 
-    if(hasUn("exp") && T>0) emit("exp",Math.log(T),Math.max(10,Math.floor(14*jm)));
-    if(hasUn("log") && Number.isFinite(T)){
+    // T = exp(x) → x = log(T)
+    if(hasUn("exp")&&T>0) emit("exp",Math.log(T),Math.max(10,Math.floor(14*jm)));
+
+    // T = expm1(x) = e^x-1 → x = log1p(T)
+    if(hasUn("expm1")&&T>-1) emit("expm1",Math.log1p(T),Math.max(8,Math.floor(11*jm)));
+
+    // T = log(x) → x = exp(T)
+    if(hasUn("log")&&Number.isFinite(T)){
       const ev=Math.exp(T);
-      if(Number.isFinite(ev) && ev>0 && Math.abs(ev)<1e12) emit("log",ev,Math.max(8,Math.floor(12*jm)));
+      if(Number.isFinite(ev)&&ev>0&&Math.abs(ev)<1e12) emit("log",ev,Math.max(8,Math.floor(12*jm)));
     }
-    if(hasUn("sin") && Math.abs(T)<=1){
+
+    // T = log10(x) → x = 10^T
+    if(hasUn("log10")&&Number.isFinite(T)){
+      const ev=Math.pow(10,T);
+      if(Number.isFinite(ev)&&ev>0&&Math.abs(ev)<1e12) emit("log10",ev,Math.max(6,Math.floor(10*jm)));
+    }
+
+    // T = log1p(x) → x = expm1(T) = e^T - 1
+    if(hasUn("log1p")&&Number.isFinite(T)){
+      const ev=Math.expm1(T);
+      if(Number.isFinite(ev)&&Math.abs(ev)<1e12) emit("log1p",ev,Math.max(6,Math.floor(10*jm)));
+    }
+
+    // T = sin(x) → x = arcsin(T) + 2kπ or (π - arcsin(T)) + 2kπ
+    if(hasUn("sin")&&Math.abs(T)<=1){
       const a=Math.asin(T);
       if(Number.isFinite(a)){
-        for(let k=-3;k<=3;k++){
-          emit("sin",a+k*twopi,Math.max(9,Math.floor(12*jm)));
-          emit("sin",(Math.PI-a)+k*twopi,Math.max(9,Math.floor(12*jm)));
+        for(let k=-2;k<=2;k++){
+          emit("sin",a+k*twopi,Math.max(8,Math.floor(10*jm)));
+          emit("sin",(pi-a)+k*twopi,Math.max(8,Math.floor(10*jm)));
         }
       }
     }
-    if(hasUn("cos") && Math.abs(T)<=1){
+
+    // T = cos(x) → x = ±arccos(T) + 2kπ
+    if(hasUn("cos")&&Math.abs(T)<=1){
       const a=Math.acos(T);
-      if(Number.isFinite(a)) for(let k=-3;k<=3;k++){
-        emit("cos",a+k*twopi,Math.max(9,Math.floor(11*jm)));
-        emit("cos",-a+k*twopi,Math.max(9,Math.floor(11*jm)));
+      if(Number.isFinite(a)){
+        for(let k=-2;k<=2;k++){
+          emit("cos", a+k*twopi, Math.max(8,Math.floor(10*jm)));
+          emit("cos",-a+k*twopi, Math.max(8,Math.floor(10*jm)));
+        }
       }
     }
+
+    // T = tan(x) → x = arctan(T) + kπ
     if(hasUn("tan")){
       const a=Math.atan(T);
-      if(Number.isFinite(a)) for(let k=-3;k<=3;k++) emit("tan",a+k*Math.PI,Math.max(9,Math.floor(11*jm)));
+      if(Number.isFinite(a)) for(let k=-2;k<=2;k++) emit("tan",a+k*pi,Math.max(8,Math.floor(10*jm)));
     }
-    if(hasUn("sinh")) emit("sinh",Math.asinh(T),Math.max(9,Math.floor(13*jm)));
-    if(hasUn("tanh") && Math.abs(T)<1) emit("tanh",Math.atanh(T),Math.max(8,Math.floor(12*jm)));
-    if(hasUn("asin")) emit("asin",Math.sin(T),Math.max(8,Math.floor(10*jm)));
-    if(hasUn("acos")) emit("acos",Math.cos(T),Math.max(8,Math.floor(10*jm)));
-    if(hasUn("atan")) emit("atan",Math.tan(T),Math.max(8,Math.floor(10*jm)));
+
+    // T = asin(x) → x = sin(T), valid for T ∈ [-π/2, π/2]
+    if(hasUn("asin")&&Math.abs(T)<=pi/2){
+      emit("asin",Math.sin(T),Math.max(6,Math.floor(9*jm)));
+    }
+
+    // T = acos(x) → x = cos(T), valid for T ∈ [0, π]
+    if(hasUn("acos")&&T>=0&&T<=pi){
+      emit("acos",Math.cos(T),Math.max(6,Math.floor(9*jm)));
+    }
+
+    // T = atan(x) → x = tan(T), valid for T ∈ (-π/2, π/2)
+    if(hasUn("atan")&&Math.abs(T)<pi/2-1e-9){
+      const tv=Math.tan(T);
+      if(Number.isFinite(tv)&&Math.abs(tv)<1e10) emit("atan",tv,Math.max(8,Math.floor(10*jm)));
+    }
+
+    // T = sinh(x) → x = arcsinh(T)
+    if(hasUn("sinh")) emit("sinh",Math.asinh(T),Math.max(8,Math.floor(12*jm)));
+
+    // T = cosh(x) → x = ±arccosh(T), T ≥ 1
+    if(hasUn("cosh")&&T>=1){
+      const a=Math.acosh(T);
+      if(Number.isFinite(a)){
+        emit("cosh", a,Math.max(6,Math.floor(10*jm)));
+        emit("cosh",-a,Math.max(6,Math.floor(10*jm)));
+      }
+    }
+
+    // T = tanh(x) → x = arctanh(T), |T| < 1
+    if(hasUn("tanh")&&Math.abs(T)<1){
+      emit("tanh",Math.atanh(T),Math.max(6,Math.floor(10*jm)));
+    }
+
+    // T = sqrt(x) → x = T², T ≥ 0
+    if(hasUn("sqrt")&&T>=0){
+      emit("sqrt",T*T,Math.max(8,Math.floor(10*jm)));
+    }
+
+    // T = cbrt(x) → x = T³
+    if(hasUn("cbrt")){
+      emit("cbrt",T*T*T,Math.max(8,Math.floor(10*jm)));
+    }
+
+    // T = square(x) = x² → x = ±sqrt(T), T ≥ 0
+    if(hasUn("square")&&T>0){
+      const s=Math.sqrt(T);
+      if(Number.isFinite(s)){
+        emit("square", s,Math.max(6,Math.floor(8*jm)));
+        emit("square",-s,Math.max(6,Math.floor(8*jm)));
+      }
+    }
+
+    // T = cube(x) = x³ → x = cbrt(T)
+    if(hasUn("cube")){
+      emit("cube",Math.cbrt(T),Math.max(6,Math.floor(8*jm)));
+    }
+
+    // T = inv(x) = 1/x → x = 1/T
+    if(hasUn("inv")&&Math.abs(T)>1e-13){
+      emit("inv",1/T,Math.max(6,Math.floor(8*jm)));
+    }
+
+    // T = neg(x) → x = -T
+    if(hasUn("neg")){
+      emit("neg",-T,Math.max(6,Math.floor(8*jm)));
+    }
+
+    // T = abs(x) → x = T or x = -T (T ≥ 0)
+    if(hasUn("abs")&&T>=0){
+      emit("abs", T,Math.max(4,Math.floor(6*jm)));
+      if(T>1e-13) emit("abs",-T,Math.max(4,Math.floor(6*jm)));
+    }
+
+    // T = frac(x) → x = T + integer (if 0 ≤ T < 1)
+    if(hasUn("frac")&&T>=0&&T<1){
+      for(let k=-2;k<=3;k++) emit("frac",T+k,Math.max(4,Math.floor(6*jm)));
+    }
+
+    // T = floor(x) → x ≈ T + 0.5 (T must be integer)
+    if(hasUn("floor")&&Number.isInteger(T)){
+      emit("floor",T+0.5,Math.max(4,Math.floor(6*jm)));
+    }
+
+    // T = ceil(x) → x ≈ T - 0.5
+    if(hasUn("ceil")&&Number.isInteger(T)){
+      emit("ceil",T-0.5,Math.max(4,Math.floor(6*jm)));
+    }
   }
 
   function pushJumpPair(a,b,op,swap=false){
@@ -4842,77 +3779,15 @@ function collectLeaves(ast, out){
     }
   }
 
-
-  function selectDecompAnchors(layerItems,layerCost,jm){
-    if(!Array.isArray(layerItems) || !layerItems.length) return [];
-    const cap=Math.max(16,Math.floor(beamF*((mode==="speed")?0.035:(mode==="accuracy"?0.09:0.055))*Math.max(0.75,jm)));
-    const seen=new Set();
-    const out=[];
-    const add=(it)=>{
-      if(!it||!it.ast) return;
-      if(seen.has(it.ast)) return;
-      seen.add(it.ast);
-      out.push(it);
-    };
-
-    const src=layerItems.slice(0,Math.min(layerItems.length,cap*2));
-    // keep best-by-keep skeleton
-    src.sort((a,b)=>(a.keep??INF)-(b.keep??INF));
-    for(let i=0;i<src.length && out.length<Math.floor(cap*0.35);i++) add(src[i]);
-
-    // magnitude diversity bins
-    const magBins=new Map();
-    for(const it of src){
-      const mb=Math.floor(Math.log2(Math.abs(it.v)+1e-30));
-      const old=magBins.get(mb);
-      if(!old || (it.keep??INF)<(old.keep??INF)) magBins.set(mb,it);
-    }
-    for(const it of Array.from(magBins.values()).sort((a,b)=>(a.keep??INF)-(b.keep??INF))){
-      add(it); if(out.length>=Math.floor(cap*0.62)) break;
-    }
-
-    // operator-shape diversity
-    const shapeBins=new Map();
-    for(const it of src){
-      const root=(it.ast&&it.ast.t===2)?('b:'+it.ast.op):((it.ast&&it.ast.t===1)?('u:'+it.ast.op):'c');
-      const d=it.depth||astDepth(it.ast);
-      const dk=d<3?2:(d<6?5:8);
-      const k=root+'|'+dk;
-      const old=shapeBins.get(k);
-      if(!old || (it.keep??INF)<(old.keep??INF)) shapeBins.set(k,it);
-    }
-    for(const it of Array.from(shapeBins.values()).sort((a,b)=>(a.keep??INF)-(b.keep??INF))){
-      add(it); if(out.length>=cap) break;
-    }
-
-    // cross-layer anchors: deepen node linkage when stagnant/pressured
-    if((strategyStats.stagnationLayers>=2 || strategyStats.pressureScore>=3) && Number.isFinite(layerCost)){
-      for(let d=1;d<=2;d++){
-        const li=fwd[layerCost-d];
-        if(!Array.isArray(li)||!li.length) continue;
-        const lim=Math.min(li.length, Math.max(10,Math.floor(cap*(d===1?0.24:0.16))));
-        for(let i=0;i<lim && out.length<Math.floor(cap*1.12);i++) add(li[i]);
-      }
-    }
-
-    if(out.length>Math.floor(cap*1.12)) out.length=Math.floor(cap*1.12);
-    return out;
-  }
-
-  function tryTargetDecomposition(layerItems,T,layerCost){
+  function tryTargetDecomposition(layerItems,T){
     if(!Number.isFinite(T) || fwdIdx.size<8 || !layerItems || !layerItems.length) return;
 
     const jm=Math.max(0.3, mp.jumpMul||1);
     if(jm<0.45) return;
-    const anchors=selectDecompAnchors(layerItems,layerCost,jm);
-    if(!anchors.length) return;
-    const limHard=(mode==="speed")?96:((mode==="accuracy")?240:140);
-    const limItems=Math.min(anchors.length, limHard, Math.max(16,Math.floor(beamF*((mode==="speed")?0.025:(mode==="accuracy"?0.08:0.04))*jm)));
-    if(mode==="speed" && (anchors[0]?.cost||0)<4) return;
-    if(Number.isFinite(layerCost) && ((mode==="speed"&&layerCost<5)||(mode!=="accuracy"&&layerCost<4))) return;
+    const limItems=Math.min(layerItems.length, Math.max(20,Math.floor(beamF*((mode==="speed")?0.06:0.14)*jm)));
+    if(mode==="speed" && (layerItems[0]?.cost||0)<4) return;
     const logT=(T>0)?Math.log(T):NaN;
     const jumpCache=new Map();
-    const dynHitsMul=1+Math.min(0.85, strategyStats.stagnationLayers*0.12 + (strategyStats.pressureScore||0)*0.18);
     const J=(tv,h)=>{
       const kk=meetPrimaryKey(tv)+"|"+(h|0);
       const c=jumpCache.get(kk);
@@ -4921,34 +3796,29 @@ function collectLeaves(ast, out){
       jumpCache.set(kk,arr);
       return arr;
     };
-    const jumpHard=(mode==="speed")?36:((mode==="accuracy")?84:56);
-    const JH=(tv,base)=>J(tv,Math.min(jumpHard,Math.max(4,Math.floor(base*dynHitsMul))));
-    const JU=(tv,base)=>J(tv,Math.min(jumpHard,Math.max(4,Math.floor(base*(0.72+0.18*dynHitsMul)))));
 
-    tryUnaryTargetTransforms(jm,JU);
-    const decStart=performance.now();
-    const decBudget=(mode==="speed")?24:((mode==="accuracy")?62:38);
+    tryUnaryTargetTransforms(jm,J);
 
     for(let i=0;i<limItems;i++){
-      const a=anchors[i];
+      const a=layerItems[i];
       const v=a.v;
       if(!Number.isFinite(v)) continue;
       const av=Math.abs(v);
 
       // T = a + x / a - x
       if(HAS_SUB || ALLOW_ADD){
-        for(const b of JH(T-v,Math.max(8,Math.floor(14*jm)))) pushJumpPair(a,b,"+");
-        for(const b of JH(v-T,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"-");
-        for(const b of JH(T+v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(b,a,"-");
+        for(const b of J(T-v,Math.max(8,Math.floor(14*jm)))) pushJumpPair(a,b,"+");
+        for(const b of J(v-T,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"-");
+        for(const b of J(T+v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(b,a,"-");
       }
 
       // T = a * x, a / x, x / a
       if(HAS_MUL && av>1e-12){
-        for(const b of JH(T/v,20)) pushJumpPair(a,b,"*");
+        for(const b of J(T/v,20)) pushJumpPair(a,b,"*");
       }
       if(HAS_DIV && av>1e-12){
-        for(const b of JH(v/T,Math.max(6,Math.floor(10*jm)))) if(Math.abs(T)>1e-12) pushJumpPair(a,b,"/");
-        for(const b of JH(T*v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(b,a,"/");
+        for(const b of J(v/T,Math.max(6,Math.floor(10*jm)))) if(Math.abs(T)>1e-12) pushJumpPair(a,b,"/");
+        for(const b of J(T*v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(b,a,"/");
       }
 
       // T = a^x or x^a (pow-heavy targets)
@@ -4956,18 +3826,18 @@ function collectLeaves(ast, out){
         if(v>0 && Math.abs(v-1)>1e-12){
           const tx=logT/Math.log(v);
           const hits=Math.max(20,Math.floor(24*jm));
-          for(const b of JH(tx,hits)) pushJumpPair(a,b,"^");
+          for(const b of J(tx,hits)) pushJumpPair(a,b,"^");
           // Also search for x in neighbourhood of tx ± small offsets for rounding resilience
           if(Number.isFinite(tx) && Math.abs(tx)<50){
-            for(const b of JH(tx+1e-9,8)) pushJumpPair(a,b,"^");
-            for(const b of JH(tx-1e-9,8)) pushJumpPair(a,b,"^");
+            for(const b of J(tx+1e-9,8)) pushJumpPair(a,b,"^");
+            for(const b of J(tx-1e-9,8)) pushJumpPair(a,b,"^");
           }
         }
         // x^a = T → x = T^(1/a)
         if(av>1e-12 && Math.abs(v)<60){
           const base=Math.pow(T,1/v);
           const hits=Math.max(16,Math.floor(20*jm));
-          for(const b of JH(base,hits)) pushJumpPair(b,a,"^");
+          for(const b of J(base,hits)) pushJumpPair(b,a,"^");
         }
         // Also try log-ratio approach: given a, if T = base^a → base = T^(1/a)
         // And for fractional exponents: T^(a/b) style via known fwd values
@@ -4976,9 +3846,9 @@ function collectLeaves(ast, out){
           const t_inv_v=Math.pow(T,1/v);
           const t_v=Math.pow(T,v);
           if(Number.isFinite(t_inv_v) && Math.abs(t_inv_v)<1e10)
-            for(const b of JH(t_inv_v,Math.max(8,Math.floor(12*jm)))) pushJumpPair(b,a,"^");
+            for(const b of J(t_inv_v,Math.max(8,Math.floor(12*jm)))) pushJumpPair(b,a,"^");
           if(Number.isFinite(t_v) && Math.abs(t_v)<1e10)
-            for(const b of JH(t_v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"^");
+            for(const b of J(t_v,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"^");
         }
       }
 
@@ -4986,968 +3856,36 @@ function collectLeaves(ast, out){
       if(Array.isArray(opsBin) && opsBin.includes("logab") && Number.isFinite(logT) && T!==0){
         if(v>0 && Math.abs(v-1)>1e-12){
           const tx=Math.pow(v,T);
-          for(const b of JH(tx,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"logab");
+          for(const b of J(tx,Math.max(6,Math.floor(10*jm)))) pushJumpPair(a,b,"logab");
         }
         if(v>0){
           const base=Math.pow(v,1/T);
-          for(const b of JH(base,8)) pushJumpPair(b,a,"logab");
+          for(const b of J(base,8)) pushJumpPair(b,a,"logab");
         }
       }
 
       if(stopFlag) return;
-      if((i&7)===0 && (performance.now()-decStart)>decBudget) return;
     }
   }
-
-  function deepStructureProbe(c){
-    if(!bidir||fwdIdx.size<10||c<6) return;
-    const t0p=performance.now();
-    const timeBudget=(mode==="speed")?10:(mode==="accuracy"?40:20);
-    let pairs=0;
-    const pairCap=(mode==="speed")?150:(mode==="accuracy"?800:400);
-    const absT=Math.abs(T);
-    if(!Number.isFinite(absT)||absT<1e-15) return;
-
-    // 从 consts 中提取可用常数
-    const atoms=[];
-    for(const cc of consts){
-      const cv=Number(cc.v);
-      if(Number.isFinite(cv)&&Math.abs(cv)<1e6) atoms.push({s:cc.s,v:cv});
-    }
-
-    // 生成多级逆变换目标链
-    // Level 0: T 的直接逆变换
-    const targets=[];
-    function addTarget(v,cost,wrap,depth){
-      if(!Number.isFinite(v)||Math.abs(v)>1e10||cost>maxC-2) return;
-      targets.push({v,cost,wrap,depth});
-    }
-
-    // 一元逆: T = f(x) → x = f^{-1}(T)
-    const unOps=["square","cube","exp","log","sqrt","cbrt","neg","inv","sin","cos","tan","asin","acos","atan"];
-    for(const op of unOps){
-      if(!Array.isArray(opsUn)||!opsUn.includes(op)) continue;
-      const invs=invUn(op,T);
-      if(!Array.isArray(invs)) continue;
-      const w=wUn(op);
-      for(const inv of invs){
-        if(!Number.isFinite(inv.v)) continue;
-        addTarget(inv.v,w,(a)=>mkU(op,a),1);
-      }
-    }
-
-    // 二元逆: T = a OP x 或 T = x OP a，其中 a 是已知常数
-    for(const at of atoms){
-      const cv=at.v,cAst=getConstNodeByValue(cv);
-      if(Array.isArray(opsBin)){
-        for(const op of opsBin){
-          const w=wBin(op);
-          // T = c OP x → x = invBinR(op,T,c)
-          const x1=invBinR(op,T,cv);
-          if(Number.isFinite(x1)&&Math.abs(x1)<1e10)
-            addTarget(x1,w+1,(a)=>mkB(op,cAst,a),1);
-          // T = x OP c → x = invBinL(op,T,c)
-          if(!isComm(op)){
-            const x2=invBinL(op,T,cv);
-            if(Number.isFinite(x2)&&Math.abs(x2)<1e10)
-              addTarget(x2,w+1,(a)=>mkB(op,a,cAst),1);
-          }
-        }
-      }
-    }
-
-    // Level 1→2: 对每个 level-0 目标再做一层分解
-    const L0len=targets.length;
-    for(let i=0;i<L0len;i++){
-      const t0=targets[i];
-      if(t0.depth>1) continue;
-      // 一元逆
-      for(const op of unOps){
-        if(!Array.isArray(opsUn)||!opsUn.includes(op)) continue;
-        const invs=invUn(op,t0.v);
-        if(!Array.isArray(invs)) continue;
-        const w=wUn(op);
-        for(const inv of invs){
-          const wrap2=(a)=>t0.wrap(mkU(op,a));
-          addTarget(inv.v,t0.cost+w,wrap2,2);
-        }
-      }
-      // 二元逆（仅用核心常数，限制爆炸）
-      const coreAtoms=atoms.filter(a=>
-        Math.abs(a.v-Math.PI)<1e-12||Math.abs(a.v-Math.E)<1e-12||
-        (Number.isInteger(a.v)&&Math.abs(a.v)<=5&&a.v!==0)
-      );
-      for(const at of coreAtoms){
-        const cv=at.v,cAst=getConstNodeByValue(cv);
-        if(!Array.isArray(opsBin)) continue;
-        for(const op of ["+","-","*","/"]){
-          if(!opsBin.includes(op)) continue;
-          const w=wBin(op);
-          const x1=invBinR(op,t0.v,cv);
-          if(Number.isFinite(x1)&&Math.abs(x1)<1e10)
-            addTarget(x1,t0.cost+w+1,(a)=>t0.wrap(mkB(op,cAst,a)),2);
-          if(!isComm(op)){
-            const x2=invBinL(op,t0.v,cv);
-            if(Number.isFinite(x2)&&Math.abs(x2)<1e10)
-              addTarget(x2,t0.cost+w+1,(a)=>t0.wrap(mkB(op,a,cAst)),2);
-          }
-        }
-      }
-    }
-
-    // Level 2→3: 再深一层（仅限核心操作）
-    const L1len=targets.length;
-    for(let i=L0len;i<L1len;i++){
-      const t1=targets[i];
-      if(t1.depth>2||t1.cost>maxC*0.6) continue;
-      for(const op of ["square","sqrt","exp","log","neg","inv"]){
-        if(!Array.isArray(opsUn)||!opsUn.includes(op)) continue;
-        const invs=invUn(op,t1.v);
-        if(!Array.isArray(invs)) continue;
-        for(const inv of invs){
-          const wrap3=(a)=>t1.wrap(mkU(op,a));
-          addTarget(inv.v,t1.cost+wUn(op),wrap3,3);
-        }
-      }
-      // 二元（仅 * 和 ^，限制宽度）
-      for(const at of atoms.slice(0,6)){
-        const cv=at.v,cAst=getConstNodeByValue(cv);
-        if(Math.abs(cv)<1e-14) continue;
-        for(const op of ["*","^"]){
-          if(!Array.isArray(opsBin)||!opsBin.includes(op)) continue;
-          const x1=invBinR(op,t1.v,cv);
-          if(Number.isFinite(x1)&&Math.abs(x1)<1e10)
-            addTarget(x1,t1.cost+wBin(op)+1,(a)=>t1.wrap(mkB(op,cAst,a)),3);
-        }
-      }
-    }
-
-    // 去重并按 cost 排序
-    const seen=new Map();
-    for(const t of targets){
-      const qk=Math.round(t.v*1e7);
-      const old=seen.get(qk);
-      if(!old||t.cost<old.cost) seen.set(qk,t);
-    }
-    const sorted=Array.from(seen.values()).sort((a,b)=>a.cost-b.cost);
-
-    // 在 fwdIdx 中查找每个目标
-    for(const tgt of sorted){
-      if(pairs>=pairCap||stopFlag) break;
-      if(performance.now()-t0p>timeBudget) break;
-
-      const cands=jumpLookupNear(tgt.v,Math.max(6,16-tgt.depth*3));
-      for(const cand of cands){
-        if(!cand||!cand.ast||pairs>=pairCap) continue;
-        const innerCost=cand.cost||astCost(cand.ast);
-        const totalCost=innerCost+tgt.cost;
-        if(totalCost>maxC) continue;
-
-        const merged=useBitmask?(cand.mask||0):cand.cnt;
-
-        const combined=tgt.wrap(cand.ast);
-        if(!combined) continue;
-        if(LEAF_ORDER&&combined.ord&&!combined.ord.ok) continue;
-
-        const v=evalAStable(combined);
-        if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
-        pairs++;
-
-        const err=Math.abs(v-T);
-        const threshold=Math.max(bestDeltaSoFar*8,1e-8*Math.max(1,absT));
-        if(err>threshold) continue;
-
-        if(useBitmask) pushBest({v,ast:combined,mask:merged,cost:totalCost,searchType:"meet"});
-        else pushBest({v,ast:combined,cnt:merged||EMPTY,cost:totalCost,searchType:"meet"});
-      }
-    }
-  }
-
-
-  function refinementCombiner(c){
-    return; // disabled: remove small-number add/sub approximation mechanism
-
-    if(c<6||best.length<2) return;
-    const t0r=performance.now();
-    const timeBudget2=(mode==="speed")?5:12;
-    let refined=0;
-    const maxRefine=40;
-
-    // 收集各层中"接近T"和"接近0"的项
-    const nearT=[],nearZero=[];
-    const tScale=Math.max(1,Math.abs(T));
-    for(let fc=1;fc<=Math.min(c,maxC);fc++){
-      const ff=fwd[fc];
-      if(!ff) continue;
-      const lim=Math.min(ff.length,40);
-      for(let i=0;i<lim;i++){
-        const it=ff[i];
-        if(!it||!it.ast) continue;
-        const g=Math.abs(it.v-T);
-        if(g<tScale*0.01&&g>1e-15) nearT.push(it);
-        const av=Math.abs(it.v);
-        if(av<tScale*0.01&&av>1e-15) nearZero.push(it);
-      }
-    }
-    nearT.sort((a,b)=>Math.abs(a.v-T)-Math.abs(b.v-T));
-    nearZero.sort((a,b)=>Math.abs(a.v)-Math.abs(b.v));
-
-    const ntLim=Math.min(nearT.length,10);
-    const nzLim=Math.min(nearZero.length,16);
-
-    for(let i=0;i<ntLim&&refined<maxRefine;i++){
-      if(performance.now()-t0r>timeBudget2) break;
-      const nt=nearT[i];
-      for(let j=0;j<nzLim&&refined<maxRefine;j++){
-        const nz=nearZero[j];
-        const tc=(nt.cost||0)+(nz.cost||0)+1;
-        if(tc>maxC) continue;
-        const mg=mergeMaskOrCnt(nt,nz);
-        if(mg==null) continue;
-
-        // 加法修正
-        const sum=nt.v+nz.v;
-        if(Math.abs(sum-T)<Math.abs(nt.v-T)){
-          const ast=mkB("+",nt.ast,nz.ast);
-          if(!(LEAF_ORDER&&ast.ord&&!ast.ord.ok)){
-            const v=evalA(ast);
-            if(Number.isFinite(v)&&Math.abs(v-T)<Math.abs(nt.v-T)){
-              refined++;
-              if(useBitmask) pushBest({v,ast,mask:mg,cost:tc,searchType:"meet"});
-              else pushBest({v,ast,cnt:mg,cost:tc,searchType:"meet"});
-            }
-          }
-        }
-        // 减法修正
-        if(HAS_SUB){
-          const diff=nt.v-nz.v;
-          if(Math.abs(diff-T)<Math.abs(nt.v-T)){
-            const ast=mkB("-",nt.ast,nz.ast);
-            if(!(LEAF_ORDER&&ast.ord&&!ast.ord.ok)){
-              const v=evalA(ast);
-              if(Number.isFinite(v)&&Math.abs(v-T)<Math.abs(nt.v-T)){
-                refined++;
-                if(useBitmask) pushBest({v,ast,mask:mg,cost:tc,searchType:"meet"});
-                else pushBest({v,ast,cnt:mg,cost:tc,searchType:"meet"});
-              }
-            }
-          }
-        }
-        // 乘法修正（nz ≈ 修正因子）
-        if(HAS_MUL&&Math.abs(nz.v)>1e-15){
-          const tcm=(nt.cost||0)+(nz.cost||0)+wBin("*");
-          if(tcm<=maxC){
-            // T/nt.v ≈ 需要的修正因子
-            const needed=T/nt.v;
-            if(Math.abs(nz.v-needed)<Math.abs(needed)*0.1){
-              const prod=nt.v*nz.v;
-              if(Math.abs(prod-T)<Math.abs(nt.v-T)){
-                const ast=mkB("*",nt.ast,nz.ast);
-                if(!(LEAF_ORDER&&ast.ord&&!ast.ord.ok)){
-                  const v=evalA(ast);
-                  if(Number.isFinite(v)&&Math.abs(v-T)<Math.abs(nt.v-T)){
-                    refined++;
-                    if(useBitmask) pushBest({v,ast,mask:mg,cost:tcm,searchType:"meet"});
-                    else pushBest({v,ast,cnt:mg,cost:tcm,searchType:"meet"});
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 也试: nearT[i] 除以 nearT[j] 得到修正比
-    if(HAS_DIV && ntLim>=2){
-      for(let i=0;i<Math.min(ntLim,6)&&refined<maxRefine;i++){
-        if(performance.now()-t0r>timeBudget2) break;
-        const a=nearT[i];
-        // 查找 fwd 中 v ≈ T/a.v (即乘法分解)
-        if(Math.abs(a.v)>1e-12){
-          const target=T/a.v;
-          const hits=jumpLookupNear(target,6);
-          for(const h of hits){
-            if(!h||!h.ast||refined>=maxRefine) continue;
-            const tc2=(a.cost||0)+(h.cost||0)+wBin("*");
-            if(tc2>maxC) continue;
-            const mg2=mergeMaskOrCnt(a,h);
-            if(mg2==null) continue;
-            const ast=mkB("*",a.ast,h.ast);
-            if(LEAF_ORDER&&ast.ord&&!ast.ord.ok) continue;
-            const v=evalA(ast);
-            if(!Number.isFinite(v)) continue;
-            if(Math.abs(v-T)<Math.abs(a.v-T)){
-              refined++;
-              if(useBitmask) pushBest({v,ast,mask:mg2,cost:tc2,searchType:"meet"});
-              else pushBest({v,ast,cnt:mg2,cost:tc2,searchType:"meet"});
-            }
-          }
-        }
-      }
-    }
-  }
-
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // 【顿悟】errorCorrectionSearch - 误差修正顿悟搜索
-  // 核心思想：若 expr ≈ T，误差 δ = T − expr_val，则寻找 expr2 ≈ δ
-  // 使得 expr + expr2 精确等于 T。这是最强的精度提升策略。
-  // 同时处理乘法修正：若 expr * k ≈ T，寻找 k ≈ T/expr_val。
-  // ═══════════════════════════════════════════════════════════════════════
-  function errorCorrectionSearch(c){
-    return; // disabled: remove small-number add/sub approximation mechanism
-
-    if(best.length<1) return;
-    const tStart=performance.now();
-    const timeCap=(mode==="speed")?10:(mode==="accuracy"?32:18);
-    const scale=Math.max(1,Math.abs(T));
-    let found=0;
-    const maxFound=(mode==="speed")?24:(mode==="accuracy")?80:48;
-
-    // 收集当前所有fwd层中接近T的项（误差 < 5%T）
-    const nearT=[];
-    for(let fc=1;fc<=Math.min(c,maxC);fc++){
-      const ff=fwd[fc]; if(!ff) continue;
-      for(let i=0;i<Math.min(ff.length,48);i++){
-        const it=ff[i]; if(!it||!it.ast) continue;
-        const err=Math.abs(it.v-T);
-        if(err<scale*0.12 && err>scale*1e-11) nearT.push(it);
-      }
-    }
-    if(!nearT.length) return;
-    nearT.sort((a,b)=>Math.abs(a.v-T)-Math.abs(b.v-T));
-
-    for(const nt of nearT.slice(0,20)){
-      if(found>=maxFound||stopFlag||performance.now()-tStart>timeCap) break;
-      const delta=T-nt.v;            // additive error
-      const ratio=T/nt.v;            // multiplicative error
-
-      // ── 加法修正：寻找 expr2 ≈ delta ──
-      if(Math.abs(delta)>scale*1e-12 && Math.abs(delta)<scale*0.12 && ALLOW_ADD){
-        const candidates=jumpLookupNear(delta, 28);
-        for(const ec of candidates){
-          if(!ec||!ec.ast||found>=maxFound) break;
-          const tc=(nt.cost||0)+(ec.cost||0)+wBin("+");
-          if(tc>maxC) continue;
-          const merged=mergeMaskOrCnt(nt,ec); if(merged==null) continue;
-          const ast2=mkB("+",nt.ast,ec.ast);
-          if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
-          const v2=evalA(ast2);
-          if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
-          const err2=Math.abs(v2-T);
-          if(err2<Math.abs(delta)*0.98){ // 必须比原始更精确
-            found++;
-            const sv=evalAStable(ast2);
-            const fv=Number.isFinite(sv)?sv:v2;
-            if(useBitmask) pushBest({v:fv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
-            else pushBest({v:fv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
-          }
-        }
-      }
-
-      // ── 减法修正：寻找 expr2 ≈ -delta (i.e. expr - expr2 ≈ T) ──
-      if(Math.abs(delta)>scale*1e-12 && HAS_SUB){
-        const negDelta=nt.v-T;
-        if(Math.abs(negDelta)>scale*1e-12){
-          const candidates2=jumpLookupNear(negDelta, 16);
-          for(const ec of candidates2){
-            if(!ec||!ec.ast||found>=maxFound) break;
-            const tc=(nt.cost||0)+(ec.cost||0)+wBin("-");
-            if(tc>maxC) continue;
-            const merged=mergeMaskOrCnt(nt,ec); if(merged==null) continue;
-            const ast2=mkB("-",nt.ast,ec.ast);
-            if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
-            const v2=evalA(ast2);
-            if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
-            if(Math.abs(v2-T)<Math.abs(delta)*0.98){
-              found++;
-              const sv=evalAStable(ast2);
-              const fv=Number.isFinite(sv)?sv:v2;
-              if(useBitmask) pushBest({v:fv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
-              else pushBest({v:fv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
-            }
-          }
-        }
-      }
-
-      // ── 乘法修正：若 ratio ≈ k，寻找 expr2 ≈ k ──
-      if(HAS_MUL && Math.abs(ratio)>0.5 && Math.abs(ratio)<2.0 && Math.abs(ratio-1)>1e-8
-         && Number.isFinite(ratio)){
-        const candidates3=jumpLookupNear(ratio, 20);
-        for(const ec of candidates3){
-          if(!ec||!ec.ast||found>=maxFound) break;
-          const tc=(nt.cost||0)+(ec.cost||0)+wBin("*");
-          if(tc>maxC) continue;
-          const merged=mergeMaskOrCnt(nt,ec); if(merged==null) continue;
-          const ast2=mkB("*",nt.ast,ec.ast);
-          if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
-          const v2=evalA(ast2);
-          if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
-          if(Math.abs(v2-T)<Math.abs(nt.v-T)*0.98){
-            found++;
-            const sv=evalAStable(ast2);
-            const fv=Number.isFinite(sv)?sv:v2;
-            if(useBitmask) pushBest({v:fv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
-            else pushBest({v:fv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
-          }
-        }
-      }
-
-      // ── 单元修正：对接近T的表达式直接尝试所有单元逆变换 ──
-      if(Array.isArray(opsUn)){
-        for(const op of opsUn){
-          if(found>=maxFound||performance.now()-tStart>timeCap) break;
-          // 计算 op(nt.v) 并与T比较，如果接近则候选值更接近T
-          const applied=applyUn(op,nt.v);
-          if(!Number.isFinite(applied)||Math.abs(applied)>CAP) continue;
-          const tc=(nt.cost||0)+wUn(op);
-          if(tc>maxC) continue;
-          if(Math.abs(applied-T)<Math.abs(nt.v-T)*0.9){
-            const ast2=mkU(op,nt.ast);
-            if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
-            const sv=evalAStable(ast2);
-            const fv=Number.isFinite(sv)?sv:applied;
-            found++;
-            if(useBitmask) pushBest({v:fv,ast:ast2,mask:nt.mask||0,cost:tc,searchType:"meet"});
-            else pushBest({v:fv,ast:ast2,cnt:nt.cnt||EMPTY,cost:tc,searchType:"meet"});
-          }
-        }
-      }
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // 【联结】crossBeamAlgebraicScan - 横向梁代数扫描
-  // 核心：对fwd各层的项目两两组合检测是否接近T
-  // 利用已排序的beam，O(n log n) 实现 a op b ≈ T
-  // ═══════════════════════════════════════════════════════════════════════
-  function crossBeamAlgebraicScan(c){
-    if(c<3) return;
-    const tStart=performance.now();
-    const timeCap=(mode==="speed")?8:(mode==="accuracy"?28:14);
-    const scale=Math.max(1,Math.abs(T));
-    const eps=scale*3e-6;
-    let tried=0;
-    const maxTried=(mode==="speed")?400:(mode==="accuracy")?1200:700;
-
-    // 收集当前层的top候选（按goal排序）
-    const pool=[];
-    const cHalf=Math.min(c,maxC);
-    for(let fc=1;fc<=cHalf;fc++){
-      const ff=fwd[fc]; if(!ff||!ff.length) continue;
-      const limF=Math.min(ff.length, mode==="speed"?24:48);
-      for(let i=0;i<limF;i++){
-        const it=ff[i]; if(it&&it.ast) pool.push(it);
-      }
-    }
-    if(pool.length<2) return;
-    pool.sort((a,b)=>(a.goal||0)-(b.goal||0));
-    const N=Math.min(pool.length, mode==="speed"?60:120);
-
-    // ── 二分搜索辅助：在已排序数组中找最接近target的项 ──
-    function bsearch(arr,target,valFn){
-      let lo=0,hi=arr.length-1,best=-1,bestD=Infinity;
-      while(lo<=hi){
-        const mid=(lo+hi)>>1;
-        const v=valFn(arr[mid]);
-        const d=Math.abs(v-target);
-        if(d<bestD){bestD=d;best=mid;}
-        if(v<target) lo=mid+1; else hi=mid-1;
-      }
-      return best;
-    }
-
-    // ── 对每个池中的项 a，寻找 b 使 a+b≈T, a*b≈T, a/b≈T ──
-    const sorted_v=pool.slice(0,N).sort((a,b)=>a.v-b.v);
-
-    for(let i=0;i<sorted_v.length;i++){
-      if(tried>=maxTried||stopFlag||performance.now()-tStart>timeCap) break;
-      const a=sorted_v[i];
-      const av=a.v;
-      if(!Number.isFinite(av)) continue;
-
-      // a + b ≈ T → b ≈ T - a
-      if(ALLOW_ADD){
-        const target=T-av;
-        const bi=bsearch(sorted_v,target,(x)=>x.v);
-        const window=Math.min(4,sorted_v.length);
-        for(let di=-window;di<=window;di++){
-          const idx2=bi+di;
-          if(idx2<0||idx2>=sorted_v.length||idx2===i) continue;
-          const b=sorted_v[idx2];
-          if(!b.ast) continue;
-          const tc=(a.cost||0)+(b.cost||0)+wBin("+");
-          if(tc>maxC) continue;
-          const v2=av+b.v;
-          if(Math.abs(v2-T)>eps) continue;
-          tried++;
-          const merged=mergeMaskOrCnt(a,b); if(merged==null) continue;
-          const ast2=mkB("+",a.ast,b.ast);
-          if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
-          const sv=evalAStable(ast2);
-          if(!Number.isFinite(sv)) continue;
-          if(useBitmask) pushBest({v:sv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
-          else pushBest({v:sv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
-          if(stopFlag) return;
-        }
-      }
-
-      // a * b ≈ T → b ≈ T/a
-      if(HAS_MUL && Math.abs(av)>1e-10){
-        const target=T/av;
-        if(Number.isFinite(target)&&Math.abs(target)<1e10){
-          const bi=bsearch(sorted_v,target,(x)=>x.v);
-          for(let di=-3;di<=3;di++){
-            const idx2=bi+di;
-            if(idx2<0||idx2>=sorted_v.length||idx2===i) continue;
-            const b=sorted_v[idx2];
-            if(!b.ast) continue;
-            const tc=(a.cost||0)+(b.cost||0)+wBin("*");
-            if(tc>maxC) continue;
-            const v2=av*b.v;
-            if(Math.abs(v2-T)>eps) continue;
-            tried++;
-            const merged=mergeMaskOrCnt(a,b); if(merged==null) continue;
-            const ast2=mkB("*",a.ast,b.ast);
-            if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
-            const sv=evalAStable(ast2);
-            if(!Number.isFinite(sv)) continue;
-            if(useBitmask) pushBest({v:sv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
-            else pushBest({v:sv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
-            if(stopFlag) return;
-          }
-        }
-      }
-
-      // a ^ b ≈ T (只当T>0且a>0)
-      if(Array.isArray(opsBin)&&opsBin.includes("^")&&T>0&&av>0&&Math.abs(av-1)>1e-10){
-        const target=Math.log(T)/Math.log(av);
-        if(Number.isFinite(target)&&Math.abs(target)<50){
-          const bi=bsearch(sorted_v,target,(x)=>x.v);
-          for(let di=-3;di<=3;di++){
-            const idx2=bi+di;
-            if(idx2<0||idx2>=sorted_v.length||idx2===i) continue;
-            const b=sorted_v[idx2];
-            if(!b.ast) continue;
-            const tc=(a.cost||0)+(b.cost||0)+wBin("^");
-            if(tc>maxC) continue;
-            const v2=safePowStable(av,b.v);
-            if(!Number.isFinite(v2)||Math.abs(v2-T)>eps*100) continue;
-            tried++;
-            const merged=mergeMaskOrCnt(a,b); if(merged==null) continue;
-            const ast2=mkB("^",a.ast,b.ast);
-            if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
-            const sv=evalAStable(ast2);
-            if(!Number.isFinite(sv)) continue;
-            if(useBitmask) pushBest({v:sv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
-            else pushBest({v:sv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
-            if(stopFlag) return;
-          }
-        }
-      }
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // 【启发】heuristicConstantRelationSearch - 常数关联启发搜索
-  // 利用已知数学常数之间的代数关系：若某fwd值 v 与 T 的比接近常数的某次幂，
-  // 则直接构造表达式。类似 PSLQ 算法的整系数关系检测。
-  // ═══════════════════════════════════════════════════════════════════════
-  function heuristicConstantRelationSearch(c){
-    if(c<4||!Number.isFinite(T)||Math.abs(T)<1e-15) return;
-    const tStart=performance.now();
-    const timeCap=(mode==="speed")?6:(mode==="accuracy"?20:10);
-    const scale=Math.max(1,Math.abs(T));
-    let found=0;
-    const maxFound=(mode==="speed")?30:80;
-
-    // 所有已启用的常数
-    const allConsts=consts.filter(c=>Number.isFinite(Number(c.v)));
-    // 所有整数幂：-6..6（避免极端值）
-    const smallInts=[-5,-4,-3,-2,-1,0,1,2,3,4,5];
-    const rationalFracs=[[1,2],[1,3],[2,3],[1,4],[3,4],[1,5],[2,5],[1,6],[1,7],[1,8]];
-
-    // 检验：v 是否接近 T 乘以某个已知表达式
-    function tryProdCombo(v,ast,cost,mask_or_cnt){
-      if(!Number.isFinite(v)||Math.abs(v)>CAP||cost>maxC) return;
-      const err=Math.abs(v-T);
-      if(err<scale*3e-6){
-        found++;
-        const sv=evalAStable(ast);
-        const fv=Number.isFinite(sv)?sv:v;
-        if(useBitmask) pushBest({v:fv,ast,mask:mask_or_cnt||0,cost,searchType:"meet"});
-        else pushBest({v:fv,ast,cnt:mask_or_cnt||EMPTY,cost,searchType:"meet"});
-      }
-    }
-
-    // 收集fwd中高质量候选
-    const pool2=[];
-    for(let fc=1;fc<=Math.min(c,maxC);fc++){
-      const ff=fwd[fc]; if(!ff) continue;
-      for(let i=0;i<Math.min(ff.length,32);i++){
-        const it=ff[i]; if(it&&it.ast&&Math.abs(it.v)>1e-15) pool2.push(it);
-      }
-    }
-
-    for(const it of pool2){
-      if(found>=maxFound||stopFlag||performance.now()-tStart>timeCap) break;
-      const v=it.v;
-
-      // ── 整数幂修正：T = v * c^n ──
-      for(const cc of allConsts){
-        const cv=Number(cc.v);
-        if(!Number.isFinite(cv)||Math.abs(cv)<1e-12||Math.abs(cv-1)<1e-12) continue;
-        const cAst=getConstNodeByValue(cv);
-        const baseCost=1; // leaf cost
-        for(const n of smallInts){
-          if(n===0) continue;
-          const cn=Math.pow(cv,Math.abs(n));
-          if(!Number.isFinite(cn)||cn>1e10) continue;
-          const target=(n>0)?(v*cn):(v/cn);
-          if(!Number.isFinite(target)||Math.abs(target-T)>scale*3e-6) continue;
-          const nAst=mkC(String(Math.abs(n)),Math.abs(n),ordLeaf(String(Math.abs(n))));
-          const powAst=(n>0)?mkB("^",cAst,nAst):mkB("^",cAst,mkU("neg",nAst));
-          const tc=(it.cost||0)+wBin("*")+wBin("^")+baseCost+1;
-          if(tc>maxC) continue;
-          const finalAst=mkB("*",it.ast,powAst);
-          if(LEAF_ORDER&&finalAst.ord&&!finalAst.ord.ok) continue;
-          tryProdCombo(target,finalAst,tc,useBitmask?(it.mask||0):(it.cnt||EMPTY));
-        }
-      }
-
-      // ── 有理数倍数：T = v * (p/q) ──
-      if(HAS_DIV && found<maxFound){
-        for(const [p,q] of rationalFracs){
-          const target_pq=v*p/q;
-          if(!Number.isFinite(target_pq)||Math.abs(target_pq-T)>scale*3e-6) continue;
-          const pAst=mkC(String(p),p,ordLeaf(String(p)));
-          const qAst=mkC(String(q),q,ordLeaf(String(q)));
-          const fracAst=mkB("/",pAst,qAst);
-          const tc=(it.cost||0)+wBin("*")+wBin("/")+2;
-          if(tc>maxC) continue;
-          const finalAst=mkB("*",it.ast,fracAst);
-          if(LEAF_ORDER&&finalAst.ord&&!finalAst.ord.ok) continue;
-          tryProdCombo(target_pq,finalAst,tc,useBitmask?(it.mask||0):(it.cnt||EMPTY));
-        }
-      }
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // 【跳跃】advancedDeepNestingProbe - 强化深层嵌套探针（L3+L4）
-  // 在原 deepNestingProbe 的基础上增加L3（三重逆变换）和二元跳跃
-  // ═══════════════════════════════════════════════════════════════════════
-  function advancedDeepNestingProbe(c){
-    if(!bidir||fwdIdx.size<10||c<7) return;
-    const tStart=performance.now();
-    const timeCap=(mode==="speed")?10:(mode==="accuracy")?40:20;
-    let pairsTried=0;
-    const maxPairs=(mode==="speed")?180:(mode==="accuracy")?800:400;
-    const absT=Math.abs(T);
-    if(!Number.isFinite(absT)||absT<1e-12) return;
-
-    const knownConsts=[
-      {s:"π",v:Math.PI},{s:"e",v:Math.E},{s:"2",v:2},{s:"3",v:3},
-      {s:"√2",v:Math.SQRT2},{s:"1",v:1},{s:"4",v:4},{s:"5",v:5},{s:"1/2",v:0.5},
-      {s:"6",v:6},{s:"7",v:7},{s:"8",v:8},{s:"φ",v:(1+Math.sqrt(5))/2},
-    ].filter(cc=>consts.some(uc=>Math.abs(Number(uc.v)-cc.v)<1e-14));
-
-    const unOps=Array.isArray(opsUn)?opsUn:[];
-    const binOps=Array.isArray(opsBin)?opsBin:[];
-    const unInvOps2=["sqrt","cbrt","square","cube","exp","log","neg","inv",
-                     "sin","cos","tan","asin","acos","atan","sinh","cosh","tanh"];
-
-    // ── 构建L0（与原deepNestingProbe相同）──
-    const L0=[];
-    if(absT>0&&unOps.includes("square")){
-      L0.push({v:Math.sqrt(absT),c:wUn("square"),w:(a)=>mkU("square",a)});
-      L0.push({v:-Math.sqrt(absT),c:wUn("square"),w:(a)=>mkU("square",mkU("neg",a))});
-    }
-    if(unOps.includes("cube")) L0.push({v:Math.cbrt(T),c:wUn("cube"),w:(a)=>mkU("cube",a)});
-    if(T>0&&unOps.includes("exp")) L0.push({v:Math.log(T),c:wUn("exp"),w:(a)=>mkU("exp",a)});
-    if(binOps.includes("^")){
-      for(const n of [2,3,4,5,6]){
-        const r=Math.pow(absT,1/n);
-        if(Number.isFinite(r)&&r<1e8){
-          const nAst=mkC(String(n),n,ordLeaf(String(n)));
-          L0.push({v:r,c:wBin("^"),w:(a)=>mkB("^",a,nAst)});
-          if(n%2===0) L0.push({v:-r,c:wBin("^"),w:(a)=>mkB("^",mkU("neg",a),nAst)});
-        }
-      }
-    }
-    // 补充: inv(T), neg(T)
-    if(Math.abs(T)>1e-12&&unOps.includes("inv"))
-      L0.push({v:1/T,c:wUn("inv"),w:(a)=>mkU("inv",a)});
-    if(unOps.includes("neg"))
-      L0.push({v:-T,c:wUn("neg"),w:(a)=>mkU("neg",a)});
-    // asin/acos/asin branches
-    if(Math.abs(T)<=1&&unOps.includes("sin"))
-      L0.push({v:Math.asin(Math.max(-1,Math.min(1,T))),c:wUn("sin"),w:(a)=>mkU("sin",a)});
-    if(Math.abs(T)<=1&&unOps.includes("cos"))
-      L0.push({v:Math.acos(Math.max(-1,Math.min(1,T))),c:wUn("cos"),w:(a)=>mkU("cos",a)});
-
-    // ── 构建L1: 对L0施加一层常数二元运算 ──
-    const L1=[];
-    for(const t0 of L0){
-      if(!Number.isFinite(t0.v)||Math.abs(t0.v)>1e8) continue;
-      for(const cc of knownConsts){
-        const cv=cc.v, cAst=getConstNodeByValue(cv);
-        if(HAS_MUL&&Math.abs(cv)>1e-14){
-          const x=t0.v/cv;
-          if(Number.isFinite(x)&&Math.abs(x)<1e8) L1.push({v:x,c:t0.c+wBin("*"),w:(a)=>t0.w(mkB("*",cAst,a))});
-        }
-        if(ALLOW_ADD||HAS_SUB){
-          const x=t0.v-cv;
-          if(Number.isFinite(x)&&Math.abs(x)<1e8) L1.push({v:x,c:t0.c+wBin("+"),w:(a)=>t0.w(mkB("+",cAst,a))});
-        }
-        if(HAS_SUB){
-          const x=cv-t0.v;
-          if(Number.isFinite(x)&&Math.abs(x)<1e8) L1.push({v:x,c:t0.c+wBin("-"),w:(a)=>t0.w(mkB("-",cAst,a))});
-        }
-        if(HAS_DIV&&Math.abs(cv)>1e-14){
-          const x=t0.v*cv;
-          if(Number.isFinite(x)&&Math.abs(x)<1e8) L1.push({v:x,c:t0.c+wBin("/"),w:(a)=>t0.w(mkB("/",a,cAst))});
-          const x2=cv/Math.max(1e-14,Math.abs(t0.v))*(t0.v>0?1:-1);
-          if(Number.isFinite(x2)&&Math.abs(x2)<1e8) L1.push({v:x2,c:t0.c+wBin("/"),w:(a)=>t0.w(mkB("/",cAst,a))});
-        }
-      }
-    }
-
-    // ── 构建L2: 对L1施加单元逆变换 ──
-    const L2=[];
-    for(const t1 of L1){
-      if(!Number.isFinite(t1.v)||Math.abs(t1.v)>1e8||t1.c>maxC-2) continue;
-      for(const op of unInvOps2){
-        if(!unOps.includes(op)) continue;
-        const invs=invUn(op,t1.v); if(!Array.isArray(invs)) continue;
-        for(const inv of invs){
-          if(!Number.isFinite(inv.v)||Math.abs(inv.v)>1e8) continue;
-          const tc=t1.c+wUn(op); if(tc>maxC) continue;
-          L2.push({v:inv.v,c:tc,w:(a)=>t1.w(mkU(op,a))});
-        }
-      }
-    }
-
-    // ── 构建L3（新增）: 对L2再施加一层常数二元运算 ──
-    const L3=[];
-    for(const t2 of L2.slice(0, Math.min(L2.length, 120))){
-      if(!Number.isFinite(t2.v)||Math.abs(t2.v)>1e8||t2.c>maxC-3) continue;
-      for(const cc of knownConsts.slice(0,6)){ // 只用高频常数减少爆炸
-        const cv=cc.v, cAst=getConstNodeByValue(cv);
-        if(HAS_MUL&&Math.abs(cv)>1e-14&&Math.abs(cv-1)>1e-10){
-          const x=t2.v/cv;
-          if(Number.isFinite(x)&&Math.abs(x)<1e8&&t2.c+wBin("*")<=maxC)
-            L3.push({v:x,c:t2.c+wBin("*"),w:(a)=>t2.w(mkB("*",cAst,a))});
-        }
-        if((ALLOW_ADD||HAS_SUB)&&Math.abs(cv)<50){
-          const x=t2.v-cv;
-          if(Number.isFinite(x)&&Math.abs(x)<1e8&&t2.c+wBin("+")<=maxC)
-            L3.push({v:x,c:t2.c+wBin("+"),w:(a)=>t2.w(mkB("+",cAst,a))});
-        }
-      }
-    }
-
-    // ── 去重并排序 ──
-    const allTargets=[...L0,...L1,...L2,...L3];
-    const seen2=new Map(), ded2=[];
-    for(const t of allTargets){
-      if(!Number.isFinite(t.v)) continue;
-      const qk=Math.round(t.v*1e5);
-      if(seen2.has(qk)){const old=seen2.get(qk);if(t.c<old.c){seen2.set(qk,t);ded2[ded2.indexOf(old)]=t;}}
-      else{seen2.set(qk,t);ded2.push(t);}
-    }
-    ded2.sort((a,b)=>a.c-b.c);
-
-    // ── 查找fwd中的匹配 ──
-    for(const tgt of ded2){
-      if(pairsTried>=maxPairs||stopFlag||performance.now()-tStart>timeCap) break;
-      const candidates=jumpLookupNear(tgt.v,Math.max(12,26-(tgt.c||1)));
-      for(const cand of candidates){
-        if(pairsTried>=maxPairs) break;
-        if(!cand||!cand.ast) continue;
-        const innerCost=cand.cost||astCost(cand.ast);
-        const totalCost=innerCost+tgt.c;
-        if(totalCost>maxC) continue;
-        const combined=tgt.w(cand.ast);
-        if(!combined) continue;
-        if(LEAF_ORDER&&combined.ord&&!combined.ord.ok) continue;
-        const v=evalA(combined);
-        if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
-        pairsTried++;
-        const err=Math.abs(v-T);
-        if(err>Math.max(1,Math.abs(T))*0.02) continue;
-        const stableV=evalAStable(combined);
-        if(!Number.isFinite(stableV)) continue;
-        const stableErr=Math.abs(stableV-T);
-        const threshold=Math.max(bestDeltaSoFar*12,1e-5*Math.max(1,Math.abs(T)));
-        if(stableErr>threshold) continue;
-        if(useBitmask) pushBest({v:stableV,ast:combined,mask:cand.mask||0,cost:totalCost,searchType:"meet"});
-        else pushBest({v:stableV,ast:combined,cnt:cand.cnt||EMPTY,cost:totalCost,searchType:"meet"});
-      }
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // 【精度】precisionRefinement - 精度淬火
-  // 对找到的近似解，通过添加极小修正项提升到更高精度
-  // 使用"误差放大"技术：将误差乘以整数因子后在fwd中寻找匹配
-  // ═══════════════════════════════════════════════════════════════════════
-  function precisionRefinement(c){
-    return; // disabled: remove small-number add/sub approximation mechanism
-
-    if(best.length<1||c<6) return;
-    const tStart=performance.now();
-    const timeCap=(mode==="speed")?6:(mode==="accuracy"?24:12);
-    const scale=Math.max(1,Math.abs(T));
-    let refined=0;
-    const maxRefined=(mode==="speed")?20:(mode==="accuracy"?60:36);
-
-    // 取最佳解中误差最小的几个
-    const topBest=best.slice(0,Math.min(best.length,8));
-    for(const bst of topBest){
-      if(refined>=maxRefined||stopFlag||performance.now()-tStart>timeCap) break;
-      const bv=bst.v;
-      const delta=T-bv;
-      if(!Number.isFinite(delta)||Math.abs(delta)<scale*1e-13||Math.abs(delta)>scale*1e-3) continue;
-
-      // 在fwd所有层中找 expr ≈ delta，然后将解组合提高精度
-      // 也试 n*delta 的倍数（1..8），然后用 /n 修正
-      for(const n of [1,2,3,4,5,6,7,8,9,10]){
-        if(stopFlag||performance.now()-tStart>timeCap) break;
-        const target=delta*n;
-        if(!Number.isFinite(target)||Math.abs(target)>scale) continue;
-        const candidates=jumpLookupNear(target,24);
-        for(const ec of candidates){
-          if(!ec||!ec.ast||refined>=maxRefined) break;
-          // 如果找到 ec ≈ n*delta，则 (bst_ast + ec/n) ≈ T
-          // 为简化：只处理 n=1 时直接加，n>1 时需要 ec/n
-          if(n===1){
-            // 无法访问bst的ast（只有v,delta），但可以从fwd找最接近bv的项
-            const bstFwdCands=jumpLookupNear(bv,12);
-            for(const fc of bstFwdCands){
-              if(!fc||!fc.ast||refined>=maxRefined) break;
-              if(!ALLOW_ADD) break;
-              const tc=(fc.cost||0)+(ec.cost||0)+wBin("+");
-              if(tc>maxC) continue;
-              const merged=mergeMaskOrCnt(fc,ec); if(merged==null) continue;
-              const ast2=mkB("+",fc.ast,ec.ast);
-              if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
-              const v2=evalA(ast2);
-              if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
-              if(Math.abs(v2-T)<Math.abs(delta)*0.9){
-                refined++;
-                const sv=evalAStable(ast2);
-                const fv=Number.isFinite(sv)?sv:v2;
-                if(useBitmask) pushBest({v:fv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
-                else pushBest({v:fv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
-              }
-            }
-          } else if(HAS_DIV){
-            // ec ≈ n*delta → ec/n ≈ delta
-            const nAst=mkC(String(n),n,ordLeaf(String(n)));
-            const ecDivN=mkB("/",ec.ast,nAst);
-            const ecDivNv=ec.v/n;
-            // 找最接近bv的fwd项
-            const bstFwdCands=jumpLookupNear(bv,8);
-            for(const fc of bstFwdCands){
-              if(!fc||!fc.ast||refined>=maxRefined) break;
-              if(!ALLOW_ADD) break;
-              const tc=(fc.cost||0)+(ec.cost||0)+wBin("+")+wBin("/")+1;
-              if(tc>maxC) continue;
-              const merged=mergeMaskOrCnt(fc,ec); if(merged==null) continue;
-              const ast2=mkB("+",fc.ast,ecDivN);
-              if(LEAF_ORDER&&ast2.ord&&!ast2.ord.ok) continue;
-              const v2=evalA(ast2);
-              if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
-              if(Math.abs(v2-T)<Math.abs(delta)*0.9){
-                refined++;
-                const sv=evalAStable(ast2);
-                const fv=Number.isFinite(sv)?sv:v2;
-                if(useBitmask) pushBest({v:fv,ast:ast2,mask:merged,cost:tc,searchType:"meet"});
-                else pushBest({v:fv,ast:ast2,cnt:merged,cost:tc,searchType:"meet"});
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  function powerChainProbe(c){
-    if(c<5||!Array.isArray(opsBin)||!opsBin.includes("^")) return;
-    if(!Number.isFinite(T)||T<=0) return;
-    const t0pc=performance.now();
-    const timeCap=(mode==="speed")?6:15;
-    let tried=0;
-    const maxTry=60;
-    const logT=Math.log(T);
-
-    // 对 fwd 中的 base 候选，计算 log_base(T) 作为目标指数
-    for(let fc=1;fc<=Math.min(c-wBin("^"),maxC)&&tried<maxTry;fc++){
-      const ff=fwd[fc];
-      if(!ff) continue;
-      for(let i=0;i<Math.min(ff.length,20)&&tried<maxTry;i++){
-        if(performance.now()-t0pc>timeCap) return;
-        const base=ff[i];
-        if(!base||!base.ast) continue;
-        const bv=base.v;
-        if(!Number.isFinite(bv)||bv<=0||bv>200||Math.abs(bv-1)<1e-12) continue;
-
-        const neededExp=logT/Math.log(bv);
-        if(!Number.isFinite(neededExp)||Math.abs(neededExp)>40) continue;
-
-        const exps=jumpLookupNear(neededExp,6);
-        for(const exp of exps){
-          if(!exp||!exp.ast||tried>=maxTry) continue;
-          const tc=(base.cost||fc)+(exp.cost||0)+wBin("^");
-          if(tc>maxC) continue;
-          const mg=mergeMaskOrCnt(base,exp);
-          if(mg==null) continue;
-
-          const ast=mkB("^",base.ast,exp.ast);
-          if(LEAF_ORDER&&ast.ord&&!ast.ord.ok) continue;
-          const v=evalAStable(ast);
-          if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
-          tried++;
-          if(Math.abs(v-T)>Math.abs(T)*0.01) continue;
-
-          if(useBitmask) pushBest({v,ast,mask:mg,cost:tc,searchType:"meet"});
-          else pushBest({v,ast,cnt:mg||EMPTY,cost:tc,searchType:"meet"});
-        }
-
-        // 也搜: T = c * base^exp
-        for(const at of consts.slice(0,5)){
-          const cv=Number(at.v);
-          if(!Number.isFinite(cv)||Math.abs(cv)<1e-14||Math.abs(cv-1)<1e-12) continue;
-          const tv=T/cv;
-          if(tv<=0) continue;
-          const ne2=Math.log(tv)/Math.log(bv);
-          if(!Number.isFinite(ne2)||Math.abs(ne2)>40) continue;
-          const exps2=jumpLookupNear(ne2,4);
-          for(const exp2 of exps2){
-            if(!exp2||!exp2.ast||tried>=maxTry) continue;
-            const cAst=getConstNodeByValue(cv);
-            const tc2=(base.cost||fc)+(exp2.cost||0)+wBin("^")+wBin("*")+1;
-            if(tc2>maxC) continue;
-            const inner=mkB("^",base.ast,exp2.ast);
-            const ast2=mkB("*",cAst,inner);
-            const v2=evalAStable(ast2);
-            if(!Number.isFinite(v2)||Math.abs(v2)>CAP) continue;
-            tried++;
-            if(Math.abs(v2-T)>Math.abs(T)*0.005) continue;
-            if(useBitmask) pushBest({v:v2,ast:ast2,mask:(base.mask||0)|(exp2.mask||0),cost:tc2,searchType:"meet"});
-            else pushBest({v:v2,ast:ast2,cnt:EMPTY,cost:tc2,searchType:"meet"});
-          }
-        }
-      }
-    }
-  }
-
 
   function buildRev(c){
     if(!bidir)return;
     const{bucket,put}=mkBucket(beamR,mp.spillMul);
+    // Enhanced revScore: prefer values in trig-output range [-1,1], small magnitude,
+    // and rational-looking values — all are likely building blocks for complex compositions
+    const revScore=(v)=>{
+      const ab=Math.abs(v);
+      const mag=Math.log1p(ab);
+      // Prefer trig-output range [-1,1]: needed for sin/cos/tanh argument chains
+      const trigOutBonus=(ab<=1.0&&ab>1e-15)?0.22:0;
+      // Prefer trig-argument range (small angle): cos(tan(e)) style
+      const trigArgBonus=(ab<=Math.PI*2+0.1)?0.10:0;
+      // Prefer rational-looking (small denominator fraction): e.g. 25/7, 5/3
+      const rbb=bbScore(v,18,0.012);
+      const ratBonus=rbb<0.06?0.18:(rbb<0.18?0.07:0);
+      return Math.max(0.001, mag - trigOutBonus - trigArgBonus - ratBonus);
+    };
+
     for(const op of opsUn){
       const w=wUn(op),sc=c-w;
       if(sc<0||!rev[sc]||!rev[sc].length)continue;
@@ -6031,25 +3969,16 @@ function collectLeaves(ast, out){
 
         const base=Math.floor(Math.sqrt(beamR));
         const isPow = (op==="^");
-        // adaptive lane caps: keep broad exploration, but avoid quadratic blow-up
-        // when index pressure is already high (observed in long accuracy runs).
-        const pressureLane = (strategyStats.pressureScore>=1) ? 0.78 : 1.0;
-        const laneMul=(isPow?2.0:1.2)*pressureLane;
-        const laneMin=Math.max(isPow?64:32, Math.floor(base*(isPow?0.42:0.28)));
-        const laneMax=Math.max(laneMin, Math.floor(base*(isPow?2.0:1.35)));
-        const cR=Math.min(rs.length,laneMax,Math.max(laneMin,Math.floor(base*laneMul)));
-        const cF=Math.min(fs.length,laneMax,Math.max(laneMin,Math.floor(base*laneMul)));
+        // For ^ op: probe much wider - power base/exponent combos need high recall
+        const laneMul=isPow?10.0:3.0;
+        const laneMin=isPow?600:140;
+        const cR=Math.min(rs.length,Math.max(laneMin,Math.floor(base*laneMul)));
+        const cF=Math.min(fs.length,Math.max(laneMin,Math.floor(base*laneMul)));
 
         for(let ir=0;ir<cR;ir++){
           const r=rs[ir];
           for(let jf=0;jf<cF;jf++){
             const f=fs[jf];visited++;
-
-            // Pre-filter: skip inverse when operands are extreme
-            const rAbs=Math.abs(r.v), fAbs=Math.abs(f.v);
-            if(rAbs>1e8 && fAbs>1e8) continue;
-            if(op==="^" && (fAbs<1e-12 || fAbs>50 || rAbs>1e6)) continue;
-            if(op==="/" && fAbs<1e-14) continue;
 
             const x1=invBinR(op,r.v,f.v);
             if(Number.isFinite(x1)&&Math.abs(x1)<=CAP){
@@ -6173,14 +4102,13 @@ function collectLeaves(ast, out){
       }
     }
 
-    const skipTransformSweep = !!(mp.speedRevMeetPrimaryOnly);
     for(let fc=1;fc<=maxFc;fc++){
       const ff=fwd[fc];
       if(!ff||!ff.length)continue;
       const lim2=Math.min(ff.length,perLayerCap);
       for(let i=0;i<lim2;i++){
         const f=ff[i];
-        const keys = meetKeysCached(f, skipTransformSweep);
+        const keys = meetKeysCached(f);
         meetLookups+=keys.length;
         let seen=null;
         if(keys.length>1)seen=new Set();
@@ -6198,39 +4126,6 @@ function collectLeaves(ast, out){
             meetDbg.pairsTried++;
             tryMeetPair(f,rrj);
             if(stopFlag) return;
-          }
-        }
-      }
-    }
-
-    // 深层联系: meetSweep只覆盖fc=1..maxFc, 但maxFc=min(maxC-rc,rc)
-    // 当rc较大时，fc > rc 的层也可以配对（只要fc+rc <= maxC）
-    // 标准sweep因为maxFc被rc限制而错过这些配对
-    // 补充扫描: fc∈(maxFc, maxC-rc]范围内的层，充分利用所有fwd层数据
-    if(strategyStats.stagnationLayers>=1){
-      const extraFcEnd=Math.min(maxC-rc, fwd.length-1);
-      const extraFcStart=maxFc+1;
-      if(extraFcStart<=extraFcEnd){
-        const extraPerLayer=Math.max(8,Math.floor(perLayerCap*0.40));
-        for(let fc=extraFcStart;fc<=extraFcEnd;fc++){
-          const ff=fwd[fc];
-          if(!ff||!ff.length)continue;
-          const lim2=Math.min(ff.length,extraPerLayer);
-          for(let i=0;i<lim2;i++){
-            const f=ff[i];
-            const pkey=f.mkey || (f.mkey = meetPrimaryKey(f.v));
-            const rl=localIdx.get(pkey);
-            if(!rl)continue;
-            meetDbg.keyHits++;
-            const seenR=new Set();
-            for(let j=0;j<rl.length;j++){
-              const rrj=rl[j];
-              if(seenR.has(rrj)) continue;
-              seenR.add(rrj);
-              meetDbg.pairsTried++;
-              tryMeetPair(f,rrj);
-              if(stopFlag) return;
-            }
           }
         }
       }
@@ -6362,7 +4257,7 @@ function collectLeaves(ast, out){
         if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
 
         if(useBitmask){
-          const keep=keepScore(goal,bb,revHit,a.mask,v);
+          const keep=keepScore(goal,bb,revHit,a.mask);
           put(keyOf(v,a.mask,""),{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
         }else{
           const keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
@@ -6393,17 +4288,14 @@ function collectLeaves(ast, out){
               const mask=a.mask|b.mask;
               const v=applyBin(op,a.v,b.v);
               if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(Math.abs(v-T)>pruneGoalThresh)continue;
+              const ast=mkB(op,a.ast,b.ast);
+              if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
               const goal=Math.abs(v-T);
-              // PERF: fast pre-filter before expensive mkB/bbScore
-              if(goal>pruneGoalThresh)continue;
               const bb=bbScore(v,mp.bbD,mp.bbMagA);
               const mk = bidir ? meetPrimaryKey(v) : "";
               const revHit=bidir?revIdx.has(mk):false;
-              const keep=keepScore(goal,bb,revHit,mask,v);
-              // PERF: skip if bucket full and this item is definitely worse
-              if(bucket.isFull() && keep>=bucket.worstKeep() && !revHit) continue;
-              const ast=mkB(op,a.ast,b.ast);
-              if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+              const keep=keepScore(goal,bb,revHit,mask);
               put(keyOf(v,mask,""),{v,goal,bb,keep,ast,mask,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
             }else{
               const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
@@ -6454,13 +4346,13 @@ function collectLeaves(ast, out){
             const a=fwd[it.ac][it.ai];
             const ast=mkU(it.op,a.ast);
             if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
-            const keep=keepScore(it.goal,it.bb,revHit,it.mask,v);
+            const keep=keepScore(it.goal,it.bb,revHit,it.mask);
             put(key,{v,goal:it.goal,bb:it.bb,keep,ast,mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false,extraUnFlags(it.op,a.flags)),mkey:mk});
           }else{
             const a=fwd[it.ac][it.ai],b=fwd[it.bc][it.bi];
             const ast=mkB(it.op,a.ast,b.ast);
             if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
-            const keep=keepScore(it.goal,it.bb,revHit,it.mask,v);
+            const keep=keepScore(it.goal,it.bb,revHit,it.mask);
             put(key,{v,goal:it.goal,bb:it.bb,keep,ast,mask:it.mask|0,flags:mkFlags(v,opTag(it.op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
           }
         }else{
@@ -6485,7 +4377,7 @@ function collectLeaves(ast, out){
 
     const items=Array.from(bucket.values());
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode,T);
+    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
     for(const it of picked){
       it.cost=c;
       // Strip transient fields not needed for future expansion
@@ -6499,82 +4391,22 @@ function collectLeaves(ast, out){
 
   // Dynamic goal threshold: skip items much worse than best found so far
   // Updated each complexity level; starts at Infinity
-  // pruneGoalThresh: start at 2×|T| scale. Values within this range OR with low bb (rational)
-  // are kept. Updated each layer. See tFloor logic below that prevents it going too tight.
-  let pruneGoalThresh=Infinity; // Start with no goal pruning; tighten after first solutions found
-  let stagnationLayers=0;
-  let prevLayerBest=Infinity;
-  let prevVisited=0, prevMeetCand=0, prevMeetOK=0, prevProbeRej=0, prevConfirmRej=0;
+  let pruneGoalThresh=Infinity;
   for(let c=2;c<=maxC;c++){
     if(stopFlag)break;
     if(performance.now()-t0>lim)break;
 
-    phaseTiming.totalLayers++;
-    const _t0Rev=performance.now();
     if(bidir){
       buildRev(c);
-      phaseTiming.buildRev+=performance.now()-_t0Rev;
       if(stopFlag)break;
-      const _t0Sweep=performance.now();
       meetSweepWithNewReverseLayer(c);
-      phaseTiming.meetSweep+=performance.now()-_t0Sweep;
       if(stopFlag)break;
-    } else {
-      phaseTiming.buildRev+=performance.now()-_t0Rev;
     }
 
-    const bestNow=Math.max(1e-18,Math.abs(bestDeltaSoFar));
-    if(bestNow < prevLayerBest*0.995) stagnationLayers=0; else stagnationLayers=Math.min(10,stagnationLayers+1);
-    prevLayerBest=Math.min(prevLayerBest,bestNow);
-
-    const dVisited=Math.max(1,visited-prevVisited);
-    const dMeetCand=Math.max(0,meetCandidates-prevMeetCand);
-    const dMeetOK=Math.max(0,meetConfirmed-prevMeetOK);
-    const dProbeRej=Math.max(0,meetDbg.rejProbeConfirm-prevProbeRej);
-    const meetYield=dMeetOK/Math.max(1,dMeetCand);
-    const probeRejRate=dProbeRej/Math.max(1,dMeetCand);
-    // ▼▼▼ 新增：confirm 拒绝率 — 反映候选质量
-    const dConfirmRej=Math.max(0,(meetDbg.rejConfirm||0)-prevConfirmRej);
-    const confirmRejRate=dConfirmRej/Math.max(1,dMeetCand);
-    prevConfirmRej=meetDbg.rejConfirm||0;
-    // ▲▲▲
-    const pressureScore=(stagnationLayers>=1?1:0) + (meetYield<0.016?1:0) + (probeRejRate>0.50?1:0) + (dVisited>110000 && dMeetOK<3?1:0)
-      // ▼ 额外压力：confirm 拒绝率极高说明候选质量太低，触发 boost
-      + (confirmRejRate>0.70?1:0);
-    strategyStats.stagnationLayers=stagnationLayers;
-    strategyStats.pressureScore=pressureScore;
-
-    const forcedBoost=(c%2===0 && pressureScore>=2) || (c%4===0 && meetYield<0.010);
-    if(forcedBoost) strategyStats.forcedBoost++;
-
-    const explorePressure=1+Math.min(2.6, pressureScore*0.42 + (forcedBoost?0.70:0));
-    const stagnationBoost=(1+Math.min(1.9,stagnationLayers*0.22))*explorePressure;
-    {
-      const totalCand=Math.max(1,meetCandidates);
-      const rejRate=(meetDbg.rejConfirm||0)/totalCand;
-      if(rejRate>0.85&&totalCand>200){
-        // 高拒绝率：候选太差，收紧而非放松
-        dynamicCandMul=Math.max(0.35,1.0-Math.min(0.55,(rejRate-0.85)*6));
-        dynamicConfirmMul=Math.max(0.45,1.0-Math.min(0.45,(rejRate-0.85)*5));
-      } else if(stagnationLayers>=2&&rejRate<0.40&&(meetDbg.maxConfirmErr||0)<5e5){
-        // 低拒绝率+停滞：可以放松
-        dynamicCandMul=1+Math.min(0.8,stagnationLayers*0.08+pressureScore*0.14+(forcedBoost?0.20:0));
-        dynamicConfirmMul=1+Math.min(1.5,stagnationLayers*0.12+pressureScore*0.25+(forcedBoost?0.35:0));
-      } else {
-        dynamicCandMul=1+Math.min(0.35,stagnationLayers*0.03+pressureScore*0.05);
-        dynamicConfirmMul=1+Math.min(0.55,stagnationLayers*0.04+pressureScore*0.08);
-        if((meetDbg.maxConfirmErr||0)>1e7){
-          dynamicCandMul=Math.min(dynamicCandMul,0.78);
-          dynamicConfirmMul=Math.min(dynamicConfirmMul,0.85);
-        }
-      }
-    }
-
-    let capUn=Math.max(180,Math.floor(beamF*(mp.capUnMul||2.0)/4/constPenalty*stagnationBoost));
-    let capBin=Math.max(120,Math.floor(beamF*(mp.capBinMul||1.8)/6/constPenalty*stagnationBoost));
+    let capUn=Math.max(180,Math.floor(beamF*(mp.capUnMul||2.0)/4/constPenalty));
+    let capBin=Math.max(120,Math.floor(beamF*(mp.capBinMul||1.8)/6/constPenalty));
     capUn=Math.max(50,Math.floor(capUn*mp.capMul));
     capBin=Math.max(45,Math.floor(capBin*mp.capMul));
-    if(stagnationLayers>0 || strategyStats.pressureScore>0) strategyStats.adaptiveBoosts++;
 
     if(subWorkers.length>0){
       fwd[c]=await computeLayerMT(c,capUn,capBin);
@@ -6597,20 +4429,15 @@ function collectLeaves(ast, out){
           const bb=bbScore(v,mp.bbD,mp.bbMagA);
           const mk = bidir ? meetPrimaryKey(v) : "";
           const revHit=bidir?revIdx.has(mk):false;
+          const ast=mkU(op,a.ast);
+          if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
 
           if(useBitmask){
-            const keep=keepScore(goal,bb,revHit,a.mask,v);
-            // PERF: skip AST creation if bucket full and item is definitely worse
-            if(bucket.isFull() && keep>=bucket.worstKeep() && !revHit) continue;
-            const ast=mkU(op,a.ast);
-            if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+            const keep=keepScore(goal,bb,revHit,a.mask);
             put(keyOf(v,a.mask,""),{v,goal,bb,keep,ast,mask:a.mask,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
           }else{
             const rBonus=(bb<0.08&&goal>0.001)?0.04*bb:0;
             const keep=(mp.keepMode==="goal")?(goal-rBonus):Math.min(goal,bb)-rBonus;
-            if(bucket.isFull() && keep>=bucket.worstKeep() && !revHit) continue;
-            const ast=mkU(op,a.ast);
-            if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
             put(keyOf(v,0,a.ck),{v,goal,bb,keep,ast,cnt:a.cnt,ck:a.ck,flags:mkFlags(v,opTag(op),false,extraUnFlags(op,a.flags)),mkey:mk});
           }
 
@@ -6649,7 +4476,7 @@ function collectLeaves(ast, out){
                 const bb=bbScore(v,mp.bbD,mp.bbMagA);
                 const mk = bidir ? meetPrimaryKey(v) : "";
                 const revHit=bidir?revIdx.has(mk):false;
-                const keep=keepScore(goal,bb,revHit,mask,v);
+                const keep=keepScore(goal,bb,revHit,mask);
                 put(keyOf(v,mask,""),{v,goal,bb,keep,ast,mask,flags:mkFlags(v,opTag(op),false,extraBinFlags(a.flags,b.flags)),mkey:mk});
               }else{
                 const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
@@ -6677,11 +4504,9 @@ function collectLeaves(ast, out){
         }
       }
 
-      const _t0ST=performance.now();
       const items=Array.from(bucket.values());
       for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-      const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode,T);
-      phaseTiming.selectTop+=performance.now()-_t0ST;
+      const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
       for(const it of picked){it.cost=c;}
       fwd[c]=picked;
     }
@@ -6691,191 +4516,19 @@ function collectLeaves(ast, out){
     addFwdIdx(fwd[c]);
     // Free cached mkeys after indexing
     for(const it of fwd[c]){if(it.mkeys)it.mkeys=null;}
-    const _t0Dec=performance.now();
-    tryTargetDecomposition(fwd[c], T, c);
-    if(c%2===0||stagnationLayers>=2) deepStructureProbe(c);
-    if(c%3===0||strategyStats.pressureScore>=2) powerChainProbe(c);
+    tryTargetDecomposition(fwd[c], T);
 
-    // ═══ 新增顿悟/启发/联结/跳跃探针 ═══
-    // 【联结】横向梁代数扫描: c>=4时每2层, 或停滞时每层
-    if(c>=4 && !stopFlag && (c%2===0 || stagnationLayers>=2)) crossBeamAlgebraicScan(c);
-    // 【启发】常数关联启发: c>=5时每3层, 精度模式每2层
-    if(c>=5 && !stopFlag && (c%3===0 || (mode==="accuracy"&&c%2===0))) heuristicConstantRelationSearch(c);
-    // 【跳跃】强化深层嵌套（L3+L4）: c>=7时每2层
-    if(c>=7 && !stopFlag && (c%2===1 || stagnationLayers>=3)) advancedDeepNestingProbe(c);
-    phaseTiming.decompose+=performance.now()-_t0Dec;
-    if((mode==="speed"?stagnationLayers>=4:stagnationLayers>=3) || strategyStats.pressureScore>=3){
-      const doExtraDecomp = strategyStats.pressureScore>=4 || (mode!=="speed"&&c%3===0) || (mode==="speed"&&c%4===0&&strategyStats.pressureScore>=3);
-      if(doExtraDecomp){
-        const prev=fwd[Math.max(1,c-1)]||[];
-        if(prev.length){
-          const cap=Math.max(6,Math.min(Math.floor(beamF*0.03),Math.floor(prev.length*0.10)));
-          tryTargetDecomposition(prev.slice(0,cap), T, Math.max(1,c-1));
-          strategyStats.extraDecomp++;
-        }
-      }
+
+    for(const e of fwd[c]){
+      pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
+      if(stopFlag)break;
+      if(bidir) tryMeetFwdWithRevIdx(e);
+      if(stopFlag)break;
     }
-
-    const _t0MeetFwd=performance.now();
-
-    // ▼▼▼ 智能直连发现 (Smart Direct-Connect Discovery)
-    // 与其让每个fwd项探针revIdx（O(fwdItems × keysPerItem × probeLen)），
-    // 不如反向：对rev[1..c-1]中的高质量项，直接计算它需要什么fwd值，用主键一次命中。
-    // 这是O(revItems × 1) vs 原来的O(fwdItems × 15 × probeLen)。
-    // Speed模式: 只在c>=4时启用(rev层已有足够候选), 时间预算严格
-    if(bidir && mode==="speed" && c>=4 && !stopFlag){
-      const directTimeCap = 8; // ms预算
-      const directStart = performance.now();
-      const directMaxRev = Math.min(80, beamR);
-      for(let rc=0; rc<=Math.min(c-1, maxC); rc++){
-        if(performance.now()-directStart > directTimeCap) break;
-        const rr2 = rev[rc]; if(!rr2||!rr2.length) continue;
-        const needed = c-rc; // fwd层cost必须为needed
-        const ff2 = fwd[needed]; if(!ff2||!ff2.length) continue;
-        const rLim = Math.min(rr2.length, directMaxRev);
-        for(let ri=0;ri<rLim;ri++){
-          if(performance.now()-directStart > directTimeCap) break;
-          const r2 = rr2[ri];
-          // 对每个rev项，直接查fwd中是否有值接近r2.v的候选
-          const pkey2 = r2.mkey || (r2.mkey = meetPrimaryKey(r2.v));
-          const fl2 = fwdIdx.get(pkey2);
-          if(!fl2) continue;
-          const lim3 = Math.min(fl2.length, 12);
-          for(let fi=0;fi<lim3;fi++){
-            const f2 = fl2[fi];
-            // 必须cost匹配
-            if(!f2 || (f2.cost||0)!==needed) continue;
-            meetDbg.pairsTried++;
-            meetDbg.rev2fwdPairs++;
-            tryMeetPair(f2, r2);
-            if(stopFlag) break;
-          }
-          if(stopFlag) break;
-        }
-        if(stopFlag) break;
-      }
-    }
-    // ▲▲▲ 结束智能直连发现
-
-    // ▼▼▼ meetFwd 自适应采样：只对「最接近T的top-K」+「已在revIdx中命中的」项目做meet
-    // 原来对全部 beamF=6800 项做 tryMeetFwdWithRevIdx，占总时间85%
-    // 现在通过采样将 meet 候选削减至约 40%+revHit，大幅降低时间
-    {
-      const sampleRatio = mp.meetFwdSampleRatio != null ? mp.meetFwdSampleRatio : 0.50;
-      const meetFwdCap = Math.max(96, Math.floor(beamF * sampleRatio));
-      for(const e of fwd[c]){
-        pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
-        if(stopFlag)break;
-      }
-      if(bidir && !stopFlag){
-        const sorted = fwd[c].slice().sort((a,b)=>(a.goal||0)-(b.goal||0));
-        const meetSet = new Set();
-        const forceShortMeetKeys=((strategyStats.pressureScore||0)>=3||meetDbg.maxConfirmErr>1e7);
-        const sampleRatio2 = mp.meetFwdSampleRatio != null ? mp.meetFwdSampleRatio : 0.50;
-        const meetFwdCap2 = Math.max(88, Math.floor(beamF * sampleRatio2));
-        const topK3 = Math.min(sorted.length, meetFwdCap2);
-        for(let i=0;i<topK3;i++) meetSet.add(sorted[i]);
-
-        for(const e of fwd[c]){
-          if(!meetSet.has(e)){
-            const mk2 = e.mkey || (e.mkey = meetPrimaryKey(e.v));
-            if(revIdx.has(mk2)){
-              meetSet.add(e);
-            } else if(!mp.speedMeetScanPrimaryOnly && !forceShortMeetKeys) {
-              // 非speed模式: 检查全部变换域键(代价高但召回率高)
-              const ks = meetKeysCached(e);
-              for(let ki=1;ki<ks.length;ki++){
-                if(revIdx.has(ks[ki])){ meetSet.add(e); break; }
-              }
-            } else {
-              // speed模式: 只检查邻域键(2*MEET_R个), 跳过L/S/Q等变换域
-              const ks = meetKeysCached(e, true); // skipTransform=true
-              for(let ki=1;ki<ks.length;ki++){
-                if(revIdx.has(ks[ki])){ meetSet.add(e); break; }
-              }
-            }
-          }
-        }
-
-        if(Number.isFinite(T)){
-          const subTargets2=[];
-          const absT3=Math.abs(T);
-          if(absT3>0){
-            subTargets2.push(Math.sqrt(absT3));
-            subTargets2.push(-Math.sqrt(absT3));
-            subTargets2.push(Math.cbrt(T));
-            if(T>0) subTargets2.push(Math.log(T));
-            for(const cc of [Math.PI,Math.E,2,3]){
-              subTargets2.push(Math.sqrt(absT3)/cc);
-              subTargets2.push(T/cc);
-            }
-          }
-
-          for(const sv of subTargets2){
-            if(!Number.isFinite(sv)||Math.abs(sv)>1e8) continue;
-            let bestDist=Infinity, bestItem=null;
-            const scanLim=Math.min(sorted.length, Math.floor(meetFwdCap2*1.5));
-            for(let i=0;i<scanLim;i++){
-              const d=Math.abs(sorted[i].v-sv);
-              if(d<bestDist){bestDist=d;bestItem=sorted[i];}
-            }
-            if(bestItem && bestDist<Math.abs(sv)*0.05+0.01){
-              meetSet.add(bestItem);
-            }
-          }
-        }
-
-        meetDbg.meetSetRaw+=meetSet.size;
-        if(mode==="speed" && meetSet.size>220){
-          const trimmed=Array.from(meetSet).sort((a,b)=>(a.goal||0)-(b.goal||0)).slice(0,220);
-          meetSet.clear();
-          for(const it of trimmed) meetSet.add(it);
-          meetDbg.meetSetTrimmed += 1;
-        }
-        meetDbg.meetSetFinal+=meetSet.size;
-        // Speed模式: 整个meetFwd阶段的总对数预算, 防止整层meet时间失控
-        const meetFwdTotalBudget = mp.speedMeetMaxPairsPerItem ?
-          Math.max(900, (meetSet.size * (mp.speedMeetMaxPairsPerItem|0))) : Infinity;
-        let meetFwdTotalPairs = 0;
-        // 将meetSet按goal排序(goal小的优先probe, 最可能match)
-        const meetSetArr = Array.from(meetSet).sort((a,b)=>(a.goal||0)-(b.goal||0));
-        const meetLayerStart=performance.now();
-        const meetLayerCap=(mode==="speed"?(mp.speedMeetLayerTimeCapMs||26):Infinity);
-        for(const e of meetSetArr){
-          if(meetFwdTotalPairs >= meetFwdTotalBudget){ meetDbg.pairBudgetStops++; break; }
-          if((performance.now()-meetLayerStart)>meetLayerCap){ meetDbg.meetTimeCapStops++; break; }
-          const pairsBefore = meetDbg.pairsTried;
-          tryMeetFwdWithRevIdx(e);
-          meetFwdTotalPairs += (meetDbg.pairsTried - pairsBefore);
-          if(stopFlag)break;
-        }
-      }
-    }
-    // ▲▲▲ 结束 meetFwd 自适应采样
-    phaseTiming.meetFwd+=performance.now()-_t0MeetFwd;
 
     emit(c);
-    // Update goal prune threshold: allow up to relax×best_delta BUT never below T-scale floor.
-    // CRITICAL: building blocks like π, e, √2 may be far from T but needed for f^g compositions.
-    // Floor = max(|T|, 1) × 0.5 ensures values within T's order of magnitude are ALWAYS kept.
-    // FIXED 漏解: floor must preserve ALL leaf constants as building blocks
-    // Old: 0.5*|T| would cut pi/e when T=25 after finding solutions near T
-    // New: ensure any leaf constant (like pi, e, sqrt2) can always be a subexpression.
-    // Also ensure values near √T, ∛T are never pruned (critical for (f(x))^n = T meets).
-    const _leafMaxGoal = consts.reduce((m,c)=>Math.max(m,Math.abs(Number(c.v)-T)),0);
-    const _sqrtTGoal = Number.isFinite(_sqrtT) ? Math.abs(_sqrtT-T) : 0;
-    const _cbrtTGoal = Number.isFinite(_cbrtT) ? Math.abs(_cbrtT-T) : 0;
-    const _powerGoal = Math.max(_sqrtTGoal * 1.2, _cbrtTGoal * 1.2);
-    const tFloor = Math.max(_leafMaxGoal * 3.0, Math.abs(T) * 2.0, _powerGoal * 1.5, 30);
-    if(best.length>0){
-      const relax=1+Math.min(8.0,stagnationLayers*0.55 + strategyStats.pressureScore*0.82);
-      pruneGoalThresh=Math.max(Math.abs(best[0].delta)*(80*relax)+1e-9, tFloor);
-      if(stagnationLayers>0 || strategyStats.pressureScore>0) strategyStats.pruneRelax++;
-    } else {
-      pruneGoalThresh = Math.max(pruneGoalThresh, tFloor);
-    }
-    prevVisited=visited; prevMeetCand=meetCandidates; prevMeetOK=meetConfirmed; prevProbeRej=meetDbg.rejProbeConfirm;
-    // prevConfirmRej 已在 pressureScore 计算中更新
+    // Update goal prune threshold: allow up to 12x best delta (keeps diversity while cutting noise)
+    if(best.length>0) pruneGoalThresh=Math.abs(best[0].delta)*20+1e-9;
     await new Promise(r=>setTimeout(r,0));
   }
 
@@ -6891,10 +4544,6 @@ function collectLeaves(ast, out){
     mt:(mt&&threads>1)?("ON("+threads+")"):"OFF",
     profile:mode,
     beamF,beamR,
-    bestCount:best.length,
-    bestDeltaSoFar,
-    dynamicCandMul,dynamicConfirmMul,
-    strategyStats,phaseTiming,
     best:best.slice(0,outN)
   }});
 };
@@ -6940,7 +4589,6 @@ $("btnStart").onclick=()=>{
   const showCounts=$("showCounts").checked;
   const pruneEquiv=$("pruneEquiv").checked;
   const excludeExact=$("excludeExact").checked;
-  const dedupeByValue=$("dedupeByValue")?.checked||false;
   let mt=$("mt").checked;
   const threads=Math.max(1,Math.min(64,Number($("threads").value||1)));
   const latexMode=$("latexMode").checked;
@@ -7004,8 +4652,6 @@ $("btnStart").onclick=()=>{
     if(type==="progress"||type==="done"){
       const rows=payload.best||[];
       const ba=rows.length?Math.abs(rows[0].delta):NaN;
-      const elapsedMs=Math.max(1,Number(payload.elapsed||0));
-      const vps=Math.round((Number(payload.visited||0)*1000)/elapsedMs);
       updateRuntimePanel(payload);
       const debugOn=$("debugMode").checked;
       if(debugOn){
@@ -7013,24 +4659,15 @@ $("btnStart").onclick=()=>{
         statusPills({
           T:fmt(lastT),status:type,profile:mode,mode:payload.mode,
           mt:payload.mt||"OFF",c:(payload.c??0)+"/"+payload.maxC,
-          elapsed_ms:payload.elapsed,visited:payload.visited,vps:vps,
-          pruned:payload.pruned||0,bestCount:payload.bestCount||rows.length,
-          best_delta:Number.isFinite(ba)?fmt(ba):"n/a",
-          best_delta_ever:Number.isFinite(payload.bestDeltaSoFar)?fmt(payload.bestDeltaSoFar):"n/a",
+          elapsed_ms:payload.elapsed,visited:payload.visited,pruned:payload.pruned||0,
           meetLookups:payload.meetLookups||0,meetCand:payload.meetCandidates||0,
-          meetOK:payload.meetConfirmed||0,beam:((payload.beamF||0)+"/"+(payload.beamR||0)),
-          candMul:fmt(payload.dynamicCandMul||1),cfmMul:fmt(payload.dynamicConfirmMul||1),pressure:payload.strategyStats?.pressureScore??0
+          meetOK:payload.meetConfirmed||0,best_delta:Number.isFinite(ba)?fmt(ba):"n/a"
         });
         const ps=$("pruneStats");
         ps.style.display="block";
         ps.innerHTML=
           "<b>AST重求值修正：</b>"+(payload.reEvalFixed||0).toLocaleString()+
-          " &nbsp;|&nbsp; <b>输出同值合并：</b>"+(payload.dupesKilled||0).toLocaleString()+
-          " &nbsp;|&nbsp; <b>吞吐(v/s)：</b>"+vps.toLocaleString();
-        if(payload.strategyStats){
-          const st=payload.strategyStats;
-          ps.innerHTML+=`<br><b>策略统计</b> boost=${st.adaptiveBoosts} forced=${st.forcedBoost} pruneRelax=${st.pruneRelax} jitter=${st.meetJitter} extraDecomp=${st.extraDecomp} stagnation=${st.stagnationLayers} pressure=${st.pressureScore}`;
-        }
+          " &nbsp;|&nbsp; <b>输出同值合并：</b>"+(payload.dupesKilled||0).toLocaleString();
         if(payload.meetDbg){
           const d=payload.meetDbg;
           ps.innerHTML+=
@@ -7038,25 +4675,7 @@ $("btnStart").onclick=()=>{
             `revIdxKeys=${d.revIdxKeys} revIdxItems=${d.revIdxItems} fwdIdxKeys=${d.fwdIdxKeys} fwdIdxItems=${d.fwdIdxItems}<br>`+
             `keyHits=${d.keyHits} pairsTried=${d.pairsTried} rev2fwdPairs=${d.rev2fwdPairs}<br>`+
             `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, probe=${d.rejProbeConfirm}, confirm=${d.rejConfirm}) `+
-            `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}<br>`+
-            `tcAvg=${((d.pairTcSum||0)/Math.max(1,d.pairsTried||0)).toFixed(2)} tcHigh=${d.pairTcHigh||0} skipProbe=${d.skipProbeCount||0} `+
-            `probeEval=${d.probeEvals||0}/${(d.probeEvalMs||0).toFixed(1)}ms trueEval=${d.trueEvals||0}/${(d.trueEvalMs||0).toFixed(1)}ms<br>`+
-            `budgetStops=${d.pairBudgetStops||0} timeCapStops=${d.meetTimeCapStops||0} `+
-            `meetSet(raw=${d.meetSetRaw||0},final=${d.meetSetFinal||0},trimmed=${d.meetSetTrimmed||0}) `+
-            `keyMode(short=${d.shortKeyModeHits||0},long=${d.longKeyModeHits||0})`;
-        }
-        if(payload.phaseTiming){
-          const pt=payload.phaseTiming;
-          const total=pt.buildFwd+pt.buildRev+pt.meetSweep+pt.selectTop+pt.decompose+pt.meetFwd;
-          ps.innerHTML+=
-            `<br><b>⏱ Phase Timing (ms累计)</b> `+
-            `buildFwd=${pt.buildFwd.toFixed(0)} `+
-            `buildRev=${pt.buildRev.toFixed(0)} `+
-            `meetSweep=${pt.meetSweep.toFixed(0)} `+
-            `selectTop=${pt.selectTop.toFixed(0)} `+
-            `decompose=${pt.decompose.toFixed(0)} `+
-            `meetFwd=${pt.meetFwd.toFixed(0)} `+
-            `(已分析${pt.totalLayers}层, 总计=${total.toFixed(0)}ms)`;
+            `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}`;
         }
       }else{
         $("status").style.display="none";
@@ -7080,7 +4699,7 @@ $("btnStart").onclick=()=>{
     timeLimit,infiniteTime,emitInterval,
     opsUn,opsBin,consts,
     showCounts,bidir,
-    pruneEquiv,excludeExact,dedupeByValue,
+    pruneEquiv,excludeExact,
     mt,threads,
     customEnable,customCode,
     subSrc:SUBWORKER_CODE
