@@ -1412,6 +1412,12 @@ function pruneUn(op,cf,cv){
   if(op==="log"&&ct===TAG_EXP)return true;
   if(op==="sqrt"&&ct===TAG_SQ)return true;
   if(op==="square"&&ct===TAG_SQRT)return true;
+  if(op==="cbrt" && ct===TAG_NONE && has(cf, F_HAS_ABS)) return true;
+  if(op==="cube" && ct===TAG_NONE) {}
+  if(op==="log" && ct===TAG_LOG) return true;
+  if(op==="exp" && ct===TAG_EXP) return true;
+  if(op==="sqrt" && ct===TAG_SQRT) return true;
+  if(op==="square" && ct===TAG_SQ) return true;
   if(op==="neg"&&has(cf,F_ZERO))return true;
   if(op==="sqrt"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
   if(op==="exp"&&has(cf,F_ZERO))return true;
@@ -1486,8 +1492,9 @@ function mkBucket(beam){
   function sw(i,j){const a=h[i],b=h[j];h[i]=b;h[j]=a;idx.set(b.key,i);idx.set(a.key,j);}
   function up(i){while(i>0){const p=(i-1)>>1;if(h[p].keep>=h[i].keep)break;sw(p,i);i=p;}}
   function dn(i){for(;;){let b=i,l=i*2+1,r=l+1;if(l<h.length&&h[l].keep>h[b].keep)b=l;if(r<h.length&&h[r].keep>h[b].keep)b=r;if(b===i)break;sw(i,b);i=b;}}
-  const bucket={values(){return h;}};
+  const bucket={values(){return h;}, ops:0};
   function put(key,pack){
+    bucket.ops++;
     const i=idx.get(key);
     if(i!==undefined){if(pack.keep>=h[i].keep)return;h[i]=pack;pack.key=key;dn(i);return;}
     pack.key=key;
@@ -1558,7 +1565,7 @@ onmessage=(ev)=>{
   if(msg.type==="task"){
     const{T,c,beam,capUn,capBin,workerId,workerCount,bbD,bbMagA,keepMode}=msg;
     const{bucket,put}=mkBucket(beam);
-    let visited=0,pruned=0;
+    let visited=0,pruned=0,unPruned=0,binPruned=0,evalFails=0;
 
     function keepScoreSub(goal,bb){ return (keepMode==="goal")?goal:Math.min(goal,bb); }
 
@@ -1577,9 +1584,9 @@ onmessage=(ev)=>{
       const lim=Math.min(src.len,capUn);
       for(let i=workerId;i<lim;i+=workerCount){
         const av=src.v[i],af=src.flags?src.flags[i]:0;
-        if(PRUNE&&pruneUn(op,af,av)){pruned++;continue;}
+        if(PRUNE&&pruneUn(op,af,av)){pruned++; unPruned++; continue;}
         const v=applyUn(op,av);visited++;
-        if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+        if(!Number.isFinite(v)||Math.abs(v)>CAP){ evalFails++; continue; }
         const goal=Math.abs(v-T);
         const bb=bbScore(v,bbD,bbMagA);
         let keep=keepScoreSub(goal,bb);
@@ -1615,7 +1622,7 @@ onmessage=(ev)=>{
           const stB=(comm&&ic===jc)?ia:0;
           for(let ib=stB;ib<cB;ib++){
             const bv=B.v[ib],bf=B.flags?B.flags[ib]:0;
-            if(PRUNE&&pruneBin(op,af,bf,av,bv)){pruned++;continue;}
+            if(PRUNE&&pruneBin(op,af,bf,av,bv)){pruned++; binPruned++; continue;}
 
             if(USE_BITMASK){
               const am=A.mask[ia]|0,bm=B.mask[ib]|0;
@@ -1633,7 +1640,7 @@ onmessage=(ev)=>{
 
               const mask=am|bm;
               const v=applyBin(op,av,bv);visited++;
-              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP){ evalFails++; continue; }
               const goal=Math.abs(v-T);
               const bb=bbScore(v,bbD,bbMagA);
               let keep=keepScoreSub(goal,bb);
@@ -1641,7 +1648,7 @@ onmessage=(ev)=>{
               put(keyOf(v,mask),{v,goal,bb,keep,mask,kind:"b",op,ac:ic,ai:ia,bc:jc,bi:ib});
             }else{
               const v=applyBin(op,av,bv);visited++;
-              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP){ evalFails++; continue; }
               const goal=Math.abs(v-T);
               const bb=bbScore(v,bbD,bbMagA);
               const keep=keepScoreSub(goal,bb);
@@ -1652,7 +1659,7 @@ onmessage=(ev)=>{
       }
     }
 
-    postMessage({type:"taskDone",payload:{visited,pruned,items:Array.from(bucket.values())}});
+    postMessage({type:"taskDone",payload:{visited,pruned,unPruned,binPruned,evalFails,bucketOps:bucket.ops,items:Array.from(bucket.values())}});
   }
 };
 `;
@@ -1744,8 +1751,10 @@ let perf={
   jumpLookups:0,jumpHits:0,jumpPairsTried:0,jumpPairsAccepted:0,
   jumpMemoHits:0,jumpMemoStores:0,
   sketchAttempts:0,sketchAccepted:0,
-  msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0
+  msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0,
+  msSelectTop:0, msIndex:0, msWorkerWait:0, bucketOps:0, evalFails:0
 };
+let KEEP_MODE_HINT="goal";
 let jumpLookupMemo=new Map();
 let jumpLookupMemoSeq=0;
 
@@ -2274,6 +2283,12 @@ function pruneUn(op,cf,cv){
   if(op==="log"&&ct===TAG_EXP)return true;
   if(op==="sqrt"&&ct===TAG_SQ)return true;
   if(op==="square"&&ct===TAG_SQRT)return true;
+  if(op==="cbrt" && ct===TAG_NONE && has(cf, F_HAS_ABS)) return true;
+  if(op==="cube" && ct===TAG_NONE) {}
+  if(op==="log" && ct===TAG_LOG) return true;
+  if(op==="exp" && ct===TAG_EXP) return true;
+  if(op==="sqrt" && ct===TAG_SQRT) return true;
+  if(op==="square" && ct===TAG_SQ) return true;
   if(op==="neg"&&has(cf,F_ZERO))return true;
   if(op==="sqrt"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
   if(op==="exp"&&has(cf,F_ZERO))return true;
@@ -2461,7 +2476,7 @@ function mkBucket(beam,spillMul){
   // Bounded max-heap by keep score (root = worst / highest keep = most costly item).
   // cap = beam*5 instead of old beam*64 → ~13x memory reduction at c=13.
   // O(log n) insert/update, no periodic sort/spill overhead.
-  const cap=Math.max(beam*5,6000);
+  const cap=Math.max(beam*((KEEP_MODE_HINT==="goal")?12:5),12000);
   const h=[];           // max-heap array
   const kidx=new Map(); // key -> heap index
   function sw(i,j){const a=h[i],b=h[j];h[i]=b;h[j]=a;kidx.set(b.key,i);kidx.set(a.key,j);}
@@ -2469,9 +2484,11 @@ function mkBucket(beam,spillMul){
   function dn(i){for(;;){let b=i,l=i*2+1,r=l+1;if(l<h.length&&h[l].keep>h[b].keep)b=l;if(r<h.length&&h[r].keep>h[b].keep)b=r;if(b===i)break;sw(i,b);i=b;}}
   const bucket={
     get size(){return h.length;},
-    values(){return h;}
+    values(){return h;},
+    ops: 0
   };
   function put(key,pack){
+    bucket.ops++;
     const i=kidx.get(key);
     if(i!==undefined){
       if(pack.keep>=h[i].keep)return false;
@@ -2547,6 +2564,7 @@ function topK(items,k,scoreFn,lowerBetter=true,filterFn=null){
 }
 
 function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
+  const tSel = performance.now();
   const out=[];
   const used=new Set();
   const take=(arr,limit)=>{
@@ -2569,7 +2587,6 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     for(const it of items){it.revHit=false;}
   }
 
-  // bitmask: compute required-coverage for quota/keep
   if(useBitmask && REQ_POP>0){
     for(const it of items){
       it.cov = popcnt32((it.mask|0) & REQ_MASK);
@@ -2591,38 +2608,96 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
   const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
   const nFrac=Math.max(0,Math.floor(beam*(mp.qFrac||0)));
-  // Quota: values in trig-OUTPUT range [-1,1] — required for sin/cos inverse meets
   const nTrigOut=Math.max(0,Math.floor(beam*(mode==="speed"?0.04:0.10)));
-  // Quota: values in trig-ARGUMENT range approx [-2π,2π] — needed as cos/sin arguments
   const nTrigArg=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.07)));
-  // Quota: values useful as arcsin/arccos/arctan inverses (i.e. in [-π/2..π] range)
   const nInvTrig=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.07)));
   const exploreRatio = mode==="speed" ? 0.035 : (mode==="accuracy" ? 0.20 : 0.18);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
   const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.12)));
+  const nDeepRat = Math.max(0, Math.floor(beam * 0.08));
+  const nPowSrc = Math.max(0, Math.floor(beam * (mode==="speed" ? 0.06 : 0.14)));
+  const nLogSrc = Math.max(0, Math.floor(beam * (mode==="speed" ? 0.04 : 0.10)));
+  const nLowCost = Math.max(0, Math.floor(beam * (mode==="speed" ? 0.05 : 0.12)));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
 
-  // Required-coverage quota (fix bitmask漏解 due to beam fragmentation)
   if(useBitmask && REQ_POP>0 && nReq>0){
     take(topK(items,nReq,(x)=>(x.keep - 0.35*(x.cov||0)),true,(x)=> (x.cov||0)>0), nReq);
   }
 
-  // qFrac: keep highly rational values (small bb) in pow-useful range – key for e.g. 25/7 type bases
   if(nFrac>0){
     take(topK(items,nFrac,(x)=>x.bb,true,(x)=>{
       const v=x.v;
       if(!Number.isFinite(v)||Math.abs(v)<0.05)return false;
       const a=Math.abs(v);
-      // Accept: nice fraction-like range (0.1..50), NOT already an integer
       return a<50 && a>0.1 && Math.abs(v-Math.round(v))>1e-9 && x.bb<0.15;
     }), nFrac);
   }
 
-  // Trig-output range: values in [-1,1] are outputs of sin/cos/tanh, needed for inverse-trig meets
-  // e.g. cos(tan(e)) ≈ some value → fwd must retain cos(tan(e)) which is in [-1,1]
+  if(allowPow && nPowSrc > 0){
+    const absT=Math.abs(T);
+    const logT = absT>0?Math.log(absT):NaN;
+    take(topK(items, nPowSrc, (x) => {
+      const v = x.v;
+      if(!Number.isFinite(v)) return 1e9;
+      const av = Math.abs(v);
+      if(av < 0.01 || av > 1e8 || Math.abs(av-1) < 1e-12) return 1e9;
+      const logV = Math.log(av);
+      if(!Number.isFinite(logV) || Math.abs(logV) < 1e-15) return 1e9;
+
+      let bestDist = 1e9;
+      if(Number.isFinite(logT)){
+        const ratio = logT / logV;
+        for(let n = -12; n <= 12; n++){
+          if(n === 0) continue;
+          const dist = Math.abs(ratio - n);
+          if(dist < bestDist) bestDist = dist;
+        }
+      }
+      for(let k = -10; k <= 10; k++){
+        const Tk = T - k;
+        if(Tk === 0) continue;
+        const absTk=Math.abs(Tk);
+        if(absTk<=0) continue;
+        const logTk = Math.log(absTk);
+        const r2 = logTk / logV;
+        for(let n = -12; n <= 12; n++){
+          if(n === 0) continue;
+          const dist = Math.abs(r2 - n);
+          if(dist < bestDist) bestDist = dist;
+        }
+      }
+      return bestDist + 0.02 * (x.cost||0);
+    }, true, (x) => {
+      const v = x.v;
+      if(!Number.isFinite(v)) return false;
+      const av = Math.abs(v);
+      return av > 0.001 && av < 1e8 && Math.abs(av-1) > 1e-12;
+    }), nPowSrc);
+  }
+
+  if(nLogSrc > 0){
+    take(topK(items, nLogSrc, (x) => {
+      const v = x.v;
+      if(!Number.isFinite(v) || v <= 0) return 1e9;
+      const lv = Math.log(v);
+      if(!Number.isFinite(lv)) return 1e9;
+      let bestDist = Math.abs(lv - T);
+      for(let k = 1; k <= 8; k++){
+        bestDist = Math.min(bestDist, Math.abs(lv * k - T));
+        if(T !== 0) bestDist = Math.min(bestDist, Math.abs(lv - T/k));
+      }
+      bestDist = Math.min(bestDist, Math.abs(-lv - T));
+      return bestDist / Math.max(1, Math.abs(T)) + 0.01 * (x.cost||0);
+    }, true, (x) => Number.isFinite(x.v) && x.v > 0 && x.v !== 1), nLogSrc);
+  }
+
+  if(nLowCost > 0){
+    take(topK(items, nLowCost, (x) => ((x.cost||0) * 100 + x.bb), true, (x) => (x.cost||0) <= 5), nLowCost);
+  }
+
   if(nTrigOut>0){
     take(topK(items,nTrigOut,(x)=>(x.goal*0.6+x.bb*0.4),true,(x)=>{
       const a=Math.abs(x.v);
@@ -2630,7 +2705,6 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     }), nTrigOut);
   }
 
-  // Trig-argument range: values in [-2π,2π] useful as sin/cos/tan arguments
   if(nTrigArg>0){
     take(topK(items,nTrigArg,(x)=>(x.goal*0.5+x.bb*0.5),true,(x)=>{
       const a=Math.abs(x.v);
@@ -2638,14 +2712,11 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     }), nTrigArg);
   }
 
-  // Inverse-trig range: values in arcsin/arccos/arctan ranges [-π/2, π]
-  // Needed so fwd can match rev[asin(T)], rev[acos(T)], rev[atan(T)] etc.
   if(nInvTrig>0){
     take(topK(items,nInvTrig,(x)=>(x.goal*0.4+x.bb*0.6),true,(x)=>{
       const v=x.v;
       if(!Number.isFinite(v))return false;
       const a=Math.abs(v);
-      // asin/atan range: [-π/2, π/2], acos range [0, π]
       return a<=Math.PI+0.1 && a>1e-14;
     }), nInvTrig);
   }
@@ -2658,7 +2729,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
       if(!Number.isFinite(v))return false;
       if(v<=0)return false;
       const a=Math.abs(v);
-      return a>0.12 && a<24 && Math.abs(a-1)>1e-12;
+      return a<100 && Math.abs(a-1)>1e-12;
     };
     take(topK(items,nPowBase,(x)=>x.bb,true,baseFilter), nPowBase);
   }
@@ -2698,6 +2769,12 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   if(nSeed>0){
     const seed=topK(items,nSeed,(x)=>((x.cost||0)*0.7 + x.bb*0.25 + x.goal*0.05),true,(x)=>((x.cost||0)<=6)&&!used.has(x.key));
     take(seed,nSeed);
+  }
+
+  if(nDeepRat>0){
+    take(topK(items, nDeepRat, (x) => (x.bb + 0.05*x.goal - (x.depth||0)*0.03), true,
+      (x) => !used.has(x.key) && (x.depth||0) >= 2 && x.bb < 0.4
+    ), nDeepRat);
   }
 
   if(nExplore>0){
@@ -2741,6 +2818,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     if(it.revHit!==undefined) delete it.revHit;
     if(it.cov!==undefined) delete it.cov;
   }
+  perf.msSelectTop += (performance.now() - tSel);
   return out;
 }
 
@@ -2762,6 +2840,19 @@ onmessage=async(ev)=>{
   mode=(mode==="balanced"||mode==="meet"||mode==="free"||mode==="meetfast"||mode==="medium")?"normal":mode;
   mode=(mode==="ries")?"accuracy":mode;
   const mp=modeParams(mode);
+  KEEP_MODE_HINT = mp.keepMode || "goal";
+
+  const BB_D_FAST = 8;
+  function bbFast(v){
+    return bbScore(v, BB_D_FAST, mp.bbMagA);
+  }
+  function refineBB(items){
+    const Dfull = mp.bbD|0;
+    if(Dfull <= BB_D_FAST) return;
+    for(const it of items){
+      it.bb = bbScore(it.v, Dfull, mp.bbMagA);
+    }
+  }
 
   // compile custom
   let customAllow=null,customScoreAdjust=null;
@@ -2970,7 +3061,8 @@ onmessage=async(ev)=>{
     jumpLookups:0,jumpHits:0,jumpPairsTried:0,jumpPairsAccepted:0,
     jumpMemoHits:0,jumpMemoStores:0,
     sketchAttempts:0,sketchAccepted:0,
-    msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0
+    msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0,
+    msSelectTop:0, msIndex:0, msWorkerWait:0, bucketOps:0, evalFails:0
   };
   jumpLookupMemo=new Map();
   jumpLookupMemoSeq=0;
@@ -2979,6 +3071,7 @@ onmessage=async(ev)=>{
     keyHits:0,pairsTried:0,rev2fwdPairs:0,
     rejMaskOverlap:0,rejCntLimit:0,rejEpsCand:0,rejEvalNaN:0,
     rejProbeConfirm:0,rejConfirm:0,revInvBad:0,maxConfirmErr:0,
+    unPruned:0, binPruned:0
   };
 
   const best=[];
@@ -3170,6 +3263,7 @@ function collectLeaves(ast, out){
   }
 
   function addRevIdx(items){
+    const tIdx = performance.now();
     const cap=Math.max(8,mp.revIdxKeyCap|0||120);
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
@@ -3188,9 +3282,11 @@ function collectLeaves(ast, out){
     meetDbg.revIdxKeys=revIdx.size;
     let total=0;for(const v of revIdx.values())total+=v.length;
     meetDbg.revIdxItems=total;
+    perf.msIndex += (performance.now() - tIdx);
   }
 
   function addFwdIdx(items){
+    const tIdx = performance.now();
     const cap=Math.max(8,mp.fwdIdxKeyCap|0||120);
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
@@ -3209,15 +3305,19 @@ function collectLeaves(ast, out){
     meetDbg.fwdIdxKeys=fwdIdx.size;
     let total=0;for(const v of fwdIdx.values())total+=v.length;
     meetDbg.fwdIdxItems=total;
+    perf.msIndex += (performance.now() - tIdx);
   }
 
   function keepScore(goal,bb,revHit,mask){
-    let keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
+    let keep;
+    if(mp.keepMode==="goal"){
+      const normalizedGoal = goal / Math.max(1, Math.abs(T));
+      keep = bb * 0.5 + normalizedGoal * 0.5;
+    } else {
+      keep = Math.min(goal, bb);
+    }
     if(revHit)keep*=(1.0-(mp.meetHitBonus||0));
     if(useBitmask && REQ_POP>0) keep *= reqAdj(mask|0);
-    // Rationality bonus: highly rational values (small bb, non-solution) get
-    // a small keep reduction so they survive pruning longer as power base candidates.
-    // This helps retain (25/7)-style values even when far from target T.
     if(bb<0.08 && goal>1e-4) keep -= 0.04*bb;
     return keep;
   }
@@ -3342,9 +3442,9 @@ function collectLeaves(ast, out){
     const{bucket,put}=mkBucket(beamF,mp.spillMul);
     for(let i=0;i<nC;i++){
       const v=consts[i].v;visited++;
-      if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+      if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
       const goal=Math.abs(v-T);
-      const bb=bbScore(v,mp.bbD,mp.bbMagA);
+      const bb=bbFast(v);
       const mk = bidir ? meetPrimaryKey(v) : "";
       const revHit=bidir?revIdx.has(mk):false;
 
@@ -3370,7 +3470,9 @@ function collectLeaves(ast, out){
       }
     }
 
+    perf.bucketOps += bucket.ops;
     const items=Array.from(bucket.values());
+    refineBB(items);
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
     const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask,mode);
     for(const it of picked){it.cost=1;}
@@ -3445,15 +3547,19 @@ function collectLeaves(ast, out){
     if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){meetDbg.rejEvalNaN++;return;}
 
     const structuralDrift=Math.abs(trueVal-probeVal);
-    const driftCap=matchGap*(3.4+tc*0.18)*(1+powCnt*0.22)/(1+0.10*powRisk)+3e-12*scale;
+
+    const driftMul = isPowRelated ? 5.0 : (isTrigRelated ? 3.5 : 1.5);
+    const driftCap = matchGap*(3.4+tc*0.25)*driftMul*(1+powCnt*0.4)/(1+0.05*powRisk) + 5e-10*scale;
+
     if(structuralDrift>driftCap){
       meetDbg.rejProbeConfirm++;
       if(structuralDrift>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=structuralDrift;
       return;
     }
 
-    const epsConfirmBase=(7e-10*mp.confirmEpsMul)*Math.max(1,Math.abs(T),Math.abs(trueVal))*(1+tc*0.025);
-    const epsConfirmGap=matchGap*(2.2+tc*0.11)*powTighten*(isPowRelated?1.5:(isTrigRelated?1.3:1.0));
+    const confirmMul = isPowRelated ? 4.0 : (isTrigRelated ? 2.0 : 1.0);
+    const epsConfirmBase=(1.5e-9*mp.confirmEpsMul)*Math.max(1,Math.abs(T),Math.abs(trueVal))*(1+tc*0.035);
+    const epsConfirmGap=matchGap*(2.5+tc*0.15)*powTighten*confirmMul;
     const epsConfirm=Math.max(epsConfirmBase,epsConfirmGap,mp.confirmAbsFloor||0);
     const err=Math.abs(trueVal-T);
     if(err>epsConfirm){
@@ -3897,16 +4003,22 @@ function collectLeaves(ast, out){
     const boost=Math.max(1,Number(adaptBoost)||1);
     const jm=Math.max(0.3, (mp.jumpMul||1)*boost);
     if(jm<0.45) return;
-    const limItems=Math.min(layerItems.length, Math.max(20,Math.floor(beamF*((mode==="speed")?0.06:0.14)*jm)));
-    if(mode==="speed" && (layerItems[0]?.cost||0)<4) return;
+
+    const jumpCands = layerItems.slice()
+      .sort((a,b) => (a.bb + a.goal*0.05) - (b.bb + b.goal*0.05))
+      .slice(0, Math.max(6, Math.floor(18 * jm)));
+
+    if(mode==="speed" && (jumpCands[0]?.cost||0)<4) return;
     const logT=(T>0)?Math.log(T):NaN;
-    const J=(tv,h)=>jumpLookupNear(tv,h);
+
+    const J=(tv,h)=>jumpLookupNear(tv, Math.min(h, 12));
 
     tryUnaryTargetTransforms(jm,J);
-    tryStructuredSketches(layerItems,T,J);
+    tryStructuredSketches(jumpCands,T,J);
 
+    const limItems = jumpCands.length;
     for(let i=0;i<limItems;i++){
-      const a=layerItems[i];
+      const a=jumpCands[i];
       const v=a.v;
       if(!Number.isFinite(v)) continue;
       const av=Math.abs(v);
@@ -3999,12 +4111,12 @@ function collectLeaves(ast, out){
       const lim2=Math.min(src.length,beamR);
       for(let i=0;i<lim2;i++){
         const a=src[i];
-        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue;}
+        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++; meetDbg.unPruned++; continue;}
         const invs=invUn(op,a.v);
         for(const inv of invs){
           visited++;
           const v=inv.v;
-          if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+          if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
           const out=applyUn(op,v);
           const s=Math.max(1,Math.abs(a.v),Math.abs(out));
           if(!Number.isFinite(out)||Math.abs(out-a.v)>1e-10*s){meetDbg.revInvBad++;continue;}
@@ -4020,12 +4132,12 @@ function collectLeaves(ast, out){
           put(keyOf(v,useBitmask?cand.mask:0,useBitmask?"":cand.ck),cand);
           // *** Critical fix: trigger immediate meet for ALL unary ops, not just inv/sqrt ***
           // This allows the rev layer to participate in meet as soon as any op produces it
-          tryMeetReverseWithFwdIdx(cand);
+          if(fwdIdx.has(mk)) tryMeetReverseWithFwdIdx(cand);
           if(stopFlag) return;
 
           // For periodic trig ops: also try ±1 period so fwd values offset by 2π/π can meet
           // This is crucial for cos(tan(e)) + additive compositions
-          if((op==="sin"||op==="cos")&&Math.abs(v)<CAP){
+          if(c <= 6 && (op==="sin"||op==="cos")&&Math.abs(v)<CAP){
             const twopi=2*Math.PI;
             for(const dk of[-1,1]){
               const v2=v+dk*twopi;
@@ -4039,11 +4151,11 @@ function collectLeaves(ast, out){
                 ?{v:v2,wA:nW,mask:a.mask,flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2}
                 :{v:v2,wA:nW,cnt:a.cnt,ck:(a.ck||""),flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2};
               put(keyOf(v2,useBitmask?cand2.mask:0,useBitmask?"":cand2.ck),cand2);
-              tryMeetReverseWithFwdIdx(cand2);
+              if(fwdIdx.has(mk2)) tryMeetReverseWithFwdIdx(cand2);
               if(stopFlag)return;
             }
           }
-          if(op==="tan"&&Math.abs(v)<CAP){
+          if(c <= 6 && op==="tan"&&Math.abs(v)<CAP){
             const pi=Math.PI;
             for(const dk of[-1,1]){
               const v2=v+dk*pi;
@@ -4057,7 +4169,7 @@ function collectLeaves(ast, out){
                 ?{v:v2,wA:nW,mask:a.mask,flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2}
                 :{v:v2,wA:nW,cnt:a.cnt,ck:(a.ck||""),flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2};
               put(keyOf(v2,useBitmask?cand2.mask:0,useBitmask?"":cand2.ck),cand2);
-              tryMeetReverseWithFwdIdx(cand2);
+              if(fwdIdx.has(mk2)) tryMeetReverseWithFwdIdx(cand2);
               if(stopFlag)return;
             }
           }
@@ -4076,8 +4188,8 @@ function collectLeaves(ast, out){
         const base=Math.floor(Math.sqrt(beamR));
         const isPow = (op==="^");
         // For ^ op: probe much wider - power base/exponent combos need high recall
-        const laneMul=isPow?10.0:3.0;
-        const laneMin=isPow?600:140;
+        const laneMul=isPow?6.0:2.0;
+        const laneMin=isPow?400:100;
         const cR=Math.min(rs.length,Math.max(laneMin,Math.floor(base*laneMul)));
         const cF=Math.min(fs.length,Math.max(laneMin,Math.floor(base*laneMul)));
 
@@ -4100,7 +4212,7 @@ function collectLeaves(ast, out){
                   const mk = meetPrimaryKey(x1);
                   const cand={v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
                   put(keyOf(x1,m,""),cand);
-                  if(isPow) tryMeetReverseWithFwdIdx(cand);
+                  if(isPow && fwdIdx.has(mk)) tryMeetReverseWithFwdIdx(cand);
                   if(stopFlag) return;
                 }
               }else{
@@ -4113,7 +4225,7 @@ function collectLeaves(ast, out){
                   const mk = meetPrimaryKey(x1);
                   const cand={v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
                   put(keyOf(x1,0,ck),cand);
-                  if(isPow) tryMeetReverseWithFwdIdx(cand);
+                  if(isPow && fwdIdx.has(mk)) tryMeetReverseWithFwdIdx(cand);
                   if(stopFlag) return;
                 }
               }
@@ -4134,7 +4246,7 @@ function collectLeaves(ast, out){
                     const mk = meetPrimaryKey(x2);
                     const cand={v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
                     put(keyOf(x2,m,""),cand);
-                    if(isPow) tryMeetReverseWithFwdIdx(cand);
+                    if(isPow && fwdIdx.has(mk)) tryMeetReverseWithFwdIdx(cand);
                     if(stopFlag) return;
                   }
                 }else{
@@ -4147,7 +4259,7 @@ function collectLeaves(ast, out){
                     const mk = meetPrimaryKey(x2);
                     const cand={v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
                     put(keyOf(x2,0,ck),cand);
-                    if(isPow) tryMeetReverseWithFwdIdx(cand);
+                    if(isPow && fwdIdx.has(mk)) tryMeetReverseWithFwdIdx(cand);
                     if(stopFlag) return;
                   }
                 }
@@ -4160,6 +4272,7 @@ function collectLeaves(ast, out){
       }
     }
 
+    perf.bucketOps += bucket.ops;
     const items=Array.from(bucket.values());
     items.sort((a,b)=>a.keep-b.keep);
     const picked=items.slice(0,beamR);
@@ -4351,12 +4464,12 @@ function collectLeaves(ast, out){
       const lim2=Math.min(src.length,capUn);
       for(let i=0;i<lim2;i+=W){
         const a=src[i];
-        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue;}
+        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++; meetDbg.unPruned++; continue;}
         const v=applyUn(op,a.v);visited++;
-        if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+        if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
         const goal=Math.abs(v-T);
         if(goal>pruneGoalThresh)continue;
-        const bb=bbScore(v,mp.bbD,mp.bbMagA);
+        const bb=bbFast(v);
         const mk = bidir ? meetPrimaryKey(v) : "";
         const revHit=bidir?revIdx.has(mk):false;
         const ast=mkU(op,a.ast);
@@ -4387,18 +4500,18 @@ function collectLeaves(ast, out){
           const stB=(comm&&ic===jc)?ia:0;
           for(let ib=stB;ib<cB;ib++){
             const b=B[ib];
-            if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++;continue;}
+            if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++; meetDbg.binPruned++; continue;}
             visited++;
             if(useBitmask){
               if((a.mask&b.mask)!==0)continue;
               const mask=a.mask|b.mask;
               const v=applyBin(op,a.v,b.v);
-              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
               if(Math.abs(v-T)>pruneGoalThresh)continue;
               const ast=mkB(op,a.ast,b.ast);
               if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
               const goal=Math.abs(v-T);
-              const bb=bbScore(v,mp.bbD,mp.bbMagA);
+              const bb=bbFast(v);
               const mk = bidir ? meetPrimaryKey(v) : "";
               const revHit=bidir?revIdx.has(mk):false;
               const keep=keepScore(goal,bb,revHit,mask);
@@ -4407,12 +4520,12 @@ function collectLeaves(ast, out){
               const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
               if(!cnt)continue;
               const v=applyBin(op,a.v,b.v);
-              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
               if(Math.abs(v-T)>pruneGoalThresh)continue;
               const ast=mkB(op,a.ast,b.ast);
               if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
               const goal=Math.abs(v-T);
-              const bb=bbScore(v,mp.bbD,mp.bbMagA);
+              const bb=bbFast(v);
               const mk = bidir ? meetPrimaryKey(v) : "";
               const revHit=bidir?revIdx.has(mk):false;
               const keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
@@ -4432,15 +4545,21 @@ function collectLeaves(ast, out){
         type:"task",T,c,beam:beamF,
         capUn,capBin,
         workerId,workerCount:W,
-        bbD:mp.bbD,bbMagA:mp.bbMagA,
+        bbD:BB_D_FAST,bbMagA:mp.bbMagA,
         keepMode: mp.keepMode==="goal" ? "goal" : "min"
       });
     }));
+    const tWait = performance.now();
     const results=await Promise.all(tasks);
+    perf.msWorkerWait += (performance.now() - tWait);
 
     for(const res of results){
       visited+=res.visited;
       pruned+=res.pruned;
+      meetDbg.unPruned += (res.unPruned||0);
+      meetDbg.binPruned += (res.binPruned||0);
+      perf.evalFails += (res.evalFails||0);
+      perf.bucketOps += (res.bucketOps||0);
       for(const it of res.items){
         const v=it.v;
         const mk = bidir ? meetPrimaryKey(v) : "";
@@ -4481,7 +4600,9 @@ function collectLeaves(ast, out){
       }
     }
 
+    perf.bucketOps += bucket.ops;
     const items=Array.from(bucket.values());
+    refineBB(items);
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
     const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
     for(const it of picked){
@@ -4537,12 +4658,12 @@ function collectLeaves(ast, out){
         const lim2=Math.min(src.length,capUn);
         for(let i=0;i<lim2;i++){
           const a=src[i];
-          if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue;}
+          if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++; meetDbg.unPruned++; continue;}
           const v=applyUn(op,a.v);visited++;
-          if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+          if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
           const goal=Math.abs(v-T);
           if(goal>pruneGoalThresh)continue;
-          const bb=bbScore(v,mp.bbD,mp.bbMagA);
+          const bb=bbFast(v);
           const mk = bidir ? meetPrimaryKey(v) : "";
           const revHit=bidir?revIdx.has(mk):false;
           const ast=mkU(op,a.ast);
@@ -4577,19 +4698,19 @@ function collectLeaves(ast, out){
             const stB=(comm&&ic===jc)?ia:0;
             for(let ib=stB;ib<cB;ib++){
               const b=B[ib];
-              if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++;continue;}
+              if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++; meetDbg.binPruned++; continue;}
               visited++;
 
               if(useBitmask){
                 if((a.mask&b.mask)!==0)continue;
                 const mask=a.mask|b.mask;
                 const v=applyBin(op,a.v,b.v);
-                if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+                if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
                 if(Math.abs(v-T)>pruneGoalThresh)continue;
                 const ast=mkB(op,a.ast,b.ast);
                 if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
                 const goal=Math.abs(v-T);
-                const bb=bbScore(v,mp.bbD,mp.bbMagA);
+                const bb=bbFast(v);
                 const mk = bidir ? meetPrimaryKey(v) : "";
                 const revHit=bidir?revIdx.has(mk):false;
                 const keep=keepScore(goal,bb,revHit,mask);
@@ -4598,12 +4719,12 @@ function collectLeaves(ast, out){
                 const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
                 if(!cnt)continue;
                 const v=applyBin(op,a.v,b.v);
-                if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+                if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
                 if(Math.abs(v-T)>pruneGoalThresh)continue;
                 const ast=mkB(op,a.ast,b.ast);
                 if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
                 const goal=Math.abs(v-T);
-                const bb=bbScore(v,mp.bbD,mp.bbMagA);
+                const bb=bbFast(v);
                 const mk = bidir ? meetPrimaryKey(v) : "";
                 const revHit=bidir?revIdx.has(mk):false;
                 const keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
@@ -4620,7 +4741,9 @@ function collectLeaves(ast, out){
         }
       }
 
+      perf.bucketOps += bucket.ops;
       const items=Array.from(bucket.values());
+      refineBB(items);
       for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
       const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
       for(const it of picked){it.cost=c;}
@@ -4652,9 +4775,15 @@ function collectLeaves(ast, out){
     emit(c);
     // Update goal prune threshold: allow up to 12x best delta (keeps diversity while cutting noise)
     if(best.length>0){
-      const baseMul=(mode==="accuracy")?28:20;
-      const floor=((mode==="accuracy")?1e-6:3e-7)*Math.max(1,Math.abs(T));
-      pruneGoalThresh=Math.max(Math.abs(best[0].delta)*baseMul*Math.max(1,adaptBoost)+1e-9,floor);
+      const bestDelta = Math.abs(best[0].delta);
+      const scale = Math.max(1, Math.abs(T));
+      if(c < maxC * 0.7){
+        pruneGoalThresh = Math.max(scale * 50, 1e6);
+      } else {
+        const baseMul = (mode==="accuracy") ? 200 : 100;
+        const floor = scale * 10;
+        pruneGoalThresh = Math.max(bestDelta * baseMul * Math.max(1,adaptBoost) + 1e-6, floor);
+      }
     }
     const yTs=performance.now();
     await new Promise(r=>setTimeout(r,0));
@@ -4815,7 +4944,8 @@ $("btnStart").onclick=()=>{
             `meetKeys(calls=${(p.meetKeyCalls||0).toLocaleString()}, gen=${(p.meetKeyGen||0).toLocaleString()}, dedup=${(p.meetKeyDedup||0).toLocaleString()})<br>`+
             `jump(lookups=${(p.jumpLookups||0).toLocaleString()}, memoHit=${(p.jumpMemoHits||0).toLocaleString()}, memoStore=${(p.jumpMemoStores||0).toLocaleString()}, hits=${(p.jumpHits||0).toLocaleString()}, pairs=${(p.jumpPairsTried||0).toLocaleString()}, ok=${(p.jumpPairsAccepted||0).toLocaleString()}) `+
             `sketch(try=${(p.sketchAttempts||0).toLocaleString()}, ok=${(p.sketchAccepted||0).toLocaleString()})<br>`+
-            `time_ms(rev=${ms(p.msRev)}, fwd=${ms(p.msFwd)}, meet=${ms(p.msMeet)}, jump=${ms(p.msJump)}, yield=${ms(p.msYield)})`;
+            `<b>Stats</b> bucketOps=${(p.bucketOps||0).toLocaleString()} evalFails=${(p.evalFails||0).toLocaleString()} unPruned=${(payload.meetDbg.unPruned||0).toLocaleString()} binPruned=${(payload.meetDbg.binPruned||0).toLocaleString()}<br>`+
+            `time_ms(rev=${ms(p.msRev)}, fwd=${ms(p.msFwd)}, meet=${ms(p.msMeet)}, jump=${ms(p.msJump)}, yield=${ms(p.msYield)}, <span style="color:var(--amber)">select=${ms(p.msSelectTop)} idx=${ms(p.msIndex)} waitSub=${ms(p.msWorkerWait)}</span>)`;
         }
       }else{
         $("status").style.display="none";
