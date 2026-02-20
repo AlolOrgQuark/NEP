@@ -2854,6 +2854,18 @@ onmessage=async(ev)=>{
     }
   }
 
+  const BB_D_FAST = 8;
+  function bbFast(v){
+    return bbScore(v, BB_D_FAST, mp.bbMagA);
+  }
+  function refineBB(items){
+    const Dfull = mp.bbD|0;
+    if(Dfull <= BB_D_FAST) return;
+    for(const it of items){
+      it.bb = bbScore(it.v, Dfull, mp.bbMagA);
+    }
+  }
+
   // compile custom
   let customAllow=null,customScoreAdjust=null;
   let ext={constants:[],unaryOps:[],binaryOps:[]};
