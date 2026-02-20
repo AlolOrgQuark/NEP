@@ -1754,6 +1754,7 @@ let perf={
   msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0,
   msSelectTop:0, msIndex:0, msWorkerWait:0, bucketOps:0, evalFails:0
 };
+let KEEP_MODE_HINT="goal";
 let jumpLookupMemo=new Map();
 let jumpLookupMemoSeq=0;
 
@@ -2475,7 +2476,7 @@ function mkBucket(beam,spillMul){
   // Bounded max-heap by keep score (root = worst / highest keep = most costly item).
   // cap = beam*5 instead of old beam*64 → ~13x memory reduction at c=13.
   // O(log n) insert/update, no periodic sort/spill overhead.
-  const cap=Math.max(beam*5,6000);
+  const cap=Math.max(beam*((KEEP_MODE_HINT==="goal")?12:5),12000);
   const h=[];           // max-heap array
   const kidx=new Map(); // key -> heap index
   function sw(i,j){const a=h[i],b=h[j];h[i]=b;h[j]=a;kidx.set(b.key,i);kidx.set(a.key,j);}
@@ -2586,7 +2587,6 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     for(const it of items){it.revHit=false;}
   }
 
-  // bitmask: compute required-coverage for quota/keep
   if(useBitmask && REQ_POP>0){
     for(const it of items){
       it.cov = popcnt32((it.mask|0) & REQ_MASK);
@@ -2608,39 +2608,96 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nPowExp=Math.max(0,Math.floor(beam*(mp.qPowExp||0)));
   const nReq=Math.max(0,Math.floor(beam*(mp.qReq||0)));
   const nFrac=Math.max(0,Math.floor(beam*(mp.qFrac||0)));
-  // Quota: values in trig-OUTPUT range [-1,1] — required for sin/cos inverse meets
   const nTrigOut=Math.max(0,Math.floor(beam*(mode==="speed"?0.04:0.10)));
-  // Quota: values in trig-ARGUMENT range approx [-2π,2π] — needed as cos/sin arguments
   const nTrigArg=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.07)));
-  // Quota: values useful as arcsin/arccos/arctan inverses (i.e. in [-π/2..π] range)
   const nInvTrig=Math.max(0,Math.floor(beam*(mode==="speed"?0.03:0.07)));
   const exploreRatio = mode==="speed" ? 0.035 : (mode==="accuracy" ? 0.20 : 0.18);
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
   const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.12)));
   const nDeepRat = Math.max(0, Math.floor(beam * 0.08));
+  const nPowSrc = Math.max(0, Math.floor(beam * (mode==="speed" ? 0.06 : 0.14)));
+  const nLogSrc = Math.max(0, Math.floor(beam * (mode==="speed" ? 0.04 : 0.10)));
+  const nLowCost = Math.max(0, Math.floor(beam * (mode==="speed" ? 0.05 : 0.12)));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
 
-  // Required-coverage quota (fix bitmask漏解 due to beam fragmentation)
   if(useBitmask && REQ_POP>0 && nReq>0){
     take(topK(items,nReq,(x)=>(x.keep - 0.35*(x.cov||0)),true,(x)=> (x.cov||0)>0), nReq);
   }
 
-  // qFrac: keep highly rational values (small bb) in pow-useful range – key for e.g. 25/7 type bases
   if(nFrac>0){
     take(topK(items,nFrac,(x)=>x.bb,true,(x)=>{
       const v=x.v;
       if(!Number.isFinite(v)||Math.abs(v)<0.05)return false;
       const a=Math.abs(v);
-      // Accept: nice fraction-like range (0.1..50), NOT already an integer
       return a<50 && a>0.1 && Math.abs(v-Math.round(v))>1e-9 && x.bb<0.15;
     }), nFrac);
   }
 
-  // Trig-output range: values in [-1,1] are outputs of sin/cos/tanh, needed for inverse-trig meets
-  // e.g. cos(tan(e)) ≈ some value → fwd must retain cos(tan(e)) which is in [-1,1]
+  if(allowPow && nPowSrc > 0){
+    const absT=Math.abs(T);
+    const logT = absT>0?Math.log(absT):NaN;
+    take(topK(items, nPowSrc, (x) => {
+      const v = x.v;
+      if(!Number.isFinite(v)) return 1e9;
+      const av = Math.abs(v);
+      if(av < 0.01 || av > 1e8 || Math.abs(av-1) < 1e-12) return 1e9;
+      const logV = Math.log(av);
+      if(!Number.isFinite(logV) || Math.abs(logV) < 1e-15) return 1e9;
+
+      let bestDist = 1e9;
+      if(Number.isFinite(logT)){
+        const ratio = logT / logV;
+        for(let n = -12; n <= 12; n++){
+          if(n === 0) continue;
+          const dist = Math.abs(ratio - n);
+          if(dist < bestDist) bestDist = dist;
+        }
+      }
+      for(let k = -10; k <= 10; k++){
+        const Tk = T - k;
+        if(Tk === 0) continue;
+        const absTk=Math.abs(Tk);
+        if(absTk<=0) continue;
+        const logTk = Math.log(absTk);
+        const r2 = logTk / logV;
+        for(let n = -12; n <= 12; n++){
+          if(n === 0) continue;
+          const dist = Math.abs(r2 - n);
+          if(dist < bestDist) bestDist = dist;
+        }
+      }
+      return bestDist + 0.02 * (x.cost||0);
+    }, true, (x) => {
+      const v = x.v;
+      if(!Number.isFinite(v)) return false;
+      const av = Math.abs(v);
+      return av > 0.001 && av < 1e8 && Math.abs(av-1) > 1e-12;
+    }), nPowSrc);
+  }
+
+  if(nLogSrc > 0){
+    take(topK(items, nLogSrc, (x) => {
+      const v = x.v;
+      if(!Number.isFinite(v) || v <= 0) return 1e9;
+      const lv = Math.log(v);
+      if(!Number.isFinite(lv)) return 1e9;
+      let bestDist = Math.abs(lv - T);
+      for(let k = 1; k <= 8; k++){
+        bestDist = Math.min(bestDist, Math.abs(lv * k - T));
+        if(T !== 0) bestDist = Math.min(bestDist, Math.abs(lv - T/k));
+      }
+      bestDist = Math.min(bestDist, Math.abs(-lv - T));
+      return bestDist / Math.max(1, Math.abs(T)) + 0.01 * (x.cost||0);
+    }, true, (x) => Number.isFinite(x.v) && x.v > 0 && x.v !== 1), nLogSrc);
+  }
+
+  if(nLowCost > 0){
+    take(topK(items, nLowCost, (x) => ((x.cost||0) * 100 + x.bb), true, (x) => (x.cost||0) <= 5), nLowCost);
+  }
+
   if(nTrigOut>0){
     take(topK(items,nTrigOut,(x)=>(x.goal*0.6+x.bb*0.4),true,(x)=>{
       const a=Math.abs(x.v);
@@ -2648,7 +2705,6 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     }), nTrigOut);
   }
 
-  // Trig-argument range: values in [-2π,2π] useful as sin/cos/tan arguments
   if(nTrigArg>0){
     take(topK(items,nTrigArg,(x)=>(x.goal*0.5+x.bb*0.5),true,(x)=>{
       const a=Math.abs(x.v);
@@ -2656,14 +2712,11 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     }), nTrigArg);
   }
 
-  // Inverse-trig range: values in arcsin/arccos/arctan ranges [-π/2, π]
-  // Needed so fwd can match rev[asin(T)], rev[acos(T)], rev[atan(T)] etc.
   if(nInvTrig>0){
     take(topK(items,nInvTrig,(x)=>(x.goal*0.4+x.bb*0.6),true,(x)=>{
       const v=x.v;
       if(!Number.isFinite(v))return false;
       const a=Math.abs(v);
-      // asin/atan range: [-π/2, π/2], acos range [0, π]
       return a<=Math.PI+0.1 && a>1e-14;
     }), nInvTrig);
   }
@@ -2676,7 +2729,6 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
       if(!Number.isFinite(v))return false;
       if(v<=0)return false;
       const a=Math.abs(v);
-      // 【核心修改】：移除 a > 0.12 的限制，允许 (7-e)^-7 这种微小底数存活
       return a<100 && Math.abs(a-1)>1e-12;
     };
     take(topK(items,nPowBase,(x)=>x.bb,true,baseFilter), nPowBase);
@@ -2720,7 +2772,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   }
 
   if(nDeepRat>0){
-    take(topK(items, nDeepRat, (x) => (x.bb + 0.05*x.goal - (x.depth||0)*0.03), true, 
+    take(topK(items, nDeepRat, (x) => (x.bb + 0.05*x.goal - (x.depth||0)*0.03), true,
       (x) => !used.has(x.key) && (x.depth||0) >= 2 && x.bb < 0.4
     ), nDeepRat);
   }
@@ -2788,6 +2840,19 @@ onmessage=async(ev)=>{
   mode=(mode==="balanced"||mode==="meet"||mode==="free"||mode==="meetfast"||mode==="medium")?"normal":mode;
   mode=(mode==="ries")?"accuracy":mode;
   const mp=modeParams(mode);
+  KEEP_MODE_HINT = mp.keepMode || "goal";
+
+  const BB_D_FAST = 8;
+  function bbFast(v){
+    return bbScore(v, BB_D_FAST, mp.bbMagA);
+  }
+  function refineBB(items){
+    const Dfull = mp.bbD|0;
+    if(Dfull <= BB_D_FAST) return;
+    for(const it of items){
+      it.bb = bbScore(it.v, Dfull, mp.bbMagA);
+    }
+  }
 
   const BB_D_FAST = 8;
   function bbFast(v){
@@ -3256,12 +3321,15 @@ function collectLeaves(ast, out){
   }
 
   function keepScore(goal,bb,revHit,mask){
-    let keep=(mp.keepMode==="goal")?goal:Math.min(goal,bb);
+    let keep;
+    if(mp.keepMode==="goal"){
+      const normalizedGoal = goal / Math.max(1, Math.abs(T));
+      keep = bb * 0.5 + normalizedGoal * 0.5;
+    } else {
+      keep = Math.min(goal, bb);
+    }
     if(revHit)keep*=(1.0-(mp.meetHitBonus||0));
     if(useBitmask && REQ_POP>0) keep *= reqAdj(mask|0);
-    // Rationality bonus: highly rational values (small bb, non-solution) get
-    // a small keep reduction so they survive pruning longer as power base candidates.
-    // This helps retain (25/7)-style values even when far from target T.
     if(bb<0.08 && goal>1e-4) keep -= 0.04*bb;
     return keep;
   }
@@ -4081,7 +4149,7 @@ function collectLeaves(ast, out){
 
           // For periodic trig ops: also try ±1 period so fwd values offset by 2π/π can meet
           // This is crucial for cos(tan(e)) + additive compositions
-          if((op==="sin"||op==="cos")&&Math.abs(v)<CAP){
+          if(c <= 6 && (op==="sin"||op==="cos")&&Math.abs(v)<CAP){
             const twopi=2*Math.PI;
             for(const dk of[-1,1]){
               const v2=v+dk*twopi;
@@ -4099,7 +4167,7 @@ function collectLeaves(ast, out){
               if(stopFlag)return;
             }
           }
-          if(op==="tan"&&Math.abs(v)<CAP){
+          if(c <= 6 && op==="tan"&&Math.abs(v)<CAP){
             const pi=Math.PI;
             for(const dk of[-1,1]){
               const v2=v+dk*pi;
@@ -4132,8 +4200,8 @@ function collectLeaves(ast, out){
         const base=Math.floor(Math.sqrt(beamR));
         const isPow = (op==="^");
         // For ^ op: probe much wider - power base/exponent combos need high recall
-        const laneMul=isPow?10.0:3.0;
-        const laneMin=isPow?600:140;
+        const laneMul=isPow?6.0:2.0;
+        const laneMin=isPow?400:100;
         const cR=Math.min(rs.length,Math.max(laneMin,Math.floor(base*laneMul)));
         const cF=Math.min(fs.length,Math.max(laneMin,Math.floor(base*laneMul)));
 
@@ -4719,9 +4787,15 @@ function collectLeaves(ast, out){
     emit(c);
     // Update goal prune threshold: allow up to 12x best delta (keeps diversity while cutting noise)
     if(best.length>0){
-      const baseMul=(mode==="accuracy")?28:20;
-      const floor=((mode==="accuracy")?1e-6:3e-7)*Math.max(1,Math.abs(T));
-      pruneGoalThresh=Math.max(Math.abs(best[0].delta)*baseMul*Math.max(1,adaptBoost)+1e-9,floor);
+      const bestDelta = Math.abs(best[0].delta);
+      const scale = Math.max(1, Math.abs(T));
+      if(c < maxC * 0.7){
+        pruneGoalThresh = Math.max(scale * 50, 1e6);
+      } else {
+        const baseMul = (mode==="accuracy") ? 200 : 100;
+        const floor = scale * 10;
+        pruneGoalThresh = Math.max(bestDelta * baseMul * Math.max(1,adaptBoost) + 1e-6, floor);
+      }
     }
     const yTs=performance.now();
     await new Promise(r=>setTimeout(r,0));
