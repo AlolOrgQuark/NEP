@@ -1249,7 +1249,7 @@ let MAXT=null;
 let OPS_UN=[], OPS_BIN=[];
 let PRUNE=true;
 let NEED_ZERO=false, NEED_ONE=false;
-let HAS_NEG=true, HAS_DIV=true, HAS_MUL=true, HAS_SUB=true;
+let HAS_NEG=true, HAS_DIV=true, HAS_MUL=true, HAS_SUB=true, ALLOW_ADD=true;
 let PRUNE_LEVEL=1;
 let FORBID_UN=new Set(), FORBID_BIN=new Set();
 let CONSTRAINT_UN_FN=null, CONSTRAINT_BIN_FN=null;
@@ -1304,7 +1304,7 @@ function nearInt(x){ return Math.abs(x - Math.round(x)) < 1e-12; }
 function safePowStable(a,b){
   if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
   if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb;}
-  if(Math.abs(b)>250)return NaN;
+  if(Math.abs(b)>300)return NaN;
   const r1=Math.pow(a,b);
   if(!Number.isFinite(r1)||Math.abs(r1)>CAP)return NaN;
   const bp=Math.round(b);
@@ -1456,9 +1456,10 @@ function pruneBin(op,af,bf,av,bv){
   if(op==="^"&&has(af,F_ONE)  && !NEED_ONE)return true;
   if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
 
-  if(op==="-" && getTag(bf)===TAG_NEG) return true;
-  if(op==="/" && getTag(bf)===TAG_NEG) return true;
-  if(op==="*"&&(getTag(af)===TAG_INV||getTag(bf)===TAG_INV) && HAS_DIV)return true;
+  if(op==="+" && HAS_SUB && (getTag(bf)===TAG_NEG || getTag(af)===TAG_NEG)) return true;
+  if(op==="-" && ALLOW_ADD && getTag(bf)===TAG_NEG) return true;
+  if(op==="*" && HAS_DIV && (getTag(bf)===TAG_INV || getTag(af)===TAG_INV)) return true;
+  if(op==="/" && HAS_MUL && (getTag(bf)===TAG_INV || getTag(bf)===TAG_NEG)) return true;
 
   const fn=CUSTOM_PRUNE_BIN.get(op);
   if(fn){ try{ if(fn(af,bf,av,bv)) return true; }catch(e){} }
@@ -1519,7 +1520,7 @@ onmessage=(ev)=>{
     PRUNE=!!msg.pruneEquiv;
     NEED_ZERO=!!msg.needZero;
     NEED_ONE=!!msg.needOne;
-    HAS_NEG=!!msg.hasNeg; HAS_SUB=!!msg.hasSub; HAS_DIV=!!msg.hasDiv; HAS_MUL=!!msg.hasMul;
+    HAS_NEG=!!msg.hasNeg; HAS_SUB=!!msg.hasSub; HAS_DIV=!!msg.hasDiv; HAS_MUL=!!msg.hasMul; ALLOW_ADD=(msg.hasAdd===undefined)?true:!!msg.hasAdd;
     PRUNE_LEVEL = Math.max(0, Math.min(2, msg.pruneLevel|0));
     FORBID_UN = new Set(Array.isArray(msg.forbidUn)?msg.forbidUn:[]);
     FORBID_BIN = new Set(Array.isArray(msg.forbidBin)?msg.forbidBin:[]);
@@ -1676,48 +1677,54 @@ const CAP=1e12, EXACT_EPS=5e-15, INF=65535;
 function modeParams(mode){
   if(mode==="speed") return {
     keyPrec:10, bestPrec:10, keepMode:"goal",
-    bbD:18, bbMagA:0.032,
-    qGoal:0.52,qBB:0.06,qMeet:0.12,qDiv:0.03,qPow:0.06,qFunc:0.03,qDepth:0.07,qMag:0.04,qIrr:0.03,
-    qPowBase:0.10, qPowExp:0.08,
-    qReq:0.08,
-    meetStyle:"bin", meetPrec:10, meetQ:12288, meetR:10,
-    revBeamMul:2.4, meetHitBonus:0.26,
-    candEpsMul:3.0, confirmEpsMul:1.0, binSlackMul:0.18, confirmAbsFloor:2e-6,
-    spillMul:0.55, capMul:0.9, keepMeetDup:false,
-    meetSweepMul:0.16, meetSweepPowMul:0.30,
-    beamMul:0.70, subLayerCapMul:0.86,
-    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:10, idxPerItemCap:40, localIdxKeyCap:8,
-    capUnMul:2.5, capBinMul:2.0, jumpMul:0.85, meetStage2:1, qSeed:0.05
+    bbD:12, bbMagA:0.05,
+    qGoal:0.75, qBB:0.10, qMeet:0.05,
+    qDiv:0.02, qPow:0.02, qFunc:0.01, qDepth:0.01, qMag:0.01, qIrr:0.01,
+    qPowBase:0.05, qPowExp:0.05, qReq:0.05,
+    meetStyle:"bin", meetPrec:10, meetQ:8192, meetR:4,
+    revBeamMul:1.0, meetHitBonus:0.5,
+    candEpsMul:1.0, confirmEpsMul:1.0, binSlackMul:0.1, confirmAbsFloor:1e-5,
+    spillMul:0.5, capMul:0.8, keepMeetDup:false,
+    meetSweepMul:0.1, meetSweepPowMul:0.1,
+    beamMul:0.6, subLayerCapMul:0.7,
+    revIdxKeyCap:100, fwdIdxKeyCap:100, meetKeyProbeCap:100, meetSweepRevCap:100, idxKeysPerItem:4, idxPerItemCap:20, localIdxKeyCap:4,
+    capUnMul:1.5, capBinMul:1.2, jumpMul:0.5, meetStage2:0, qSeed:0.05
   };
   if(mode==="accuracy") return {
-    keyPrec:14, bestPrec:12, keepMode:"goal",
-    bbD:72, bbMagA:0.018,
-    qGoal:0.26,qBB:0.12,qMeet:0.18,qDiv:0.05,qPow:0.16,qFunc:0.08,qDepth:0.10,qMag:0.06,qIrr:0.04,
-    qPowBase:0.22, qPowExp:0.18, qFrac:0.14,
-    qReq:0.14,
-    meetStyle:"bin", meetPrec:12, meetQ:24576, meetR:18,
-    revBeamMul:2.6, meetHitBonus:0.12,
-    candEpsMul:1.35, confirmEpsMul:1.0, binSlackMul:0.28, confirmAbsFloor:0.0,
-    spillMul:1.6, capMul:1.35, keepMeetDup:false,
-    meetSweepMul:0.28, meetSweepPowMul:0.55,
-    beamMul:1.42, subLayerCapMul:2.00,
-    revIdxKeyCap:420, fwdIdxKeyCap:420, meetKeyProbeCap:560, meetSweepRevCap:700, idxKeysPerItem:24, idxPerItemCap:160, localIdxKeyCap:18,
-    capUnMul:5.6, capBinMul:4.8, jumpMul:3.20, meetStage2:1, qSeed:0.22
+    keyPrec:14, bestPrec:14, keepMode:"mixed",
+    bbD:60, bbMagA:0.002,
+    qGoal:0.20, qBB:0.05, qMeet:0.20,
+    qDiv:0.05, qPow:0.20,
+    qFunc:0.10, qDepth:0.05,
+    qMag:0.15,
+    qIrr:0.05,
+    qPowBase:0.25, qPowExp:0.25, qFrac:0.15,
+    qReq:0.10,
+    meetStyle:"bin", meetPrec:14, meetQ:65536, meetR:24,
+    revBeamMul:3.0, meetHitBonus:0.1,
+    candEpsMul:5.0, confirmEpsMul:1.5, binSlackMul:0.4, confirmAbsFloor:1e-18,
+    spillMul:1.5, capMul:1.5, keepMeetDup:true,
+    meetSweepMul:0.5, meetSweepPowMul:0.8,
+    beamMul:1.8, subLayerCapMul:2.5,
+    revIdxKeyCap:800, fwdIdxKeyCap:800, meetKeyProbeCap:1000, meetSweepRevCap:1200,
+    idxKeysPerItem:24, idxPerItemCap:200, localIdxKeyCap:16,
+    capUnMul:5.0, capBinMul:4.0, jumpMul:3.0, meetStage2:1, qSeed:0.25
   };
   return {
-    keyPrec:12, bestPrec:11, keepMode:"goal",
-    bbD:44, bbMagA:0.02,
-    qGoal:0.24,qBB:0.10,qMeet:0.24,qDiv:0.05,qPow:0.14,qFunc:0.08,qDepth:0.10,qMag:0.06,qIrr:0.04,
-    qPowBase:0.20, qPowExp:0.18, qFrac:0.12,
-    qReq:0.12,
-    meetStyle:"bin", meetPrec:11, meetQ:16384, meetR:20,
-    revBeamMul:3.4, meetHitBonus:0.24,
-    candEpsMul:3.2, confirmEpsMul:1.0, binSlackMul:0.16, confirmAbsFloor:0.0,
-    spillMul:1.55, capMul:1.25, keepMeetDup:false,
-    meetSweepMul:0.38, meetSweepPowMul:0.75,
-    beamMul:1.64, subLayerCapMul:2.20,
-    revIdxKeyCap:480, fwdIdxKeyCap:480, meetKeyProbeCap:700, meetSweepRevCap:900, idxKeysPerItem:28, idxPerItemCap:200, localIdxKeyCap:16,
-    capUnMul:6.5, capBinMul:5.7, jumpMul:3.50, meetStage2:1, qSeed:0.24
+    keyPrec:12, bestPrec:12, keepMode:"goal",
+    bbD:30, bbMagA:0.02,
+    qGoal:0.40, qBB:0.15, qMeet:0.15,
+    qDiv:0.05, qPow:0.10, qFunc:0.05, qDepth:0.05, qMag:0.05, qIrr:0.02,
+    qPowBase:0.15, qPowExp:0.15, qFrac:0.05,
+    qReq:0.10,
+    meetStyle:"bin", meetPrec:12, meetQ:16384, meetR:12,
+    revBeamMul:1.8, meetHitBonus:0.2,
+    candEpsMul:2.0, confirmEpsMul:1.0, binSlackMul:0.2, confirmAbsFloor:1e-7,
+    spillMul:1.0, capMul:1.0, keepMeetDup:false,
+    meetSweepMul:0.25, meetSweepPowMul:0.4,
+    beamMul:1.0, subLayerCapMul:1.2,
+    revIdxKeyCap:300, fwdIdxKeyCap:300, meetKeyProbeCap:400, meetSweepRevCap:500, idxKeysPerItem:12, idxPerItemCap:80, localIdxKeyCap:8,
+    capUnMul:3.0, capBinMul:2.5, jumpMul:1.5, meetStage2:1, qSeed:0.15
   };
 }
 
@@ -1935,7 +1942,7 @@ function relAcc(v,T){
 function safePowStable(a,b){
   if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
   if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb}
-  if(Math.abs(b)>250)return NaN;
+  if(Math.abs(b)>300)return NaN;
   if(a===0)return b>0?0:NaN;
   const r1=Math.pow(a,b);
   let r2=NaN;
@@ -2678,7 +2685,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T){
       const v = x.v;
       if(!Number.isFinite(v)) return false;
       const av = Math.abs(v);
-      return av > 0 && av < 1e12 && Math.abs(av-1) > 1e-12;
+      return av > 0 && av < 1e100 && Math.abs(av-1) > 1e-12;
     }), nPowSrc);
   }
 
@@ -2741,7 +2748,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T){
     const expFilter=(x)=>{
       const v=x.v;
       if(!Number.isFinite(v))return false;
-      return Math.abs(v)<150;
+      return Math.abs(v)<250;
     };
     take(topK(items,nPowExp,(x)=>(x.bb*0.7 + 0.01/(1+(x.depth||0))),false,expFilter), nPowExp);
   }
@@ -2755,12 +2762,13 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T){
   if(nMagD>0){
     const bins=new Map();
     for(const it of items){
-      const mb=Math.floor(Math.log2(Math.abs(it.v)+1e-30));
+      const mb=Math.floor(Math.log10(Math.abs(it.v)+1e-300));
       const old=bins.get(mb);
-      if(!old||it.keep<old.keep)bins.set(mb,it);
+      if(!old || (it.cost < old.cost) || (it.cost===old.cost && it.keep < old.keep)){
+        bins.set(mb,it);
+      }
     }
     const magList=Array.from(bins.values());
-    magList.sort((a,b)=>a.keep-b.keep);
     take(magList,nMagD);
   }
 
@@ -4367,7 +4375,7 @@ function collectLeaves(ast, out){
       type:"init",keyPrec:KEYP,useBitmask,noConstraintFast,tCount,
       maxT:useBitmask?null:(maxT?Array.from(maxT):null),
       opsUn,opsBin,pruneEquiv,needZero:NEED_ZERO,needOne:NEED_ONE,
-      hasNeg:HAS_NEG,hasSub:HAS_SUB,hasDiv:HAS_DIV,hasMul:HAS_MUL,
+      hasNeg:HAS_NEG,hasSub:HAS_SUB,hasDiv:HAS_DIV,hasMul:HAS_MUL,hasAdd:ALLOW_ADD,
       reqMask:REQ_MASK, reqPop:REQ_POP,
       leafOrder:LEAF_ORDER,
       pruneLevel:PRUNE_LEVEL,
