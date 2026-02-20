@@ -1249,7 +1249,7 @@ let MAXT=null;
 let OPS_UN=[], OPS_BIN=[];
 let PRUNE=true;
 let NEED_ZERO=false, NEED_ONE=false;
-let HAS_NEG=true, HAS_DIV=true, HAS_MUL=true, HAS_SUB=true;
+let HAS_NEG=true, HAS_DIV=true, HAS_MUL=true, HAS_SUB=true, ALLOW_ADD=true;
 let PRUNE_LEVEL=1;
 let FORBID_UN=new Set(), FORBID_BIN=new Set();
 let CONSTRAINT_UN_FN=null, CONSTRAINT_BIN_FN=null;
@@ -1520,7 +1520,7 @@ onmessage=(ev)=>{
     PRUNE=!!msg.pruneEquiv;
     NEED_ZERO=!!msg.needZero;
     NEED_ONE=!!msg.needOne;
-    HAS_NEG=!!msg.hasNeg; HAS_SUB=!!msg.hasSub; HAS_DIV=!!msg.hasDiv; HAS_MUL=!!msg.hasMul;
+    HAS_NEG=!!msg.hasNeg; HAS_SUB=!!msg.hasSub; HAS_DIV=!!msg.hasDiv; HAS_MUL=!!msg.hasMul; ALLOW_ADD=(msg.hasAdd===undefined)?true:!!msg.hasAdd;
     PRUNE_LEVEL = Math.max(0, Math.min(2, msg.pruneLevel|0));
     FORBID_UN = new Set(Array.isArray(msg.forbidUn)?msg.forbidUn:[]);
     FORBID_BIN = new Set(Array.isArray(msg.forbidBin)?msg.forbidBin:[]);
@@ -4375,7 +4375,7 @@ function collectLeaves(ast, out){
       type:"init",keyPrec:KEYP,useBitmask,noConstraintFast,tCount,
       maxT:useBitmask?null:(maxT?Array.from(maxT):null),
       opsUn,opsBin,pruneEquiv,needZero:NEED_ZERO,needOne:NEED_ONE,
-      hasNeg:HAS_NEG,hasSub:HAS_SUB,hasDiv:HAS_DIV,hasMul:HAS_MUL,
+      hasNeg:HAS_NEG,hasSub:HAS_SUB,hasDiv:HAS_DIV,hasMul:HAS_MUL,hasAdd:ALLOW_ADD,
       reqMask:REQ_MASK, reqPop:REQ_POP,
       leafOrder:LEAF_ORDER,
       pruneLevel:PRUNE_LEVEL,
