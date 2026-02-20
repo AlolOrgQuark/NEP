@@ -1412,6 +1412,12 @@ function pruneUn(op,cf,cv){
   if(op==="log"&&ct===TAG_EXP)return true;
   if(op==="sqrt"&&ct===TAG_SQ)return true;
   if(op==="square"&&ct===TAG_SQRT)return true;
+  if(op==="cbrt" && ct===TAG_NONE && has(cf, F_HAS_ABS)) return true;
+  if(op==="cube" && ct===TAG_NONE) {}
+  if(op==="log" && ct===TAG_LOG) return true;
+  if(op==="exp" && ct===TAG_EXP) return true;
+  if(op==="sqrt" && ct===TAG_SQRT) return true;
+  if(op==="square" && ct===TAG_SQ) return true;
   if(op==="neg"&&has(cf,F_ZERO))return true;
   if(op==="sqrt"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
   if(op==="exp"&&has(cf,F_ZERO))return true;
@@ -2274,6 +2280,12 @@ function pruneUn(op,cf,cv){
   if(op==="log"&&ct===TAG_EXP)return true;
   if(op==="sqrt"&&ct===TAG_SQ)return true;
   if(op==="square"&&ct===TAG_SQRT)return true;
+  if(op==="cbrt" && ct===TAG_NONE && has(cf, F_HAS_ABS)) return true;
+  if(op==="cube" && ct===TAG_NONE) {}
+  if(op==="log" && ct===TAG_LOG) return true;
+  if(op==="exp" && ct===TAG_EXP) return true;
+  if(op==="sqrt" && ct===TAG_SQRT) return true;
+  if(op==="square" && ct===TAG_SQ) return true;
   if(op==="neg"&&has(cf,F_ZERO))return true;
   if(op==="sqrt"&&(has(cf,F_ZERO)||has(cf,F_ONE)))return true;
   if(op==="exp"&&has(cf,F_ZERO))return true;
@@ -2601,6 +2613,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   const nExplore=Math.max(0, Math.floor(beam*exploreRatio));
   const nSeed=Math.max(0, Math.floor(beam*(mp.qSeed||0)));
   const nNovel=Math.max(0, Math.floor(beam*(mode==="speed"?0.04:0.12)));
+  const nDeepRat = Math.max(0, Math.floor(beam * 0.08));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
   if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
@@ -2698,6 +2711,12 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   if(nSeed>0){
     const seed=topK(items,nSeed,(x)=>((x.cost||0)*0.7 + x.bb*0.25 + x.goal*0.05),true,(x)=>((x.cost||0)<=6)&&!used.has(x.key));
     take(seed,nSeed);
+  }
+
+  if(nDeepRat>0){
+    take(topK(items, nDeepRat, (x) => (x.bb + 0.05*x.goal - (x.depth||0)*0.02), true,
+      (x) => !used.has(x.key) && (x.depth||0) >= 3 && x.bb < 0.25
+    ), nDeepRat);
   }
 
   if(nExplore>0){
@@ -3445,15 +3464,19 @@ function collectLeaves(ast, out){
     if(!Number.isFinite(trueVal)||Math.abs(trueVal)>CAP){meetDbg.rejEvalNaN++;return;}
 
     const structuralDrift=Math.abs(trueVal-probeVal);
-    const driftCap=matchGap*(3.4+tc*0.18)*(1+powCnt*0.22)/(1+0.10*powRisk)+3e-12*scale;
+
+    const driftMul = isPowRelated ? 5.0 : (isTrigRelated ? 3.5 : 1.5);
+    const driftCap = matchGap*(3.4+tc*0.25)*driftMul*(1+powCnt*0.4)/(1+0.05*powRisk) + 5e-10*scale;
+
     if(structuralDrift>driftCap){
       meetDbg.rejProbeConfirm++;
       if(structuralDrift>meetDbg.maxConfirmErr)meetDbg.maxConfirmErr=structuralDrift;
       return;
     }
 
-    const epsConfirmBase=(7e-10*mp.confirmEpsMul)*Math.max(1,Math.abs(T),Math.abs(trueVal))*(1+tc*0.025);
-    const epsConfirmGap=matchGap*(2.2+tc*0.11)*powTighten*(isPowRelated?1.5:(isTrigRelated?1.3:1.0));
+    const confirmMul = isPowRelated ? 4.0 : (isTrigRelated ? 2.0 : 1.0);
+    const epsConfirmBase=(1.5e-9*mp.confirmEpsMul)*Math.max(1,Math.abs(T),Math.abs(trueVal))*(1+tc*0.035);
+    const epsConfirmGap=matchGap*(2.5+tc*0.15)*powTighten*confirmMul;
     const epsConfirm=Math.max(epsConfirmBase,epsConfirmGap,mp.confirmAbsFloor||0);
     const err=Math.abs(trueVal-T);
     if(err>epsConfirm){
@@ -3897,16 +3920,22 @@ function collectLeaves(ast, out){
     const boost=Math.max(1,Number(adaptBoost)||1);
     const jm=Math.max(0.3, (mp.jumpMul||1)*boost);
     if(jm<0.45) return;
-    const limItems=Math.min(layerItems.length, Math.max(20,Math.floor(beamF*((mode==="speed")?0.06:0.14)*jm)));
-    if(mode==="speed" && (layerItems[0]?.cost||0)<4) return;
+
+    const jumpCands = layerItems.slice()
+      .sort((a,b) => (a.bb + a.goal*0.05) - (b.bb + b.goal*0.05))
+      .slice(0, Math.max(6, Math.floor(18 * jm)));
+
+    if(mode==="speed" && (jumpCands[0]?.cost||0)<4) return;
     const logT=(T>0)?Math.log(T):NaN;
-    const J=(tv,h)=>jumpLookupNear(tv,h);
+
+    const J=(tv,h)=>jumpLookupNear(tv, Math.min(h, 12));
 
     tryUnaryTargetTransforms(jm,J);
-    tryStructuredSketches(layerItems,T,J);
+    tryStructuredSketches(jumpCands,T,J);
 
+    const limItems = jumpCands.length;
     for(let i=0;i<limItems;i++){
-      const a=layerItems[i];
+      const a=jumpCands[i];
       const v=a.v;
       if(!Number.isFinite(v)) continue;
       const av=Math.abs(v);
