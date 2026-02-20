@@ -1304,7 +1304,7 @@ function nearInt(x){ return Math.abs(x - Math.round(x)) < 1e-12; }
 function safePowStable(a,b){
   if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
   if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb;}
-  if(Math.abs(b)>60)return NaN;
+  if(Math.abs(b)>250)return NaN;
   const r1=Math.pow(a,b);
   if(!Number.isFinite(r1)||Math.abs(r1)>CAP)return NaN;
   const bp=Math.round(b);
@@ -1456,6 +1456,8 @@ function pruneBin(op,af,bf,av,bv){
   if(op==="^"&&has(af,F_ONE)  && !NEED_ONE)return true;
   if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
 
+  if(op==="-" && getTag(bf)===TAG_NEG) return true;
+  if(op==="/" && getTag(bf)===TAG_NEG) return true;
   if(op==="*"&&(getTag(af)===TAG_INV||getTag(bf)===TAG_INV) && HAS_DIV)return true;
 
   const fn=CUSTOM_PRUNE_BIN.get(op);
@@ -1567,7 +1569,7 @@ onmessage=(ev)=>{
     const{bucket,put}=mkBucket(beam);
     let visited=0,pruned=0,unPruned=0,binPruned=0,evalFails=0;
 
-    function keepScoreSub(goal,bb){ return (keepMode==="goal")?goal:Math.min(goal,bb); }
+    function keepScoreSub(goal,bb){ return (keepMode==="goal") ? (bb * 0.5 + Math.log1p(goal / Math.max(1, Math.abs(T))) * 0.5) : Math.min(goal,bb); }
 
     const keyOf=(v,maskOrCk)=>{
       const vk=vKey(v);
@@ -1843,7 +1845,7 @@ function meetKeys(v,goalHint=Infinity,depthHint=0){
   const av=Math.abs(v);
 
   // --- Log-domain key (power-base meet: fwd[base] ↔ rev[exponent via ^]) ---
-  if(av>1e-9 && av<1e10 && v>0){
+  if(av<1e10 && v>0){
     const lv=Math.log(v);
     if(Number.isFinite(lv) && Math.abs(lv)<1e9){
       _bkNeighbor("L",lv,Math.min(3,MEET_R));
@@ -1933,7 +1935,7 @@ function relAcc(v,T){
 function safePowStable(a,b){
   if(!Number.isFinite(a)||!Number.isFinite(b))return NaN;
   if(a<0){const rb=Math.round(b);if(Math.abs(b-rb)>1e-12)return NaN;b=rb}
-  if(Math.abs(b)>60)return NaN;
+  if(Math.abs(b)>250)return NaN;
   if(a===0)return b>0?0:NaN;
   const r1=Math.pow(a,b);
   let r2=NaN;
@@ -2246,7 +2248,8 @@ const F_ZERO=1<<8, F_ONE=1<<9, F_NEGONE=1<<10, F_INT=1<<11, F_NONNEG=1<<12, F_CO
 
 function mkFlags(v,tag,isLeaf,extra=0){
   let f=(tag&0xFF)|extra;const e=1e-15;
-  if(Math.abs(v)<e)f|=F_ZERO;
+  if(v===0) f|=F_ZERO;
+  else if(Math.abs(v)<e && tag!==TAG_POW && tag!==TAG_EXP && tag!==TAG_MUL && tag!==TAG_DIV) f|=F_ZERO;
   if(Math.abs(v-1)<e)f|=F_ONE;
   if(Math.abs(v+1)<e)f|=F_NEGONE;
   if(Math.abs(v-Math.E)<1e-13)f|=F_E; // 标记常数 e
@@ -2328,8 +2331,9 @@ function pruneBin(op,af,bf,av,bv){
   if(op==="^"&&has(af,F_NEGONE)&&has(bf,F_INT))return true;
 
   if(op==="+" && HAS_SUB && (getTag(bf)===TAG_NEG || getTag(af)===TAG_NEG)) return true;
+  if(op==="-" && ALLOW_ADD && getTag(bf)===TAG_NEG) return true;
   if(op==="*" && HAS_DIV && (getTag(bf)===TAG_INV || getTag(af)===TAG_INV)) return true;
-  if(op==="/" && HAS_MUL && getTag(bf)===TAG_INV) return true;
+  if(op==="/" && HAS_MUL && (getTag(bf)===TAG_INV || getTag(bf)===TAG_NEG)) return true;
 
   // 交换律规范化：如果两个操作数都是常数，强制从小到大排列
   if((op==="+"||op==="*") && has(af,F_CONST) && has(bf,F_CONST) && av > bv) return true;
@@ -2621,7 +2625,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T){
   const nLowCost = Math.max(0, Math.floor(beam * (mode==="speed" ? 0.05 : 0.12)));
 
   take(topK(items,nGoal,(x)=>x.goal,true), nGoal);
-  if(nMeet>0) take(topK(items,nMeet,(x)=>x.goal,true,(x)=>x.revHit), nMeet);
+  if(nMeet>0) take(topK(items,nMeet,(x)=>x.keep,true,(x)=>x.revHit), nMeet);
 
   if(useBitmask && REQ_POP>0 && nReq>0){
     take(topK(items,nReq,(x)=>(x.keep - 0.35*(x.cov||0)),true,(x)=> (x.cov||0)>0), nReq);
@@ -2643,7 +2647,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T){
       const v = x.v;
       if(!Number.isFinite(v)) return 1e9;
       const av = Math.abs(v);
-      if(av < 0.01 || av > 1e8 || Math.abs(av-1) < 1e-12) return 1e9;
+      if(av <= 0 || av > 1e12 || Math.abs(av-1) < 1e-12) return 1e9;
       const logV = Math.log(av);
       if(!Number.isFinite(logV) || Math.abs(logV) < 1e-15) return 1e9;
 
@@ -2674,7 +2678,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T){
       const v = x.v;
       if(!Number.isFinite(v)) return false;
       const av = Math.abs(v);
-      return av > 0.001 && av < 1e8 && Math.abs(av-1) > 1e-12;
+      return av > 0 && av < 1e12 && Math.abs(av-1) > 1e-12;
     }), nPowSrc);
   }
 
@@ -2737,7 +2741,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T){
     const expFilter=(x)=>{
       const v=x.v;
       if(!Number.isFinite(v))return false;
-      return Math.abs(v)<24;
+      return Math.abs(v)<150;
     };
     take(topK(items,nPowExp,(x)=>(x.bb*0.7 + 0.01/(1+(x.depth||0))),false,expFilter), nPowExp);
   }
@@ -3311,7 +3315,7 @@ function collectLeaves(ast, out){
   function keepScore(goal,bb,revHit,mask){
     let keep;
     if(mp.keepMode==="goal"){
-      const normalizedGoal = goal / Math.max(1, Math.abs(T));
+      const normalizedGoal = Math.log1p(goal / Math.max(1, Math.abs(T)));
       keep = bb * 0.5 + normalizedGoal * 0.5;
     } else {
       keep = Math.min(goal, bb);
