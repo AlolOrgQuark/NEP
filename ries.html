@@ -2671,7 +2671,8 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
       if(!Number.isFinite(v))return false;
       if(v<=0)return false;
       const a=Math.abs(v);
-      return a>0.12 && a<24 && Math.abs(a-1)>1e-12;
+      // 【核心修改】：移除 a > 0.12 的限制，允许 (7-e)^-7 这种微小底数存活
+      return a<100 && Math.abs(a-1)>1e-12;
     };
     take(topK(items,nPowBase,(x)=>x.bb,true,baseFilter), nPowBase);
   }
@@ -2714,8 +2715,8 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
   }
 
   if(nDeepRat>0){
-    take(topK(items, nDeepRat, (x) => (x.bb + 0.05*x.goal - (x.depth||0)*0.02), true,
-      (x) => !used.has(x.key) && (x.depth||0) >= 3 && x.bb < 0.25
+    take(topK(items, nDeepRat, (x) => (x.bb + 0.05*x.goal - (x.depth||0)*0.03), true, 
+      (x) => !used.has(x.key) && (x.depth||0) >= 2 && x.bb < 0.4
     ), nDeepRat);
   }
 
@@ -4049,7 +4050,7 @@ function collectLeaves(ast, out){
           put(keyOf(v,useBitmask?cand.mask:0,useBitmask?"":cand.ck),cand);
           // *** Critical fix: trigger immediate meet for ALL unary ops, not just inv/sqrt ***
           // This allows the rev layer to participate in meet as soon as any op produces it
-          tryMeetReverseWithFwdIdx(cand);
+          if(fwdIdx.has(mk)) tryMeetReverseWithFwdIdx(cand);
           if(stopFlag) return;
 
           // For periodic trig ops: also try ±1 period so fwd values offset by 2π/π can meet
@@ -4068,7 +4069,7 @@ function collectLeaves(ast, out){
                 ?{v:v2,wA:nW,mask:a.mask,flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2}
                 :{v:v2,wA:nW,cnt:a.cnt,ck:(a.ck||""),flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2};
               put(keyOf(v2,useBitmask?cand2.mask:0,useBitmask?"":cand2.ck),cand2);
-              tryMeetReverseWithFwdIdx(cand2);
+              if(fwdIdx.has(mk2)) tryMeetReverseWithFwdIdx(cand2);
               if(stopFlag)return;
             }
           }
@@ -4086,7 +4087,7 @@ function collectLeaves(ast, out){
                 ?{v:v2,wA:nW,mask:a.mask,flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2}
                 :{v:v2,wA:nW,cnt:a.cnt,ck:(a.ck||""),flags:nf2,keep:revScore(v2),goal:revScore(v2),bb:revScore(v2),cost:c,srcOp:op,mkey:mk2};
               put(keyOf(v2,useBitmask?cand2.mask:0,useBitmask?"":cand2.ck),cand2);
-              tryMeetReverseWithFwdIdx(cand2);
+              if(fwdIdx.has(mk2)) tryMeetReverseWithFwdIdx(cand2);
               if(stopFlag)return;
             }
           }
@@ -4129,7 +4130,7 @@ function collectLeaves(ast, out){
                   const mk = meetPrimaryKey(x1);
                   const cand={v:x1,wA:nW,mask:m,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
                   put(keyOf(x1,m,""),cand);
-                  if(isPow) tryMeetReverseWithFwdIdx(cand);
+                  if(isPow && fwdIdx.has(mk)) tryMeetReverseWithFwdIdx(cand);
                   if(stopFlag) return;
                 }
               }else{
@@ -4142,7 +4143,7 @@ function collectLeaves(ast, out){
                   const mk = meetPrimaryKey(x1);
                   const cand={v:x1,wA:nW,cnt,ck,flags:mkFlags(x1,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
                   put(keyOf(x1,0,ck),cand);
-                  if(isPow) tryMeetReverseWithFwdIdx(cand);
+                  if(isPow && fwdIdx.has(mk)) tryMeetReverseWithFwdIdx(cand);
                   if(stopFlag) return;
                 }
               }
@@ -4163,7 +4164,7 @@ function collectLeaves(ast, out){
                     const mk = meetPrimaryKey(x2);
                     const cand={v:x2,wA:nW,mask:m,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
                     put(keyOf(x2,m,""),cand);
-                    if(isPow) tryMeetReverseWithFwdIdx(cand);
+                    if(isPow && fwdIdx.has(mk)) tryMeetReverseWithFwdIdx(cand);
                     if(stopFlag) return;
                   }
                 }else{
@@ -4176,7 +4177,7 @@ function collectLeaves(ast, out){
                     const mk = meetPrimaryKey(x2);
                     const cand={v:x2,wA:nW,cnt,ck,flags:mkFlags(x2,TAG_NONE,false,extraBinFlags(r.flags,f.flags)),keep:score,goal:score,bb:score,cost:c,srcOp:op,mkey:mk};
                     put(keyOf(x2,0,ck),cand);
-                    if(isPow) tryMeetReverseWithFwdIdx(cand);
+                    if(isPow && fwdIdx.has(mk)) tryMeetReverseWithFwdIdx(cand);
                     if(stopFlag) return;
                   }
                 }
