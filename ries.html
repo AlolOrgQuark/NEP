@@ -531,12 +531,12 @@ function getConstraints(){
         if(ctx.av&gt;ctx.bv) return true;
       }
       // 阻止过大中间值继续膨胀（对 speed/medium 模式很关键）
-      if((ctx.op==="^"||ctx.op==="exp") && (Math.abs(ctx.av)&gt;20 || Math.abs(ctx.bv)&gt;20)) return true;
+      if((ctx.op==="^"||ctx.op==="exp") && (Math.abs(ctx.av)&gt;250 || Math.abs(ctx.bv)&gt;150)) return true;
       return false;
     },
 
     unaryPrune:(ctx)=>{
-      if((ctx.op==="exp"||ctx.op==="fact"||ctx.op==="gammafn") && Math.abs(ctx.v)&gt;12) return true;
+      if((ctx.op==="exp"||ctx.op==="fact"||ctx.op==="gammafn") && Math.abs(ctx.v)&gt;150) return true;
       return false;
     }
   };
@@ -1569,7 +1569,7 @@ onmessage=(ev)=>{
     const{bucket,put}=mkBucket(beam);
     let visited=0,pruned=0,unPruned=0,binPruned=0,evalFails=0;
 
-    function keepScoreSub(goal,bb){ return (keepMode==="goal") ? (bb * 0.5 + Math.log1p(goal / Math.max(1, Math.abs(T))) * 0.5) : Math.min(goal,bb); }
+    function keepScoreSub(goal,bb){ return (keepMode==="goal") ? (bb * 0.4 + Math.log1p(goal) * 0.6) : Math.min(goal,bb); }
 
     const keyOf=(v,maskOrCk)=>{
       const vk=vKey(v);
