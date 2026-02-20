@@ -1677,7 +1677,7 @@ function modeParams(mode){
     spillMul:0.55, capMul:0.9, keepMeetDup:false,
     meetSweepMul:0.16, meetSweepPowMul:0.30,
     beamMul:0.70, subLayerCapMul:0.86,
-    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:10, idxPerItemCap:40,
+    revIdxKeyCap:220, fwdIdxKeyCap:220, meetKeyProbeCap:260, meetSweepRevCap:360, idxKeysPerItem:10, idxPerItemCap:40, localIdxKeyCap:8,
     capUnMul:2.5, capBinMul:2.0, jumpMul:0.85, meetStage2:1, qSeed:0.05
   };
   if(mode==="accuracy") return {
@@ -1692,7 +1692,7 @@ function modeParams(mode){
     spillMul:1.6, capMul:1.35, keepMeetDup:false,
     meetSweepMul:0.28, meetSweepPowMul:0.55,
     beamMul:1.42, subLayerCapMul:2.00,
-    revIdxKeyCap:420, fwdIdxKeyCap:420, meetKeyProbeCap:560, meetSweepRevCap:700, idxKeysPerItem:24, idxPerItemCap:160,
+    revIdxKeyCap:420, fwdIdxKeyCap:420, meetKeyProbeCap:560, meetSweepRevCap:700, idxKeysPerItem:24, idxPerItemCap:160, localIdxKeyCap:18,
     capUnMul:5.6, capBinMul:4.8, jumpMul:3.20, meetStage2:1, qSeed:0.22
   };
   return {
@@ -1707,7 +1707,7 @@ function modeParams(mode){
     spillMul:1.55, capMul:1.25, keepMeetDup:false,
     meetSweepMul:0.38, meetSweepPowMul:0.75,
     beamMul:1.64, subLayerCapMul:2.20,
-    revIdxKeyCap:480, fwdIdxKeyCap:480, meetKeyProbeCap:700, meetSweepRevCap:900, idxKeysPerItem:28, idxPerItemCap:200,
+    revIdxKeyCap:480, fwdIdxKeyCap:480, meetKeyProbeCap:700, meetSweepRevCap:900, idxKeysPerItem:28, idxPerItemCap:200, localIdxKeyCap:16,
     capUnMul:6.5, capBinMul:5.7, jumpMul:3.50, meetStage2:1, qSeed:0.24
   };
 }
@@ -1742,9 +1742,12 @@ let ADAPTIVE_MEET=true;
 let perf={
   meetKeyCalls:0,meetKeyGen:0,meetKeyDedup:0,
   jumpLookups:0,jumpHits:0,jumpPairsTried:0,jumpPairsAccepted:0,
+  jumpMemoHits:0,jumpMemoStores:0,
   sketchAttempts:0,sketchAccepted:0,
   msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0
 };
+let jumpLookupMemo=new Map();
+let jumpLookupMemoSeq=0;
 
 function meetKeyPrec(v){if(!Number.isFinite(v))return"NaN";if(Object.is(v,-0))v=0;return v.toPrecision(MEETP)}
 function meetKeyBinPrimary(v){
@@ -2965,9 +2968,12 @@ onmessage=async(ev)=>{
   perf={
     meetKeyCalls:0,meetKeyGen:0,meetKeyDedup:0,
     jumpLookups:0,jumpHits:0,jumpPairsTried:0,jumpPairsAccepted:0,
+    jumpMemoHits:0,jumpMemoStores:0,
     sketchAttempts:0,sketchAccepted:0,
     msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0
   };
+  jumpLookupMemo=new Map();
+  jumpLookupMemoSeq=0;
   let meetDbg={
     revIdxKeys:0,revIdxItems:0,fwdIdxKeys:0,fwdIdxItems:0,
     keyHits:0,pairsTried:0,rev2fwdPairs:0,
@@ -2977,6 +2983,7 @@ onmessage=async(ev)=>{
 
   const best=[];
   let bestDeltaSoFar=Infinity;
+  let bestImproveC=1;
   const bestSeen=new Map();
   const nearSeen=new Map();
 
@@ -3070,7 +3077,10 @@ function collectLeaves(ast, out){
     const latex=obj.ast?latexA(obj.ast):expr;
     const delta=v-T;
     const absDelta=Math.abs(delta);
-    if(absDelta<bestDeltaSoFar) bestDeltaSoFar=absDelta;
+    if(absDelta<bestDeltaSoFar){
+      bestDeltaSoFar=absDelta;
+      bestImproveC=Math.max(1,obj.cost|0||1);
+    }
     const nearStep=Math.max(2e-6,Math.max(1,Math.abs(T))*2e-8);
     const nearKey=Math.round(v/nearStep);
     const prevNear=nearSeen.get(nearKey);
@@ -3564,11 +3574,21 @@ function collectLeaves(ast, out){
   // --- 跳跃式发现（goal-driven jump, inspired by RIES-style target transforms）---
   function jumpLookupNear(targetVal, maxHits){
     if(!Number.isFinite(targetVal) || Math.abs(targetVal)>CAP) return [];
+    const lim=Math.max(6, maxHits|0||24);
+    const pkey=meetPrimaryKey(targetVal);
+    const mk=pkey+"|"+lim;
+    const memo=jumpLookupMemo.get(mk);
+    if(memo){
+      memo.seq=++jumpLookupMemoSeq;
+      perf.jumpMemoHits++;
+      if(memo.items.length) perf.jumpHits++;
+      return memo.items;
+    }
+
     perf.jumpLookups++;
     const keys=meetKeys(targetVal,Math.abs(targetVal-T),6);
     const out=[];
     const seen=new Set();
-    const lim=Math.max(6, maxHits|0||24);
     for(const k of keys){
       const arr=fwdIdx.get(k);
       if(!arr) continue;
@@ -3602,6 +3622,16 @@ function collectLeaves(ast, out){
       }
     }
     if(out.length) perf.jumpHits++;
+    jumpLookupMemo.set(mk,{items:out,seq:++jumpLookupMemoSeq});
+    perf.jumpMemoStores++;
+    if(jumpLookupMemo.size>12000){
+      let oldKey=null,oldSeq=Infinity;
+      for(const [k,v] of jumpLookupMemo){
+        const sq=v&&Number.isFinite(v.seq)?v.seq:0;
+        if(sq<oldSeq){oldSeq=sq;oldKey=k;}
+      }
+      if(oldKey!=null) jumpLookupMemo.delete(oldKey);
+    }
     return out;
   }
 
@@ -3861,23 +3891,16 @@ function collectLeaves(ast, out){
     }
   }
 
-  function tryTargetDecomposition(layerItems,T){
+  function tryTargetDecomposition(layerItems,T,adaptBoost){
     if(!Number.isFinite(T) || fwdIdx.size<8 || !layerItems || !layerItems.length) return;
 
-    const jm=Math.max(0.3, mp.jumpMul||1);
+    const boost=Math.max(1,Number(adaptBoost)||1);
+    const jm=Math.max(0.3, (mp.jumpMul||1)*boost);
     if(jm<0.45) return;
     const limItems=Math.min(layerItems.length, Math.max(20,Math.floor(beamF*((mode==="speed")?0.06:0.14)*jm)));
     if(mode==="speed" && (layerItems[0]?.cost||0)<4) return;
     const logT=(T>0)?Math.log(T):NaN;
-    const jumpCache=new Map();
-    const J=(tv,h)=>{
-      const kk=meetPrimaryKey(tv)+"|"+(h|0);
-      const c=jumpCache.get(kk);
-      if(c) return c;
-      const arr=jumpLookupNear(tv,h);
-      jumpCache.set(kk,arr);
-      return arr;
-    };
+    const J=(tv,h)=>jumpLookupNear(tv,h);
 
     tryUnaryTargetTransforms(jm,J);
     tryStructuredSketches(layerItems,T,J);
@@ -4165,7 +4188,7 @@ function collectLeaves(ast, out){
     if(maxFc<1||rLim<1)return;
 
     const localIdx=new Map();
-    const localKeyCap=Math.max(2,Math.min(10,(mp.idxKeysPerItem|0)||6));
+    const localKeyCap=Math.max(2,Math.min(24,(mp.localIdxKeyCap|0)||Math.min(12,(mp.idxKeysPerItem|0)||6)));
     for(let j=0;j<rLim;j++){
       const r=rr[j];
       const pk=r.mkey || (r.mkey = meetPrimaryKey(r.v));
@@ -4476,6 +4499,8 @@ function collectLeaves(ast, out){
   // Updated each complexity level; starts at Infinity
   let pruneGoalThresh=Infinity;
   for(let c=2;c<=maxC;c++){
+    const stagn=Math.max(0,c-bestImproveC);
+    const adaptBoost=(mode==="speed")?1:(stagn>=6?Math.min(2.2,1+0.22*(stagn-5)):1);
     if(stopFlag)break;
     if(performance.now()-t0>lim)break;
 
@@ -4492,8 +4517,9 @@ function collectLeaves(ast, out){
 
     let capUn=Math.max(180,Math.floor(beamF*(mp.capUnMul||2.0)/4/constPenalty));
     let capBin=Math.max(120,Math.floor(beamF*(mp.capBinMul||1.8)/6/constPenalty));
-    capUn=Math.max(50,Math.floor(capUn*mp.capMul));
-    capBin=Math.max(45,Math.floor(capBin*mp.capMul));
+    const capBoost=Math.pow(adaptBoost,0.60);
+    capUn=Math.max(50,Math.floor(capUn*mp.capMul*capBoost));
+    capBin=Math.max(45,Math.floor(capBin*mp.capMul*capBoost));
 
     if(subWorkers.length>0){
       const fwdTs=performance.now();
@@ -4608,7 +4634,7 @@ function collectLeaves(ast, out){
     // Free cached mkeys after indexing
     for(const it of fwd[c]){if(it.mkeys)it.mkeys=null;}
     const jumpTs=performance.now();
-    tryTargetDecomposition(fwd[c], T);
+    tryTargetDecomposition(fwd[c], T, adaptBoost);
     perf.msJump+=performance.now()-jumpTs;
 
 
@@ -4625,7 +4651,11 @@ function collectLeaves(ast, out){
 
     emit(c);
     // Update goal prune threshold: allow up to 12x best delta (keeps diversity while cutting noise)
-    if(best.length>0) pruneGoalThresh=Math.abs(best[0].delta)*20+1e-9;
+    if(best.length>0){
+      const baseMul=(mode==="accuracy")?28:20;
+      const floor=((mode==="accuracy")?1e-6:3e-7)*Math.max(1,Math.abs(T));
+      pruneGoalThresh=Math.max(Math.abs(best[0].delta)*baseMul*Math.max(1,adaptBoost)+1e-9,floor);
+    }
     const yTs=performance.now();
     await new Promise(r=>setTimeout(r,0));
     perf.msYield+=performance.now()-yTs;
@@ -4783,7 +4813,7 @@ $("btnStart").onclick=()=>{
           ps.innerHTML+=
             "<br><b>Perf</b> "+
             `meetKeys(calls=${(p.meetKeyCalls||0).toLocaleString()}, gen=${(p.meetKeyGen||0).toLocaleString()}, dedup=${(p.meetKeyDedup||0).toLocaleString()})<br>`+
-            `jump(lookups=${(p.jumpLookups||0).toLocaleString()}, hits=${(p.jumpHits||0).toLocaleString()}, pairs=${(p.jumpPairsTried||0).toLocaleString()}, ok=${(p.jumpPairsAccepted||0).toLocaleString()}) `+
+            `jump(lookups=${(p.jumpLookups||0).toLocaleString()}, memoHit=${(p.jumpMemoHits||0).toLocaleString()}, memoStore=${(p.jumpMemoStores||0).toLocaleString()}, hits=${(p.jumpHits||0).toLocaleString()}, pairs=${(p.jumpPairsTried||0).toLocaleString()}, ok=${(p.jumpPairsAccepted||0).toLocaleString()}) `+
             `sketch(try=${(p.sketchAttempts||0).toLocaleString()}, ok=${(p.sketchAccepted||0).toLocaleString()})<br>`+
             `time_ms(rev=${ms(p.msRev)}, fwd=${ms(p.msFwd)}, meet=${ms(p.msMeet)}, jump=${ms(p.msJump)}, yield=${ms(p.msYield)})`;
         }
