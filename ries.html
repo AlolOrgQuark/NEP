@@ -1492,8 +1492,9 @@ function mkBucket(beam){
   function sw(i,j){const a=h[i],b=h[j];h[i]=b;h[j]=a;idx.set(b.key,i);idx.set(a.key,j);}
   function up(i){while(i>0){const p=(i-1)>>1;if(h[p].keep>=h[i].keep)break;sw(p,i);i=p;}}
   function dn(i){for(;;){let b=i,l=i*2+1,r=l+1;if(l<h.length&&h[l].keep>h[b].keep)b=l;if(r<h.length&&h[r].keep>h[b].keep)b=r;if(b===i)break;sw(i,b);i=b;}}
-  const bucket={values(){return h;}};
+  const bucket={values(){return h;}, ops:0};
   function put(key,pack){
+    bucket.ops++;
     const i=idx.get(key);
     if(i!==undefined){if(pack.keep>=h[i].keep)return;h[i]=pack;pack.key=key;dn(i);return;}
     pack.key=key;
@@ -1564,7 +1565,7 @@ onmessage=(ev)=>{
   if(msg.type==="task"){
     const{T,c,beam,capUn,capBin,workerId,workerCount,bbD,bbMagA,keepMode}=msg;
     const{bucket,put}=mkBucket(beam);
-    let visited=0,pruned=0;
+    let visited=0,pruned=0,unPruned=0,binPruned=0,evalFails=0;
 
     function keepScoreSub(goal,bb){ return (keepMode==="goal")?goal:Math.min(goal,bb); }
 
@@ -1583,9 +1584,9 @@ onmessage=(ev)=>{
       const lim=Math.min(src.len,capUn);
       for(let i=workerId;i<lim;i+=workerCount){
         const av=src.v[i],af=src.flags?src.flags[i]:0;
-        if(PRUNE&&pruneUn(op,af,av)){pruned++;continue;}
+        if(PRUNE&&pruneUn(op,af,av)){pruned++; unPruned++; continue;}
         const v=applyUn(op,av);visited++;
-        if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+        if(!Number.isFinite(v)||Math.abs(v)>CAP){ evalFails++; continue; }
         const goal=Math.abs(v-T);
         const bb=bbScore(v,bbD,bbMagA);
         let keep=keepScoreSub(goal,bb);
@@ -1621,7 +1622,7 @@ onmessage=(ev)=>{
           const stB=(comm&&ic===jc)?ia:0;
           for(let ib=stB;ib<cB;ib++){
             const bv=B.v[ib],bf=B.flags?B.flags[ib]:0;
-            if(PRUNE&&pruneBin(op,af,bf,av,bv)){pruned++;continue;}
+            if(PRUNE&&pruneBin(op,af,bf,av,bv)){pruned++; binPruned++; continue;}
 
             if(USE_BITMASK){
               const am=A.mask[ia]|0,bm=B.mask[ib]|0;
@@ -1639,7 +1640,7 @@ onmessage=(ev)=>{
 
               const mask=am|bm;
               const v=applyBin(op,av,bv);visited++;
-              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP){ evalFails++; continue; }
               const goal=Math.abs(v-T);
               const bb=bbScore(v,bbD,bbMagA);
               let keep=keepScoreSub(goal,bb);
@@ -1647,7 +1648,7 @@ onmessage=(ev)=>{
               put(keyOf(v,mask),{v,goal,bb,keep,mask,kind:"b",op,ac:ic,ai:ia,bc:jc,bi:ib});
             }else{
               const v=applyBin(op,av,bv);visited++;
-              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP){ evalFails++; continue; }
               const goal=Math.abs(v-T);
               const bb=bbScore(v,bbD,bbMagA);
               const keep=keepScoreSub(goal,bb);
@@ -1658,7 +1659,7 @@ onmessage=(ev)=>{
       }
     }
 
-    postMessage({type:"taskDone",payload:{visited,pruned,items:Array.from(bucket.values())}});
+    postMessage({type:"taskDone",payload:{visited,pruned,unPruned,binPruned,evalFails,bucketOps:bucket.ops,items:Array.from(bucket.values())}});
   }
 };
 `;
@@ -1750,7 +1751,8 @@ let perf={
   jumpLookups:0,jumpHits:0,jumpPairsTried:0,jumpPairsAccepted:0,
   jumpMemoHits:0,jumpMemoStores:0,
   sketchAttempts:0,sketchAccepted:0,
-  msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0
+  msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0,
+  msSelectTop:0, msIndex:0, msWorkerWait:0, bucketOps:0, evalFails:0
 };
 let jumpLookupMemo=new Map();
 let jumpLookupMemoSeq=0;
@@ -2481,9 +2483,11 @@ function mkBucket(beam,spillMul){
   function dn(i){for(;;){let b=i,l=i*2+1,r=l+1;if(l<h.length&&h[l].keep>h[b].keep)b=l;if(r<h.length&&h[r].keep>h[b].keep)b=r;if(b===i)break;sw(i,b);i=b;}}
   const bucket={
     get size(){return h.length;},
-    values(){return h;}
+    values(){return h;},
+    ops: 0
   };
   function put(key,pack){
+    bucket.ops++;
     const i=kidx.get(key);
     if(i!==undefined){
       if(pack.keep>=h[i].keep)return false;
@@ -2559,6 +2563,7 @@ function topK(items,k,scoreFn,lowerBetter=true,filterFn=null){
 }
 
 function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
+  const tSel = performance.now();
   const out=[];
   const used=new Set();
   const take=(arr,limit)=>{
@@ -2761,6 +2766,7 @@ function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
     if(it.revHit!==undefined) delete it.revHit;
     if(it.cov!==undefined) delete it.cov;
   }
+  perf.msSelectTop += (performance.now() - tSel);
   return out;
 }
 
@@ -2990,7 +2996,8 @@ onmessage=async(ev)=>{
     jumpLookups:0,jumpHits:0,jumpPairsTried:0,jumpPairsAccepted:0,
     jumpMemoHits:0,jumpMemoStores:0,
     sketchAttempts:0,sketchAccepted:0,
-    msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0
+    msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0,
+    msSelectTop:0, msIndex:0, msWorkerWait:0, bucketOps:0, evalFails:0
   };
   jumpLookupMemo=new Map();
   jumpLookupMemoSeq=0;
@@ -2999,6 +3006,7 @@ onmessage=async(ev)=>{
     keyHits:0,pairsTried:0,rev2fwdPairs:0,
     rejMaskOverlap:0,rejCntLimit:0,rejEpsCand:0,rejEvalNaN:0,
     rejProbeConfirm:0,rejConfirm:0,revInvBad:0,maxConfirmErr:0,
+    unPruned:0, binPruned:0
   };
 
   const best=[];
@@ -3190,6 +3198,7 @@ function collectLeaves(ast, out){
   }
 
   function addRevIdx(items){
+    const tIdx = performance.now();
     const cap=Math.max(8,mp.revIdxKeyCap|0||120);
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
@@ -3208,9 +3217,11 @@ function collectLeaves(ast, out){
     meetDbg.revIdxKeys=revIdx.size;
     let total=0;for(const v of revIdx.values())total+=v.length;
     meetDbg.revIdxItems=total;
+    perf.msIndex += (performance.now() - tIdx);
   }
 
   function addFwdIdx(items){
+    const tIdx = performance.now();
     const cap=Math.max(8,mp.fwdIdxKeyCap|0||120);
     const perItemCap=Math.max(cap, mp.idxPerItemCap|0||64);
     const maxKeys=Math.max(1, mp.idxKeysPerItem|0||6);
@@ -3229,6 +3240,7 @@ function collectLeaves(ast, out){
     meetDbg.fwdIdxKeys=fwdIdx.size;
     let total=0;for(const v of fwdIdx.values())total+=v.length;
     meetDbg.fwdIdxItems=total;
+    perf.msIndex += (performance.now() - tIdx);
   }
 
   function keepScore(goal,bb,revHit,mask){
@@ -3362,7 +3374,7 @@ function collectLeaves(ast, out){
     const{bucket,put}=mkBucket(beamF,mp.spillMul);
     for(let i=0;i<nC;i++){
       const v=consts[i].v;visited++;
-      if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+      if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
       const goal=Math.abs(v-T);
       const bb=bbScore(v,mp.bbD,mp.bbMagA);
       const mk = bidir ? meetPrimaryKey(v) : "";
@@ -3390,6 +3402,7 @@ function collectLeaves(ast, out){
       }
     }
 
+    perf.bucketOps += bucket.ops;
     const items=Array.from(bucket.values());
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
     const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask,mode);
@@ -4029,12 +4042,12 @@ function collectLeaves(ast, out){
       const lim2=Math.min(src.length,beamR);
       for(let i=0;i<lim2;i++){
         const a=src[i];
-        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue;}
+        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++; meetDbg.unPruned++; continue;}
         const invs=invUn(op,a.v);
         for(const inv of invs){
           visited++;
           const v=inv.v;
-          if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+          if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
           const out=applyUn(op,v);
           const s=Math.max(1,Math.abs(a.v),Math.abs(out));
           if(!Number.isFinite(out)||Math.abs(out-a.v)>1e-10*s){meetDbg.revInvBad++;continue;}
@@ -4190,6 +4203,7 @@ function collectLeaves(ast, out){
       }
     }
 
+    perf.bucketOps += bucket.ops;
     const items=Array.from(bucket.values());
     items.sort((a,b)=>a.keep-b.keep);
     const picked=items.slice(0,beamR);
@@ -4381,9 +4395,9 @@ function collectLeaves(ast, out){
       const lim2=Math.min(src.length,capUn);
       for(let i=0;i<lim2;i+=W){
         const a=src[i];
-        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue;}
+        if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++; meetDbg.unPruned++; continue;}
         const v=applyUn(op,a.v);visited++;
-        if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+        if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
         const goal=Math.abs(v-T);
         if(goal>pruneGoalThresh)continue;
         const bb=bbScore(v,mp.bbD,mp.bbMagA);
@@ -4417,13 +4431,13 @@ function collectLeaves(ast, out){
           const stB=(comm&&ic===jc)?ia:0;
           for(let ib=stB;ib<cB;ib++){
             const b=B[ib];
-            if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++;continue;}
+            if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++; meetDbg.binPruned++; continue;}
             visited++;
             if(useBitmask){
               if((a.mask&b.mask)!==0)continue;
               const mask=a.mask|b.mask;
               const v=applyBin(op,a.v,b.v);
-              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
               if(Math.abs(v-T)>pruneGoalThresh)continue;
               const ast=mkB(op,a.ast,b.ast);
               if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
@@ -4437,7 +4451,7 @@ function collectLeaves(ast, out){
               const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
               if(!cnt)continue;
               const v=applyBin(op,a.v,b.v);
-              if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+              if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
               if(Math.abs(v-T)>pruneGoalThresh)continue;
               const ast=mkB(op,a.ast,b.ast);
               if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
@@ -4466,11 +4480,17 @@ function collectLeaves(ast, out){
         keepMode: mp.keepMode==="goal" ? "goal" : "min"
       });
     }));
+    const tWait = performance.now();
     const results=await Promise.all(tasks);
+    perf.msWorkerWait += (performance.now() - tWait);
 
     for(const res of results){
       visited+=res.visited;
       pruned+=res.pruned;
+      meetDbg.unPruned += (res.unPruned||0);
+      meetDbg.binPruned += (res.binPruned||0);
+      perf.evalFails += (res.evalFails||0);
+      perf.bucketOps += (res.bucketOps||0);
       for(const it of res.items){
         const v=it.v;
         const mk = bidir ? meetPrimaryKey(v) : "";
@@ -4511,6 +4531,7 @@ function collectLeaves(ast, out){
       }
     }
 
+    perf.bucketOps += bucket.ops;
     const items=Array.from(bucket.values());
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
     const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
@@ -4567,9 +4588,9 @@ function collectLeaves(ast, out){
         const lim2=Math.min(src.length,capUn);
         for(let i=0;i<lim2;i++){
           const a=src[i];
-          if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++;continue;}
+          if(pruneEquiv&&pruneUn(op,a.flags,a.v)){pruned++; meetDbg.unPruned++; continue;}
           const v=applyUn(op,a.v);visited++;
-          if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+          if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
           const goal=Math.abs(v-T);
           if(goal>pruneGoalThresh)continue;
           const bb=bbScore(v,mp.bbD,mp.bbMagA);
@@ -4607,14 +4628,14 @@ function collectLeaves(ast, out){
             const stB=(comm&&ic===jc)?ia:0;
             for(let ib=stB;ib<cB;ib++){
               const b=B[ib];
-              if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++;continue;}
+              if(pruneEquiv&&pruneBin(op,a.flags,b.flags,a.v,b.v)){pruned++; meetDbg.binPruned++; continue;}
               visited++;
 
               if(useBitmask){
                 if((a.mask&b.mask)!==0)continue;
                 const mask=a.mask|b.mask;
                 const v=applyBin(op,a.v,b.v);
-                if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+                if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
                 if(Math.abs(v-T)>pruneGoalThresh)continue;
                 const ast=mkB(op,a.ast,b.ast);
                 if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
@@ -4628,7 +4649,7 @@ function collectLeaves(ast, out){
                 const cnt=addCnt(a.cnt??EMPTY,b.cnt??EMPTY);
                 if(!cnt)continue;
                 const v=applyBin(op,a.v,b.v);
-                if(!Number.isFinite(v)||Math.abs(v)>CAP)continue;
+                if(!Number.isFinite(v)||Math.abs(v)>CAP){ perf.evalFails++; continue; }
                 if(Math.abs(v-T)>pruneGoalThresh)continue;
                 const ast=mkB(op,a.ast,b.ast);
                 if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
@@ -4650,6 +4671,7 @@ function collectLeaves(ast, out){
         }
       }
 
+      perf.bucketOps += bucket.ops;
       const items=Array.from(bucket.values());
       for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
       const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
@@ -4845,7 +4867,8 @@ $("btnStart").onclick=()=>{
             `meetKeys(calls=${(p.meetKeyCalls||0).toLocaleString()}, gen=${(p.meetKeyGen||0).toLocaleString()}, dedup=${(p.meetKeyDedup||0).toLocaleString()})<br>`+
             `jump(lookups=${(p.jumpLookups||0).toLocaleString()}, memoHit=${(p.jumpMemoHits||0).toLocaleString()}, memoStore=${(p.jumpMemoStores||0).toLocaleString()}, hits=${(p.jumpHits||0).toLocaleString()}, pairs=${(p.jumpPairsTried||0).toLocaleString()}, ok=${(p.jumpPairsAccepted||0).toLocaleString()}) `+
             `sketch(try=${(p.sketchAttempts||0).toLocaleString()}, ok=${(p.sketchAccepted||0).toLocaleString()})<br>`+
-            `time_ms(rev=${ms(p.msRev)}, fwd=${ms(p.msFwd)}, meet=${ms(p.msMeet)}, jump=${ms(p.msJump)}, yield=${ms(p.msYield)})`;
+            `<b>Stats</b> bucketOps=${(p.bucketOps||0).toLocaleString()} evalFails=${(p.evalFails||0).toLocaleString()} unPruned=${(payload.meetDbg.unPruned||0).toLocaleString()} binPruned=${(payload.meetDbg.binPruned||0).toLocaleString()}<br>`+
+            `time_ms(rev=${ms(p.msRev)}, fwd=${ms(p.msFwd)}, meet=${ms(p.msMeet)}, jump=${ms(p.msJump)}, yield=${ms(p.msYield)}, <span style="color:var(--amber)">select=${ms(p.msSelectTop)} idx=${ms(p.msIndex)} waitSub=${ms(p.msWorkerWait)}</span>)`;
         }
       }else{
         $("status").style.display="none";
