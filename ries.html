@@ -2563,7 +2563,7 @@ function topK(items,k,scoreFn,lowerBetter=true,filterFn=null){
   return out;
 }
 
-function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode){
+function selectTop(items,beam,divRatio,mp,revIdx,allowPow,useBitmask,mode,T){
   const tSel = performance.now();
   const out=[];
   const used=new Set();
@@ -2841,18 +2841,6 @@ onmessage=async(ev)=>{
   mode=(mode==="ries")?"accuracy":mode;
   const mp=modeParams(mode);
   KEEP_MODE_HINT = mp.keepMode || "goal";
-
-  const BB_D_FAST = 8;
-  function bbFast(v){
-    return bbScore(v, BB_D_FAST, mp.bbMagA);
-  }
-  function refineBB(items){
-    const Dfull = mp.bbD|0;
-    if(Dfull <= BB_D_FAST) return;
-    for(const it of items){
-      it.bb = bbScore(it.v, Dfull, mp.bbMagA);
-    }
-  }
 
   const BB_D_FAST = 8;
   function bbFast(v){
@@ -3486,7 +3474,7 @@ function collectLeaves(ast, out){
     const items=Array.from(bucket.values());
     refineBB(items);
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask,mode);
+    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),Array.isArray(opsBin)&&opsBin.includes("^"),useBitmask,mode,T);
     for(const it of picked){it.cost=1;}
     fwd[1]=picked;
     addFwdIdx(fwd[1]);
@@ -4616,7 +4604,7 @@ function collectLeaves(ast, out){
     const items=Array.from(bucket.values());
     refineBB(items);
     for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
+    const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode,T);
     for(const it of picked){
       it.cost=c;
       // Strip transient fields not needed for future expansion
@@ -4757,7 +4745,7 @@ function collectLeaves(ast, out){
       const items=Array.from(bucket.values());
       refineBB(items);
       for(const it of items){it.hasPow=!!(it.ast&&it.ast.p);it.hasFunc=!!(it.ast&&it.ast.f);it.depth=astDepth(it.ast);}
-      const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
+      const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode,T);
       for(const it of picked){it.cost=c;}
       fwd[c]=picked;
       perf.msFwd+=performance.now()-fwdTs;
