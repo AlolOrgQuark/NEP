@@ -1739,6 +1739,12 @@ let MEETP=10;
 let MEET_Q=8192;
 let MEET_R=2;
 let ADAPTIVE_MEET=true;
+let perf={
+  meetKeyCalls:0,meetKeyGen:0,meetKeyDedup:0,
+  jumpLookups:0,jumpHits:0,jumpPairsTried:0,jumpPairsAccepted:0,
+  sketchAttempts:0,sketchAccepted:0,
+  msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0
+};
 
 function meetKeyPrec(v){if(!Number.isFinite(v))return"NaN";if(Object.is(v,-0))v=0;return v.toPrecision(MEETP)}
 function meetKeyBinPrimary(v){
@@ -1788,6 +1794,7 @@ function _bkNeighbor(prefix,val,rr){
   }
 }
 function meetKeys(v,goalHint=Infinity,depthHint=0){
+  perf.meetKeyCalls++;
   if(MEET_STYLE!=="bin") return [meetKeyPrec(v)];
   if(!Number.isFinite(v)) return ["NaN"];
   if(Object.is(v,-0)) v=0;
@@ -1891,7 +1898,16 @@ function meetKeys(v,goalHint=Infinity,depthHint=0){
     }
   }
 
-  return _meetKeyOut.slice();
+  const uniq=[];
+  const seen=new Set();
+  for(let i=0;i<_meetKeyOut.length;i++){
+    const k=_meetKeyOut[i];
+    if(seen.has(k)){ perf.meetKeyDedup++; continue; }
+    seen.add(k);
+    uniq.push(k);
+  }
+  perf.meetKeyGen+=uniq.length;
+  return uniq;
 }
 
 function relAcc(v,T){
@@ -2946,6 +2962,12 @@ onmessage=async(ev)=>{
   let lastEmit=t0;
   let visited=0,meetConfirmed=0,meetLookups=0,meetCandidates=0;
   let pruned=0,reEvalFixed=0,dupesKilled=0;
+  perf={
+    meetKeyCalls:0,meetKeyGen:0,meetKeyDedup:0,
+    jumpLookups:0,jumpHits:0,jumpPairsTried:0,jumpPairsAccepted:0,
+    sketchAttempts:0,sketchAccepted:0,
+    msRev:0,msFwd:0,msJump:0,msMeet:0,msYield:0
+  };
   let meetDbg={
     revIdxKeys:0,revIdxItems:0,fwdIdxKeys:0,fwdIdxItems:0,
     keyHits:0,pairsTried:0,rev2fwdPairs:0,
@@ -2967,6 +2989,7 @@ onmessage=async(ev)=>{
         visited,pruned,
         meetLookups,meetCandidates,meetConfirmed,
         meetDbg,
+        perf,
         reEvalFixed,dupesKilled,
         mode:runtimeMode,
         mt:(mt&&threads>1)?("ON("+threads+")"):"OFF",
@@ -3541,6 +3564,7 @@ function collectLeaves(ast, out){
   // --- 跳跃式发现（goal-driven jump, inspired by RIES-style target transforms）---
   function jumpLookupNear(targetVal, maxHits){
     if(!Number.isFinite(targetVal) || Math.abs(targetVal)>CAP) return [];
+    perf.jumpLookups++;
     const keys=meetKeys(targetVal,Math.abs(targetVal-T),6);
     const out=[];
     const seen=new Set();
@@ -3577,6 +3601,7 @@ function collectLeaves(ast, out){
         }
       }
     }
+    if(out.length) perf.jumpHits++;
     return out;
   }
 
@@ -3757,13 +3782,14 @@ function collectLeaves(ast, out){
   }
 
   function pushJumpPair(a,b,op,swap=false){
+    perf.jumpPairsTried++;
     const L=swap?b:a;
     const R=swap?a:b;
     const merged=mergeMaskOrCnt(L,R);
     if(merged==null) return;
     const ast=mkB(op,L.ast,R.ast);
     if(LEAF_ORDER && ast.ord && !ast.ord.ok) return;
-    const v=evalA(ast);
+    const v=applyBin(op,L.v,R.v);
     if(!Number.isFinite(v) || Math.abs(v)>CAP) return;
     const opCost=wBin(op);
     const cost=(L.cost|0)+(R.cost|0)+opCost;
@@ -3776,6 +3802,62 @@ function collectLeaves(ast, out){
       pushBest({v,ast,cost,searchType:"meet",mask:merged});
     }else{
       pushBest({v,ast,cost,searchType:"meet",cnt:merged});
+    }
+    perf.jumpPairsAccepted++;
+  }
+
+  function tryStructuredSketches(layerItems,T,J){
+    if(!Array.isArray(layerItems) || !layerItems.length) return;
+    if(layerItems.length<10 || fwd[1].length<2) return;
+    const anchors=fwd[1].slice(0,Math.min(18,fwd[1].length));
+    const unaryOps=Array.isArray(opsUn)?opsUn:[];
+    const limHits=Math.max(4,mode==="speed"?6:12);
+
+    const emitSketch=(anchor,opBin,unOp,targetVal,swap=false)=>{
+      if(!Number.isFinite(targetVal)||Math.abs(targetVal)>CAP) return;
+      const invs=invUn(unOp,targetVal);
+      if(!Array.isArray(invs)||!invs.length) return;
+      for(const iv of invs){
+        const tv=Number(iv?.v);
+        if(!Number.isFinite(tv)||Math.abs(tv)>CAP) continue;
+        const hits=J(tv,limHits);
+        if(!hits.length) continue;
+        for(let i=0;i<hits.length;i++){
+          const b=hits[i];
+          const ubAst=mkU(unOp,b.ast);
+          const ubVal=applyUn(unOp,b.v);
+          if(!Number.isFinite(ubVal)||Math.abs(ubVal)>CAP) continue;
+          const merged=mergeMaskOrCnt(anchor,b);
+          if(merged==null) continue;
+          const ast=swap?mkB(opBin,ubAst,anchor.ast):mkB(opBin,anchor.ast,ubAst);
+          if(LEAF_ORDER && ast.ord && !ast.ord.ok) continue;
+          const v=swap?applyBin(opBin,ubVal,anchor.v):applyBin(opBin,anchor.v,ubVal);
+          if(!Number.isFinite(v)||Math.abs(v)>CAP) continue;
+          const cost=(anchor.cost|0)+(b.cost|0)+wUn(unOp)+wBin(opBin);
+          if(cost>maxC+2) continue;
+          perf.sketchAttempts++;
+          if(useBitmask) pushBest({v,ast,cost,searchType:"meet",mask:merged});
+          else pushBest({v,ast,cost,searchType:"meet",cnt:merged});
+          perf.sketchAccepted++;
+        }
+      }
+    };
+
+    for(let ai=0;ai<anchors.length;ai++){
+      const a=anchors[ai];
+      if(!Number.isFinite(a.v)) continue;
+      for(const unOp of unaryOps){
+        emitSketch(a,"+",unOp,T-a.v,false);
+        emitSketch(a,"-",unOp,a.v-T,false);
+        emitSketch(a,"-",unOp,T+a.v,true);
+        if(Math.abs(a.v)>1e-12){
+          emitSketch(a,"*",unOp,T/a.v,false);
+          if(Math.abs(T)>1e-12) emitSketch(a,"/",unOp,a.v/T,false);
+        }
+        if(Math.abs(T)>1e-12){
+          emitSketch(a,"/",unOp,T*a.v,true);
+        }
+      }
     }
   }
 
@@ -3798,6 +3880,7 @@ function collectLeaves(ast, out){
     };
 
     tryUnaryTargetTransforms(jm,J);
+    tryStructuredSketches(layerItems,T,J);
 
     for(let i=0;i<limItems;i++){
       const a=layerItems[i];
@@ -4397,9 +4480,13 @@ function collectLeaves(ast, out){
     if(performance.now()-t0>lim)break;
 
     if(bidir){
+      const revTs=performance.now();
       buildRev(c);
+      perf.msRev+=performance.now()-revTs;
       if(stopFlag)break;
+      const meetTs=performance.now();
       meetSweepWithNewReverseLayer(c);
+      perf.msMeet+=performance.now()-meetTs;
       if(stopFlag)break;
     }
 
@@ -4409,8 +4496,11 @@ function collectLeaves(ast, out){
     capBin=Math.max(45,Math.floor(capBin*mp.capMul));
 
     if(subWorkers.length>0){
+      const fwdTs=performance.now();
       fwd[c]=await computeLayerMT(c,capUn,capBin);
+      perf.msFwd+=performance.now()-fwdTs;
     }else{
+      const fwdTs=performance.now();
       const{bucket,put}=mkBucket(beamF,mp.spillMul);
       const allowPow=Array.isArray(opsBin)&&opsBin.includes("^");
 
@@ -4509,6 +4599,7 @@ function collectLeaves(ast, out){
       const picked=selectTop(items,beamF,divRatio,mp,(bidir?revIdx:null),allowPow,useBitmask,mode);
       for(const it of picked){it.cost=c;}
       fwd[c]=picked;
+      perf.msFwd+=performance.now()-fwdTs;
     }
 
     sendLayerToSubs(c);
@@ -4516,20 +4607,28 @@ function collectLeaves(ast, out){
     addFwdIdx(fwd[c]);
     // Free cached mkeys after indexing
     for(const it of fwd[c]){if(it.mkeys)it.mkeys=null;}
+    const jumpTs=performance.now();
     tryTargetDecomposition(fwd[c], T);
+    perf.msJump+=performance.now()-jumpTs;
 
 
     for(const e of fwd[c]){
       pushBest({v:e.v,ast:e.ast,mask:e.mask,cnt:e.cnt,cost:e.cost,searchType:"fwd"});
       if(stopFlag)break;
-      if(bidir) tryMeetFwdWithRevIdx(e);
+      if(bidir){
+        const meetTs2=performance.now();
+        tryMeetFwdWithRevIdx(e);
+        perf.msMeet+=performance.now()-meetTs2;
+      }
       if(stopFlag)break;
     }
 
     emit(c);
     // Update goal prune threshold: allow up to 12x best delta (keeps diversity while cutting noise)
     if(best.length>0) pruneGoalThresh=Math.abs(best[0].delta)*20+1e-9;
+    const yTs=performance.now();
     await new Promise(r=>setTimeout(r,0));
+    perf.msYield+=performance.now()-yTs;
   }
 
   termSubWorkers();
@@ -4539,6 +4638,7 @@ function collectLeaves(ast, out){
     visited,pruned,
     meetLookups,meetCandidates,meetConfirmed,
     meetDbg,
+    perf,
     reEvalFixed,dupesKilled,
     mode:runtimeMode,
     mt:(mt&&threads>1)?("ON("+threads+")"):"OFF",
@@ -4676,6 +4776,16 @@ $("btnStart").onclick=()=>{
             `keyHits=${d.keyHits} pairsTried=${d.pairsTried} rev2fwdPairs=${d.rev2fwdPairs}<br>`+
             `rej(mask=${d.rejMaskOverlap}, cnt=${d.rejCntLimit}, eps=${d.rejEpsCand}, evalNaN=${d.rejEvalNaN}, probe=${d.rejProbeConfirm}, confirm=${d.rejConfirm}) `+
             `revInvBad=${d.revInvBad} maxConfirmErr=${d.maxConfirmErr}`;
+        }
+        if(payload.perf){
+          const p=payload.perf;
+          const ms=(v)=>Number(v||0).toFixed(1);
+          ps.innerHTML+=
+            "<br><b>Perf</b> "+
+            `meetKeys(calls=${(p.meetKeyCalls||0).toLocaleString()}, gen=${(p.meetKeyGen||0).toLocaleString()}, dedup=${(p.meetKeyDedup||0).toLocaleString()})<br>`+
+            `jump(lookups=${(p.jumpLookups||0).toLocaleString()}, hits=${(p.jumpHits||0).toLocaleString()}, pairs=${(p.jumpPairsTried||0).toLocaleString()}, ok=${(p.jumpPairsAccepted||0).toLocaleString()}) `+
+            `sketch(try=${(p.sketchAttempts||0).toLocaleString()}, ok=${(p.sketchAccepted||0).toLocaleString()})<br>`+
+            `time_ms(rev=${ms(p.msRev)}, fwd=${ms(p.msFwd)}, meet=${ms(p.msMeet)}, jump=${ms(p.msJump)}, yield=${ms(p.msYield)})`;
         }
       }else{
         $("status").style.display="none";
